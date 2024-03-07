@@ -1,6 +1,3 @@
-'''
-	Raspberry Pi GPIO Status and Control
-'''
 import RPi.GPIO as GPIO
 import serial
 from time import sleep
