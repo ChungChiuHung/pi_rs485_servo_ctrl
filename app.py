@@ -8,6 +8,7 @@ from flask import Flask, render_template, request
 
 from checksum import CRC16CCITT
 from servoparams import ServoParams
+from parsebyte import HexParser
 
 # RSE TX/RX Control Pin
 RS485_ENABLE_PIN = 4
@@ -55,6 +56,9 @@ p = GPIO.PWM(ledRed, 2)
 GPIO.output(ledRed, GPIO.LOW)
 GPIO.output(ledYlw, GPIO.LOW)
 GPIO.output(ledGrn, GPIO.LOW)
+
+# Test field
+HexParser.test_function()
 
 @app.route("/")
 def index():
