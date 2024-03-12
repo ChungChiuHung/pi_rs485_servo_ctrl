@@ -34,4 +34,10 @@ Raspberry Pi 3B + [RS485 CAN HAT](https://www.waveshare.com/w/upload/2/29/RS485-
   ```
   sudo reboot
   ```
-  
+
+  After restart, execute the command to verify that the RS485 CAN HAT is connected during boot.
+  ```
+  dmesg | grep -i '\(can\|spi\)'
+  ```
+  ![image](https://github.com/ChungChiuHung/rpiWebServer_RS485_ServoCtrl/assets/52248840/149436ad-a2ca-4dd2-9fa6-c44bf60b2702)
+
