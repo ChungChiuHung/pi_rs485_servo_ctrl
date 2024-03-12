@@ -16,9 +16,9 @@ GPIO.setwarnings(False)
 GPIO.setup(RS485_ENABLE_PIN, GPIO.OUT)
 GPIO.output(RS485_ENABLE_PIN, GPIO.HIGH) # Set High to Transimit
 
-# Open Serial Port ttyAMA0
+# Open Serial Port ttyAMA0 (Replace ttyS0 With ttyAM0 for Pi1,Pi2,Pi0)
 # 57600, N, 8, 1
-ser_port = serial.Serial("/dev/ttyAMA0",57600)
+ser_port = serial.Serial("/dev/ttyS0",57600)
 ser_port.bytesize = serial.EIGHTBITS
 ser_port.parity = serial.PARITY_NONE
 ser_port.stopbits = serial.STOPBITS_ONE
