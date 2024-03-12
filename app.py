@@ -93,7 +93,7 @@ def action(deviceName, action):
                   print("Start PWM!")
             else:
                   GPIO.output(actuator, GPIO.HIGH)
-      if action == "off":
+      elif action == "off":
             if actuator == ledRed:
                   p.stop()
                   print("Stop PWM!")
