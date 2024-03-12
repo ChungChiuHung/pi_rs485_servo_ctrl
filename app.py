@@ -76,8 +76,6 @@ def index():
 
 @app.route("/<deviceName>/<action>")
 def action(deviceName, action):
-      RS485_read=""
-      RS485_send=""
       if deviceName == 'ledRed':
             actuator = ledRed
       if deviceName == 'ledYlw':
