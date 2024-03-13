@@ -7,6 +7,15 @@ from checksum import CRC16CCITT
 from servoparams import ServoParams
 from parsebyte import HexParser
 
+def delay_milliseconds(milliseconds)
+      """
+      Delay execution for a given number of milliseconds.
+      
+      Parameters:
+      milliseconds (int): The number of milliseconds to delay.
+      """
+      seconds = milliseconds / 1000.0 # Convert milliseconds to seconds
+      time.sleep(seconds)
 
 # RSE TX/RX Control Pin
 RS485_ENABLE_PIN = 4
