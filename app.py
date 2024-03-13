@@ -7,6 +7,7 @@ from checksum import CRC16CCITT
 from servoparams import ServoParams
 from parsebyte import HexParser
 
+
 # RSE TX/RX Control Pin
 RS485_ENABLE_PIN = 4
 
