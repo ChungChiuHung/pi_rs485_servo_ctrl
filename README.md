@@ -2,6 +2,8 @@
 
 Raspberry Pi 3B + [RS485 CAN HAT](https://www.waveshare.com/w/upload/2/29/RS485-CAN-HAT-user-manuakl-en.pdf)
 
+[AC Servo Motor Information]([https//](https://amethyst-myrtle-52e.notion.site/Servo-Motor-Driver-2f7c21ac9d024b00933ec2252861ffcf))
+
 # Reference
 - [RS485 CAN HAT_ch](https://www.waveshare.net/wiki/RS485_CAN_HAT#.E5.89.8D.E7.BD.AE.E5.B7.A5.E4.BD.9C_2)
 - [RS485 CAN HAT_uk](https://learn.sb-components.co.uk/RS485-CAN-HAT)
