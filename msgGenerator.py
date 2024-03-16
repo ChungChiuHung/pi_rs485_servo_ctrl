@@ -31,5 +31,8 @@ class MessageGenerator:
         crc = self.crc16_ccitt(combined_data)
         error_detection = [hex(crc >> 8)[2:0].zfill(2), hex(crc & 0xFF)[2:].zfill(2)]
 
-        # Construct the full message
-        return [self.protocol_header, self.destination_address, self.control_code, self.command_code] + self.parameters + error_detection
+        # Construct the full message and convert to bytes
+        full_message_hex = f"{combined_data}{error_detection}"
+
+        #return [self.protocol_header, self.destination_address, self.control_code, self.command_code] + self.parameters + error_detection
+        return bytes.fromhex(full_message_hex)
