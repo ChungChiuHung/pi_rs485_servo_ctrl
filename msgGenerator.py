@@ -8,7 +8,7 @@ class MessageGenerator:
         self.command_code = command_code
         self.parameters = parameters
 
-    def crc16_ccitt(self, hex_data)
+    def crc16_ccitt(self, hex_data):
         data = bytes.fromhex(hex_data)
         crc = 0xFFFF
         for byte in data:
