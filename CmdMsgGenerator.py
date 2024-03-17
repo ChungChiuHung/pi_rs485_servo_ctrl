@@ -1,21 +1,26 @@
 from enum import Enum
-from cmdCode import CmdCode
 
-class ProtocolID(Enum):
-    RESERVED = 0
-    SINGLE_MASTER_PROTOCOL = 1
-
-    @staticmethod
-    def get_protocol_id(protocol_header):
-        protocol_id_bits = int(protocol_header, 16) >> 5
-        return ProtocolID.SINGLE_MASTER_PROTOCOL if protocol_id_bits == 1 else ProtocolID.RESERVED
+class CmdCode(Enum):
+    NOP = 0x00
+    GET_PARAM_2 = 0x04
+    GET_PARAM_4 = 0x05
+    SET_PARAM_2 = 0x07
+    SET_PARAM_4 = 0x08
+    UNLOCK_PARAM_ALL = 0x0A
+    SAVE_PARAM_ALL = 0x0B
+    GET_STATE_VALUE_2 = 0x10
+    GET_STATE_VALUE_4 = 0x11
+    READ_EA05_DATA = 0x1E
+    CLEAR_EA05_DATA = 0x1F
+    READ_EA05_DATA_EX = 0x62
+    SET_STATE_VALUE_WITHMASK_4 = 0x66
 
 class CRC16CCITT:
     def __init__(self, poly=0x1021, init_val=0xFFFF):
         self.poly = poly
         self.init_val = init_val
 
-    def append_crc(self, data):
+    def calculate_crc(self, data):
         crc = self.init_val
         for byte in data:
             crc ^= byte << 8
@@ -25,118 +30,68 @@ class CRC16CCITT:
                 else:
                     crc <<= 1
             crc &= 0xFFFF
-        return data + crc.to_bytes(2, 'big')
+        return crc.to_bytes(2, 'big')
 
 class MessageGenerator:
-    def __init__(self, protocol_header, destination_address, control_code, command_code, parameters):
-        """
-        Initialize the message generator with the specified components.
-
-        Parameters:
-        protocol_header (str): The protocol header hex.
-        destination_address (str): The destination address hex.
-        control_code (str): The control code hex.
-        command_code (str): The command code hex.
-        parameters (list): The array of parameter/response data hex values.
-        """
-        self.protocol_header = protocol_header
-        self.protocol_id = ProtocolID.get_protocol_id(protocol_header)
-
+    def __init__(self, destination_address, control_code):
         self.destination_address = destination_address
         self.control_code = control_code
-        self.command_code = command_code
-        self.parameters = parameters
 
-    def get_data_length_code(self):
-        data_length_bits = int(self.protocol_header, 16) & 0x1F # Extract 4th to 0th bits
-        data_length = max(2, min(data_length_bits, 31)) # Ensure the data length is within the 2-31 bytes range
-        return data_length
-        
-    def generate_message(self):
-        header_data = bytes.fromhex(f"{self.protocol_header}{self.destination_address}")
-        data = bytes.fromhex(f"{self.control_code}{self.command_code}") + b''.join(bytes.fromhex(param) for param in self.parameters)
-        combined_data = header_data + data
+    def get_protocol_header(self, parameter_length):
+        return (1 + 1 + parameter_length) + 0x20
 
+    def append_crc(self, command_bytes):
         crc_calculator = CRC16CCITT()
-        full_message_with_crc = crc_calculator.append_crc(combined_data)
+        return command_bytes + crc_calculator.calculate_crc(command_bytes)
 
-        #return [self.protocol_header, self.destination_address, self.control_code, self.command_code] + self.parameters + error_detection
-        return full_message_with_crc
-    
-    def print_message_hex(self):
-        message_bytes = self.generate_message()
-        hex_message = ' '.join([f"{byte:02X}" for byte in message_bytes])
-        print(hex_message)
-    
-    def create_set_state_value_withmask_4_cmd(protocol_header,destination_address,control_code,status_number,status_value,mask,
-                                              return_as_str=True):    
-        """
-        Generate the SET_STATE_VALUE_WITHMASK_4 communication command with CRC-16-CCITT for error detection.
-    
-        :param protocol_header: The protocol header (Part A).
-        :param destination_address: The destination address (Part B).
-        :param control_code: The control code (Part C).
-        :param status_number: The status number as a list of 2 bytes in hex format.
-        :param status_value: The status value to be sent as a list of 4 bytes in hex format.
-        :param mask: The mask value (integer, will be represented in 4 bytes).
-        :return: A hex string representing the communication command.
-        """
-        if len(status_number) != 2 or len(status_value) !=4:
-            raise ValueError("Invalid length for status number of status value")
-        
-        # Constructing the command
-        command_parts = [
-        protocol_header,  # Part A
-        destination_address,  # Part B
-        control_code,  # Part C
-        CmdCode.SET_STATE_VALUE_WITHMASK_4,  # Part D: Command Code
-        ] + status_number + status_value + mask
-    
-        # Convert command parts to bytes and calculate CRC
-        command_bytes = bytes(command_parts)
-        crc_calculator = CRC16CCITT()
-        command_with_crc = crc_calculator.append_crc(command_bytes)
-    
-        if return_as_str:
-            # Converting the command with CRC to a hexadecimal string
-            return ' '.join(format(byte, '02X') for byte in command_with_crc)
-        else:
-            return command_with_crc
-'''
-Example: 
-from CmdMsgGenerator import MessageGenerator
+    def generate_command(self, command_code, parameter_code, return_as_str):
+        protocol_header = self.get_protocol_header(len(parameter_code))
+        command_bytes = bytes([protocol_header, self.destination_address, self.control_code, command_code]) + bytes(parameter_code)
+        command_with_crc = self.append_crc(command_bytes)
+        return ' '.join(format(byte, '02X') for byte in command_with_crc) if return_as_str else command_with_crc
 
-protocol_header = '24'
-destination_address = '01'
-control_code = '00'
-command_code = '04'
-parameters = ['00','20']
-generator = MessageGenerator(protocol_header,
-                             destination_address,
-                             control_code,
-                             command_code,
-                             parameters)
+    def get_command(self, command_code_enum, return_as_str=True, **kwargs):
+        match command_code_enum:
+            case CmdCode.NOP | CmdCode.UNLOCK_PARAM_ALL:
+                parameter_code = []
+            case CmdCode.SET_PARAM_2:
+                param_group = kwargs.get('param_group', [])
+                write_value = kwargs.get('write_value', [])
+                if not (len(param_group) == 2 and len(write_value) == 2):
+                    raise ValueError("Incorrect parameter length for SET_PARAM_2.")
+                parameter_code = param_group + write_value
+            case CmdCode.SET_PARAM_4:
+                param_group = kwargs.get('param_group', [])
+                write_value = kwargs.get('write_value', [])
+                if not (len(param_group) == 2 and len(write_value) == 4):
+                    raise ValueError("Incorrect parameter length for SET_PARAM_4.")
+                parameter_code = param_group + write_value
+            case CmdCode.SAVE_PARAM_ALL | CmdCode.GET_PARAM_2 | CmdCode.GET_PARAM_4 | CmdCode.GET_STATE_VALUE_2 | CmdCode.GET_STATE_VALUE_4 | CmdCode.CLEAR_EA05_DATA:
+                parameter = kwargs.get('parameter', [])
+                if not (len(parameter) == 2):
+                    raise ValueError(f"Incorrect parameter length for {command_code_enum.name}.")
+                parameter_code = parameter
+            case CmdCode.READ_EA05_DATA:
+                alarm_info = kwargs.get('alarm_info', [])
+                fixed = kwargs.get('fixed', [])
+                if not (len(alarm_info) == 2 and len(fixed) == 2):
+                    raise ValueError("Incorrect parameter length for READ_EA05_DATA.")
+                parameter_code = alarm_info + fixed
+            case CmdCode.READ_EA05_DATA_EX:
+                alarm = kwargs.get('alarm', [])
+                single_turn_data = kwargs.get('single_turn_data', [])
+                multi_turn_data = kwargs.get('multi_turn_data', [])
+                if not (len(alarm) == 2 and len(single_turn_data) == 2 and len(multi_turn_data) == 2):
+                    raise ValueError("Incorrect parameter length for READ_EA05_DATA_EX.")
+                parameter_code = alarm + single_turn_data + multi_turn_data
+            case CmdCode.SET_STATE_VALUE_WITHMASK_4:
+                status_number = kwargs.get('status_number', [])
+                status_value = kwargs.get('status_value', [])
+                mask = kwargs.get('mask', [])
+                if not (len(status_number) == 2 and len(status_value) == 4 and len(mask) == 4):
+                    raise ValueError("Incorrect parameter length for SET_STATE_VALUE_WITHMASK_4.")
+                parameter_code = status_number + status_value + mask
+            case _:
+                raise NotImplementedError(f"Command {command_code_enum.name} is not implemented.")
 
-message_bytes = generator.generate_message()
-print(message_bytes)
-generator.print_message_hex()
-'''
-
-'''
-# Generate Commnication Command : SET_STATE_VALUE_WITHMASK_4
-# Example usage of the function:
-protocol_header = 0x2C
-destination_address = 0x01
-control_code = 0x00
-status_number = [0x01, 0x20]
-status_value = [0x01, 0x00, 0x00, 0x00]
-mask = [0x01, 0x00, 0x00, 0x00]
-command_hex = MessageGenerator.create_set_state_value_withmask_4_command(
-    protocol_header, 
-    destination_address, 
-    control_code, 
-    status_number, 
-    status_value, 
-    mask)
-print(command_hex)
-'''
+        return self.generate_command(command_code_enum.value, parameter_code, return_as_str)
