@@ -67,3 +67,23 @@ class MessageGenerator:
         message_bytes = self.generate_message()
         hex_message = ' '.join([f"{byte:02X}" for byte in message_bytes])
         print(hex_message)
+
+'''
+Example: 
+from CmdMsgGenerator import MessageGenerator
+
+protocol_header = '24'
+destination_address = '01'
+control_code = '00'
+command_code = '04'
+parameters = ['00','20']
+generator = MessageGenerator(protocol_header,
+                             destination_address,
+                             control_code,
+                             command_code,
+                             parameters)
+
+message_bytes = generator.generate_message()
+print(message_bytes)
+generator.print_message_hex()
+'''
