@@ -4,7 +4,7 @@ class CommunicationAnalyzer:
         pass
 
 
-    def calculate_command_response_time(self, command_length_bits, transmission_speed_bps)
+    def calculate_command_response_time(self, command_length_bits, transmission_speed_bps):
         """
         Calculate the command transmission time
 
@@ -25,7 +25,7 @@ class CommunicationAnalyzer:
         return transmission_time_milliseconds
 
 
-    def get_bit_length(self, byte_array)
+    def get_bit_length(self, byte_array):
         """
         Get the bit length of a byte array
 

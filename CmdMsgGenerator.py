@@ -1,5 +1,5 @@
-import binascii
 from enum import Enum
+from cmdCode import CmdCode
 
 class ProtocolID(Enum):
     RESERVED = 0
@@ -67,7 +67,39 @@ class MessageGenerator:
         message_bytes = self.generate_message()
         hex_message = ' '.join([f"{byte:02X}" for byte in message_bytes])
         print(hex_message)
-
+    
+    def create_set_state_value_withmask_4_cmd(protocol_header,destination_address,control_code,status_number,status_value,mask):    
+        """
+        Generate the SET_STATE_VALUE_WITHMASK_4 communication command with CRC-16-CCITT for error detection.
+    
+        :param protocol_header: The protocol header (Part A).
+        :param destination_address: The destination address (Part B).
+        :param control_code: The control code (Part C).
+        :param status_number: The status number as a list of 2 bytes in hex format.
+        :param status_value: The status value to be sent as a list of 4 bytes in hex format.
+        :param mask: The mask value (integer, will be represented in 4 bytes).
+        :return: A hex string representing the communication command.
+        """
+        if len(status_number) != 2 or len(status_value) !=4:
+            raise ValueError("Invalid length for status number of status value")
+        
+        # Constructing the command
+        command_parts = [
+        protocol_header,  # Part A
+        destination_address,  # Part B
+        control_code,  # Part C
+        CmdCode.SET_STATE_VALUE_WITHMASK_4,  # Part D: Command Code
+        ] + status_number + status_value + mask
+    
+        # Convert command parts to bytes and calculate CRC
+        command_bytes = bytes(command_parts)
+        crc_calculator = CRC16CCITT()
+        command_with_crc = crc_calculator.append_crc(command_bytes)
+    
+        # Converting the command with CRC to a hexadecimal string
+        command_hex = ''.join(format(byte, '02X') for byte in command_with_crc)
+    
+        return command_hex
 '''
 Example: 
 from CmdMsgGenerator import MessageGenerator
@@ -86,4 +118,23 @@ generator = MessageGenerator(protocol_header,
 message_bytes = generator.generate_message()
 print(message_bytes)
 generator.print_message_hex()
+'''
+
+'''
+# Generate Commnication Command : SET_STATE_VALUE_WITHMASK_4
+# Example usage of the function:
+protocol_header = 0x2C
+destination_address = 0x01
+control_code = 0x00
+status_number = [0x01, 0x20]
+status_value = [0x01, 0x00, 0x00, 0x00]
+mask = [0x01, 0x00, 0x00, 0x00]
+command_hex = MessageGenerator.create_set_state_value_withmask_4_command(
+    protocol_header, 
+    destination_address, 
+    control_code, 
+    status_number, 
+    status_value, 
+    mask)
+print(command_hex)
 '''
