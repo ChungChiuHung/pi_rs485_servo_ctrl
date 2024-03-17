@@ -68,7 +68,8 @@ class MessageGenerator:
         hex_message = ' '.join([f"{byte:02X}" for byte in message_bytes])
         print(hex_message)
     
-    def create_set_state_value_withmask_4_cmd(protocol_header,destination_address,control_code,status_number,status_value,mask):    
+    def create_set_state_value_withmask_4_cmd(protocol_header,destination_address,control_code,status_number,status_value,mask,
+                                              return_as_str=True):    
         """
         Generate the SET_STATE_VALUE_WITHMASK_4 communication command with CRC-16-CCITT for error detection.
     
@@ -96,10 +97,11 @@ class MessageGenerator:
         crc_calculator = CRC16CCITT()
         command_with_crc = crc_calculator.append_crc(command_bytes)
     
-        # Converting the command with CRC to a hexadecimal string
-        command_hex = ''.join(format(byte, '02X') for byte in command_with_crc)
-    
-        return command_hex
+        if return_as_str:
+            # Converting the command with CRC to a hexadecimal string
+            return ' '.join(format(byte, '02X') for byte in command_with_crc)
+        else:
+            return command_with_crc
 '''
 Example: 
 from CmdMsgGenerator import MessageGenerator
