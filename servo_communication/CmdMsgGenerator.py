@@ -1,36 +1,5 @@
-from enum import Enum
-
-class CmdCode(Enum):
-    NOP = 0x00
-    GET_PARAM_2 = 0x04
-    GET_PARAM_4 = 0x05
-    SET_PARAM_2 = 0x07
-    SET_PARAM_4 = 0x08
-    UNLOCK_PARAM_ALL = 0x0A
-    SAVE_PARAM_ALL = 0x0B
-    GET_STATE_VALUE_2 = 0x10
-    GET_STATE_VALUE_4 = 0x11
-    READ_EA05_DATA = 0x1E
-    CLEAR_EA05_DATA = 0x1F
-    READ_EA05_DATA_EX = 0x62
-    SET_STATE_VALUE_WITHMASK_4 = 0x66
-
-class CRC16CCITT:
-    def __init__(self, poly=0x1021, init_val=0xFFFF):
-        self.poly = poly
-        self.init_val = init_val
-
-    def calculate_crc(self, data):
-        crc = self.init_val
-        for byte in data:
-            crc ^= byte << 8
-            for _ in range(8):
-                if crc & 0x8000:
-                    crc = (crc << 1) ^ self.poly
-                else:
-                    crc <<= 1
-            crc &= 0xFFFF
-        return crc.to_bytes(2, 'big')
+from commCode import CmdCode
+from crc import CRC16CCITT
 
 class MessageGenerator:
     def __init__(self, destination_address, control_code):

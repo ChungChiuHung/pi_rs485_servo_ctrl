@@ -3,9 +3,8 @@ import serial
 from time import sleep
 from flask import Flask, render_template, request
 
-from checksum import CRC16CCITT
-from servoparams import ServoParams
-from parsebyte import HexParser
+from servo_communication.crc import CRC16CCITT
+from servo_communication.servoparams import ServoParams
 
 def delay_milliseconds(milliseconds):
       """
