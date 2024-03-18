@@ -2,8 +2,10 @@ import RPi.GPIO as GPIO
 import serial
 from time import sleep
 from flask import Flask, render_template, request
-from servo_communication.crc import CRC16CCITT
-from servo_communication.servoparams import ServoParams
+
+servo_comm = load.module("~/worktemp/rpiWebServer_RS485_ServoCtrl")
+from servo_comm.crc import CRC16CCITT
+from servo_comm.servoparams import ServoParams
 
 def delay_ms(milliseconds):
       """
