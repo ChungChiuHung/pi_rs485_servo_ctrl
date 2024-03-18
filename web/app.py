@@ -63,8 +63,6 @@ GPIO.output(ledRed, GPIO.LOW)
 GPIO.output(ledYlw, GPIO.LOW)
 GPIO.output(ledGrn, GPIO.LOW)
 
-# Test field
-HexParser.test_function()
 
 @app.route("/")
 def index():
