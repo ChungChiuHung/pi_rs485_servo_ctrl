@@ -26,7 +26,9 @@ class BitStatusSetter:
             mask_value |= (0xF << 26) # 0xF in bits 26 to 29 sets mask to 0x3C000000
         else:  
             # Handling single-bit statuses.
-            bit_position = status_bit_positions[status_name]
+            if status_name not in self.status_bit_positions:
+                raise ValueError(f"{status_name} is not a valid status.")
+            bit_position = self.status_bit_positions[status_name]
             if value:
                 status_value |= (1 << bit_position)
             mask_value |= (1 << bit_position)
