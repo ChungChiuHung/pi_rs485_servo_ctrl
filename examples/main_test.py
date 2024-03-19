@@ -1,7 +1,9 @@
-from CmdMsgGenerator import MessageGenerator
-from CmdMsgGenerator import CmdCode
+from message_generator import MessageGenerator
+from command_code import CmdCode
+from servo_params import ServoParams
 from cal_cmd_response_time import CommAnalyzer
-from setIOstatus import BitStatusSetter
+from status_bit_mapping import StatusBitPositions
+from set_servo_io_status import SetServoIOStatus
 
 def print_byte_array_as_spaced_hex(byte_array):
     """
@@ -16,11 +18,13 @@ def print_byte_array_as_spaced_hex(byte_array):
 generator = MessageGenerator(destination_address=0x01, control_code=0x00)
 
 # Generating a NOP command hex (expects no parameters)
-nop_command_hex = generator.get_command(CmdCode.NOP, return_as_str=True)
-print("NOP Command Hex:", nop_command_hex)
+nop_parameter_code = generator.get_parameter_code(CmdCode.NOP, return_as_str=True)
+print("NOP Command Hex:", nop_parameter_code)
+nop_command_hex = generator.generate_command(CmdCode.NOP, nop_parameter_code, True)
+print(nop_command_hex)
 
 # Generating a SET_PARAM_2 command hex (expects param_group and write_value)
-set_param_2_command_hex = generator.get_command(
+set_param_2_command_hex = generator.get_parameter_code(
     CmdCode.SET_PARAM_2,
     return_as_str=True,
     param_group=[0x01, 0x02],
@@ -31,7 +35,7 @@ print_byte_array_as_spaced_hex(set_param_2_command_hex)
 
 
 # Generating a SET_PARAM_4 command hex (expects param_group and write_value)
-set_param_4_command_hex = generator.get_command(
+set_param_4_command_hex = generator.get_parameter_code(
     CmdCode.SET_PARAM_4,
     return_as_str=True,
     param_group=[0x01, 0x02],
@@ -41,14 +45,15 @@ print("SET_PARAM_4 Command Hex:", set_param_4_command_hex)
 
 # Generating a SET_STATE_VALUE_WITHMASK_4 command hex
 # (expects status_number, status_value, and mask)
-set_state_value_withmask_4_command_hex = generator.get_command(
+bit_setter = SetServoIOStatus()
+sel_no_parameter_code = bit_setter.set_bit_status(StatusBitPositions.SEL_NO,1)
+set_state_value_withmask_4_command_hex = generator.get_parameter_code(
     CmdCode.SET_STATE_VALUE_WITHMASK_4,
-    return_as_str=False,
-    status_number=[0x00, 0x01],
-    status_value=[0x00, 0x00, 0x00, 0x02],
-    mask=[0xFF, 0xFF, 0xFF, 0xFF]
+    sel_no_parameter_code[:4],
+    sel_no_parameter_code[-4:]
 )
 print("SET_STATE_VALUE_WITHMASK_4 Command Hex:", set_state_value_withmask_4_command_hex)
+print_byte_array_as_spaced_hex(set_state_value_withmask_4_command_hex)
 
 # Calculate the response time
 analyzer = CommAnalyzer()
@@ -56,9 +61,9 @@ print("Response Time: " + str(analyzer.calculate_transmission_time_ms(set_state_
 
 # Set Bit Status
 # Example Usage:
-set_servo_bit = BitStatusSetter()
-home_status, home_mask = set_servo_bit.set_bit_status("HOME", 1)
+set_servo_bit = SetServoIOStatus()
+home_status, home_mask = set_servo_bit.set_bit_status(StatusBitPositions.HOME, 1)
 print("HOME Status:", home_status.hex(), "Mask:", home_mask.hex())
 
-sel_no_status, sel_no_mask = set_servo_bit.set_bit_status("SEL_NO", 1)  # 13 within 4 bits is within the valid range.
+sel_no_status, sel_no_mask = set_servo_bit.set_bit_status(StatusBitPositions.SEL_NO, 2)  # 13 within 4 bits is within the valid range.
 print("SEL_NO Status:", sel_no_status.hex(), "Mask:", sel_no_mask.hex())

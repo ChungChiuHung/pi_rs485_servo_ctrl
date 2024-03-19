@@ -4,9 +4,9 @@ from time import sleep
 from flask import Flask, render_template, request
 
 from crc import CRC16CCITT
-from servoparams import ServoParams
-from CmdMsgGenerator import MessageGenerator
-from setIOstatus import BitStatusSetter
+from examples.servo_params import ServoParams
+from examples.message_generator import MessageGenerator
+from examples.set_servo_io_status import BitStatusSetter
 
 
 def delay_ms(milliseconds):
@@ -16,7 +16,7 @@ def delay_ms(milliseconds):
       milliseconds (int): The number of milliseconds to delay.
       """
       seconds = milliseconds / 1000.0 # Convert milliseconds to seconds
-      time.sleep(seconds)
+      sleep(seconds)
 
 # RSE TX/RX Control Pin
 RS485_ENABLE_PIN = 4
