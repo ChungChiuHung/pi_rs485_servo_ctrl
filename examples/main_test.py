@@ -3,6 +3,15 @@ from CmdMsgGenerator import CmdCode
 from cal_cmd_response_time import CommAnalyzer
 from setIOstatus import BitStatusSetter
 
+def print_byte_array_as_spaced_hex(byte_array):
+    """
+    Print a byte array as a spaced hex string.
+
+    :param byte_array: The byte array to be printed.
+    """
+    hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
+    print(f"Hex representation: {hex_string}")
+
 # Initialize the message generator with destination address and control code
 generator = MessageGenerator(destination_address=0x01, control_code=0x00)
 
@@ -18,6 +27,8 @@ set_param_2_command_hex = generator.get_command(
     write_value=[0x03, 0x04]
 )
 print("SET_PARAM_2 Command Hex:", set_param_2_command_hex)
+print_byte_array_as_spaced_hex(set_param_2_command_hex)
+
 
 # Generating a SET_PARAM_4 command hex (expects param_group and write_value)
 set_param_4_command_hex = generator.get_command(
