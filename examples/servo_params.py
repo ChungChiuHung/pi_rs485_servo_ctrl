@@ -115,20 +115,3 @@ class ServoParams:
                      0x00,0x11,
                      0x01,0x28,
                      0x75,0xE0]
-    # response
-    # 26 01 80 11 (* *) (* *) (* *) (* *) (* *)(* *)
-    #
-
-    # Example usage:
-    '''
-    crc_calculator = CRC16CCITT()
-    test_data_list = [0x2C,0x01,
-                  0x00,0x66,
-                  0x01,0x20,
-                  0x00,0x00,0x00,0x01,
-                  0x00,0x00,0x00,0x01]
-    result_data_with_crc_list = crc_calculator.append_crc_as_list(test_data_list)
-
-    print("Original data as list:", test_data_list)
-    print("Data with CRC-16-CCITT appended as list:", result_data_with_crc_list)
-    '''
