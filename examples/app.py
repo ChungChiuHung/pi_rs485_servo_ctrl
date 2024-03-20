@@ -1,11 +1,14 @@
 import RPi.GPIO as GPIO
 import serial
-from time import sleep
+from time import time, sleep
 from flask import Flask, render_template, request
-from crc import CRC16CCITT
 from servo_params import ServoParams
-from message_generator import MessageGenerator
+from base_msg_generator import BaseMsgGenerator
+from response_parsing import ResponseMsgParser
+from command_code import CmdCode
+from set_servo_io_status import SetServoIOStatus
 from set_servo_io_status import BitMap
+from cal_cmd_response_time import CmdDelayTime
 
 # Define your GPIO pins upfront
 RS485_ENABLE_PIN = 4  # pin for RS485 transmission enable
@@ -93,34 +96,47 @@ def action(deviceName, action):
       elif deviceName == 'ledGrn' and action in ['on', 'off']:
             ledGrnSts = GPIO.input(LED_GRN_PIN)
 
-      
+      cmd_generator = BaseMsgGenerator()
+      setter = SetServoIOStatus()
+      parser = ResponseMsgParser()
+      cmd_delay_time = CmdDelayTime(57600)
+
+
+      protocol_id=1
+      destination_address = 1
+      dir_bit = 0
+      error_code = 0
+
+
       if action == "servoOn":
             print("SERVO ON")            
-            print("SET PARAM 2!")
 
-            bytes_object = bytes(ServoParams.SET_PARAM_2)
-            RS485_send = print_byte_array_as_spaced_hex(bytes_object)
+            cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
+            parameter_data = setter.set_bit_status(BitMap.SVON, 1)
+            servo_on_command = cmd_generator.generate_message(
+                  protocol_id,
+                  destination_address,
+                  dir_bit, error_code, cmd_code, parameter_data)
+            
+            RS485_send = print_byte_array_as_spaced_hex(servo_on_command, f"{cmd_code}")
+            ser_port.write(servo_on_command)
 
-            ser_port.write(ServoParams.SET_PARAM_2)
-            sleep(0.1)
+            # Fixed delay plus transmission delay calculation
+            delay_ms(50)
+            cmd_delay_time.calculate_transmission_time_ms(servo_on_command)
+            
             print("Response: ")
-            result_1 = ser_port.inWaiting()
-            result_2 = ser_port.read(ser_port.inWaiting())
-            print(result_1)
-            print(result_2)
 
-            RS485_read = str(result_2)
+            timeout = 1 # Timeout in second
+            deadline = time.time() + timeout
+            result = b''
 
-            print("SERVO ON")
-            ser_port.write(ServoParams.SERVO_ON)
-            # ser_port.write(result_data_with_crc_list)
-            sleep(0.1)
-
-            print("Response:")
-            result_1 = ser_port.inWaiting()
-            result_2 = ser_port.read(ser_port.inWaiting())
-            print(result_1)
-            print(result_2)
+            while time.time() < deadline:
+                  if ser_port.inWaiting() > 0:
+                        result += ser_port.read(ser_port.inWaiting())
+                  time.sleep(0.05) 
+            print(result)
+            RS485_read = parser.parse_message(result)
 
       elif action == "servoOff":
             print("SERVO OFF")
