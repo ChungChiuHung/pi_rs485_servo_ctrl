@@ -5,6 +5,7 @@ from servo_params import ServoParams
 from cal_cmd_response_time import CommAnalyzer
 from status_bit_mapping import BitMap
 from set_servo_io_status import SetServoIOStatus
+from response_parsing import ResponseMsgParser
 import math
 
 def print_byte_array_as_spaced_hex(byte_array, data_name):
@@ -14,7 +15,7 @@ def print_byte_array_as_spaced_hex(byte_array, data_name):
     :param byte_array: The byte array to be printed.
     """
     hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
-    print(f"Hex representation {data_name}: {hex_string}")
+    print(f"{data_name}: {hex_string}")
 
 def decimal_to_2_bytes(number):
         if not (0 <= number <= 65535):
@@ -87,13 +88,76 @@ def test_get_trasmmision_time():
     dir_bit = 0 # 0:Command Message, 1:Response Message  
     error_code = 0 # fixed value (Command Message)
     cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value # Page 12- List of Commands
-    parameter_data = [0x04, 0x05]  # Example parameter data.Page 12- List of Commands
+
+    # SEL_NO 0~15
+    setter = SetServoIOStatus()
+    parameter_code = setter.set_bit_status(BitMap.SEL_NO, 1)
+    parameter_data = parameter_code # Example parameter data.Page 12- List of Commands
 
     message = base_msg_generator.generate_message(protocol_id, destination_address, dir_bit, error_code, cmd_code, parameter_data)
+    print_byte_array_as_spaced_hex(message, "Communication Code: ")
     # Calculate the response time
     analyzer = CommAnalyzer()
     print("Response Time: " + str(analyzer.calculate_transmission_time_ms(message,57600)) + " ms")
 
+    # SVON 0/1
+    parameter_code = setter.set_bit_status(BitMap.SVON, 1)
+    parameter_data = parameter_code
+    message = base_msg_generator.generate_message(protocol_id, destination_address, dir_bit, error_code, cmd_code, parameter_data)
+    print_byte_array_as_spaced_hex(message, "Communication Code: ")
+
+    # GET_STATE_VALUE_4
+    print("GET_STATE_VALUE_4")
+    protocol_id = 1
+    destination_address = 1
+    dir_bit = 0
+    error_code = 0
+    cmd_code = CmdCode.GET_STATE_VALUE_4.value
+
+    # Status No.0:Alarm 
+    # Status No.288:Logic I/O Input
+    # Status No.296:Logic I/O Output
+    status_no = 288
+    parameter_code = decimal_to_2_bytes(status_no) 
+    parameter_data = parameter_code
+    message = base_msg_generator.generate_message(protocol_id, destination_address, dir_bit, error_code, cmd_code, parameter_data)
+    print_byte_array_as_spaced_hex(message, "Communication Code: ")
+
+def test_response_parser():
+
+    response_parser = ResponseMsgParser()
+    protocol_id = 1 
+    destination_address = 1
+    comm_code = CmdCode.GET_STATE_VALUE_4.value
+
+    # SEL_NO 0~15
+    setter = SetServoIOStatus()
+    parameter_code = setter.set_respone_bit(BitMap.SEL_NO, 1)
+    parameter_data = parameter_code # Example parameter data.Page 12- List of Commands
+
+    message = response_parser.generate_response_message(protocol_id, destination_address, comm_code,parameter_data)
+
+    response_parser = ResponseMsgParser()
+    response_message = message
+    try:
+        parsed_data = response_parser.parse_message(response_message)
+        print("Parsed response data:", parsed_data)
+        # Extracting individual pieces of information
+        protocol_header = parsed_data['protocol_header']
+        destination_address = parsed_data['destination_address']
+        control_code = parsed_data['control_code']
+        parameter_data = parsed_data['parameter_data']
+
+        # Print extracted information
+        print("Protocol Header:", hex(protocol_header))
+        print("Destination Address:", destination_address)
+        print("Control Code:", control_code)
+        print("Parameter Data:", parameter_data)
+        print_byte_array_as_spaced_hex(parameter_data, "Parameter Data:")
+    except ValueError as e:
+        print("Error parsing response message:", e)
+
+    
 
 if __name__ == "__main__":
     test_byte_operation()
@@ -101,4 +165,5 @@ if __name__ == "__main__":
     test_decimal_to_2bytes()
     test_servo_io_status()
     test_get_trasmmision_time()
+    test_response_parser()
     
