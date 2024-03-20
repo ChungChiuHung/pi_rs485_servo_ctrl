@@ -132,13 +132,14 @@ def test_response_parser():
 
     # SEL_NO 0~15
     setter = SetServoIOStatus()
-    parameter_code = setter.set_respone_bit(BitMap.SEL_NO, 1)
+    parameter_code = setter.set_respone_bit(BitMap.PAUSE, 1)
     parameter_data = parameter_code # Example parameter data.Page 12- List of Commands
 
     message = response_parser.generate_response_message(protocol_id, destination_address, comm_code,parameter_data)
+    response_message = message
 
     response_parser = ResponseMsgParser()
-    response_message = message
+    
     try:
         parsed_data = response_parser.parse_message(response_message)
         print("Parsed response data:", parsed_data)
@@ -147,11 +148,21 @@ def test_response_parser():
         destination_address = parsed_data['destination_address']
         control_code = parsed_data['control_code']
         parameter_data = parsed_data['parameter_data']
+        bit_statuses = parsed_data['bit_statuses']
+
+        # Check if a specific status bit is set
+        is_sv_on = bit_statuses['SVON']
+        print(f"SVON status: {'ON' if is_sv_on else 'OFF'}")
+
+        # Retrieve a multi-bit value
+        sel_no_value = bit_statuses['SEL_NO']
+        print(f"SEL_NO value: {sel_no_value}")
+
 
         # Print extracted information
         print("Protocol Header:", hex(protocol_header))
-        print("Destination Address:", destination_address)
-        print("Control Code:", control_code)
+        print("Destination Address:", hex(destination_address))
+        print("Control Code:", hex(control_code))
         print("Parameter Data:", parameter_data)
         print_byte_array_as_spaced_hex(parameter_data, "Parameter Data:")
     except ValueError as e:
