@@ -12,10 +12,13 @@ RS485_ENABLE_PIN = 4  # pin for RS485 transmission enable
 LED_RED_PIN = 13           # pin assignments for LEDs
 LED_YLW_PIN = 19
 LED_GRN_PIN = 26
-RS485_send = ''
-RS485_read = ''
 
 app = Flask(__name__)
+
+# Initailize global variables for RS485 messages
+RS485_send = ''
+RS485_read = ''
+ser_port = None
 
 def initialize_gpio():
       GPIO.setmode(GPIO.BCM)
@@ -42,6 +45,7 @@ def cleanup_gpio():
 
 
 def initialize_serial():
+      global ser_port
       ser_port = serial.Serial("dev/ttyS0", 57600)
       ser_port.bytesize = serial.EIGHTBITS
       ser_port.parity = serial.PARITY_NONE
@@ -71,7 +75,7 @@ def index():
 
 @app.route("/<deviceName>/<action>")
 def action(deviceName, action):
-      global RS485_send, RS485_read, pwm_red_led
+      global RS485_send, RS485_read, pwm_red_led, ser_port
 
       # Initialize or update the device statuses
       ledRedSts = GPIO.input(LED_RED_PIN)
@@ -153,11 +157,12 @@ def action(deviceName, action):
       return render_template('index.html', **templateData)
 
 if __name__ == "__main__":
+   pwm_red_led = initialize_gpio()
+   initialize_serial()
    try:
-         pwm_red_led = initialize_gpio()
-         ser_port=initialize_serial()
          app.run(host='0.0.0.0', port=5000, debug = True)
    finally:
          pwm_red_led.stop()
          cleanup_gpio()
-         ser_port.close()
+         if ser_port:
+            ser_port.close()
