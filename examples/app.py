@@ -46,7 +46,7 @@ def cleanup_gpio():
 
 def initialize_serial():
       global ser_port
-      ser_port = serial.Serial("dev/ttyS0", 57600)
+      ser_port = serial.Serial("/dev/ttyS0", 57600)
       ser_port.bytesize = serial.EIGHTBITS
       ser_port.parity = serial.PARITY_NONE
       ser_port.stopbits = serial.STOPBITS_ONE
