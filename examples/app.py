@@ -56,6 +56,9 @@ def delay_ms(milliseconds):
       seconds = milliseconds / 1000.0 # Convert milliseconds to seconds
       sleep(seconds)
 
+def print_byte_array_as_spaced_hex(byte_array, data_name):
+    hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
+    print(f"{data_name}: {hex_string}")
 
 @app.route("/")
 def index():
@@ -96,7 +99,7 @@ def action(deviceName, action):
             print("SET PARAM 2!")
 
             bytes_object = bytes(ServoParams.SET_PARAM_2)
-            RS485_send = str(bytes_object)
+            RS485_send = print_byte_array_as_spaced_hex(bytes_object)
 
             ser_port.write(ServoParams.SET_PARAM_2)
             sleep(0.1)
