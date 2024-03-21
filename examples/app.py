@@ -128,9 +128,10 @@ def action(deviceName, action):
 
             print("Response: ")
             result = b''
+            num_bytes_available = ser_port.in_waiting()
             while time.time() < deadline:
-                  if ser_port.inWaiting() > 0:
-                        result = ser_port.read(ser_port.inWaiting())
+                  if num_bytes_available > 0:
+                        result = ser_port.read(num_bytes_available)
                   time.sleep(0.05) 
             print(result)
             RS485_read = print_byte_array_as_spaced_hex(result, f"{set_param_2_command}")
@@ -152,10 +153,11 @@ def action(deviceName, action):
             
             print("Response: ")
             result = b''
+            num_bytes_available = ser_port.in_waiting()
             while time.time() < deadline:
                   if ser_port.inWaiting() > 0:
-                        result = ser_port.read(ser_port.inWaiting())
-                  time.sleep(0.05) 
+                        result = ser_port.read(num_bytes_available)
+                  delay_ms(50) 
             print(result)
             RS485_read = print_byte_array_as_spaced_hex(result, f"{cmd_code}")
 
@@ -176,10 +178,11 @@ def action(deviceName, action):
 
             print("Response:")
             result = b''
+            num_bytes_available = ser_port.in_waiting()
             while time.time() < deadline:
                   if ser_port.inWaiting() > 0:
-                        result = ser_port.read(ser_port.inWaiting())
-                  delay_ms(50)
+                        result = ser_port.read(num_bytes_available)
+                  delay_ms(50) 
             print(result)
             RS485_read = print_byte_array_as_spaced_hex(servo_off_command, f"{cmd_code}")
       
@@ -193,11 +196,12 @@ def action(deviceName, action):
             
             print("Response:")
             result = b''
+            num_bytes_available = ser_port.in_waiting()
             while time.time() < deadline:
                   if ser_port.inWaiting() > 0:
-                        result = ser_port.read(ser_port.inWaiting())
-                  delay_ms(50)
-            print(result.hex)
+                        result = ser_port.read(num_bytes_available)
+                  delay_ms(50) 
+            print(result)
             RS485_read = parser.parse_message(result)
 
       elif action == "getIOOutput":
@@ -210,11 +214,12 @@ def action(deviceName, action):
 
             print("Response: ")
             result= b''
+            num_bytes_available = ser_port.in_waiting()
             while time.time() < deadline:
                   if ser_port.inWaiting() > 0:
-                        result = ser_port.read(ser_port.inWaiting())
-                  delay_ms(50)
-            print(result.hex)
+                        result = ser_port.read(num_bytes_available)
+                  delay_ms(50) 
+            print(result)
             RS485_read = fetcher.get_output_io_status(result)
 
       elif action == "setPoint_1":
@@ -262,15 +267,6 @@ def action(deviceName, action):
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
             
-            print("Response: ")
-            result = b''
-            while time.time() < deadline:
-                  if ser_port.inWaiting() > 0:
-                        result = ser_port.read(ser_port.inWaiting())
-                  time.sleep(0.05) 
-            print(result)
-            RS485_read = print_byte_array_as_spaced_hex(result, f"{cmd_code}")
-
       elif action == "motionStart":
             print("START")
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
@@ -293,12 +289,14 @@ def action(deviceName, action):
             RS485_send = print_byte_array_as_spaced_hex(motion_start_command, f"{cmd_code}")
             ser_port.write(motion_start_command)
 
+            delay_ms(50)
+            cmd_delay_time.calculate_transmission_time_ms(motion_start_command)
+
       elif action == "motionPause":
             print("PAUSE")
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.PAUSE, pause_toggle_bit)
-            temp_bit = not pause_toggle_bit
-            pause_toggle_bit = temp_bit
+            pause_toggle_bit ^= 1
             motion_start_command = cmd_generator.generate_message(
                   protocol_id,
                   destination_address,
@@ -308,16 +306,6 @@ def action(deviceName, action):
 
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(motion_start_command)
-
-            print("Response: ")
-            result=b''
-            while time.time() < deadline:
-                  if ser_port.inWaiting() > 0:
-                        result = ser_port.read(ser_port.inWaiting())
-                  delay_ms(50)
-            print(result)
-            RS485_read = print_byte_array_as_spaced_hex(result, f"{cmd_code}")
-      
 
       templateData = {
             'title':'GPIO output Status!',
