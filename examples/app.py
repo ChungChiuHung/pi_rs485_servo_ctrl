@@ -190,7 +190,7 @@ def action(deviceName, action):
             result = b''
             while time.time() < deadline:
                   if ser_port.inWaiting() > 0:
-                        result += ser_port.read(ser_port.inWaiting())
+                        result = ser_port.read(ser_port.inWaiting())
                   delay_ms(50)
             print(result.hex)
             RS485_read = parser.parse_message(result)
