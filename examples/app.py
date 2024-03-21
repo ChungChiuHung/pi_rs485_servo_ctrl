@@ -201,7 +201,15 @@ def action(deviceName, action):
                         result += ser_port.read(ser_port.inWaiting())
                   delay_ms(50) 
             print(result)
-            RS485_read = print_byte_array_as_spaced_hex(result, f"{get_state_value_command}")
+            print_byte_array_as_spaced_hex(result, f"{get_state_value_command}")
+            try:
+                  parsed_data = parser.parse_message(result)
+                  print("Parsed response data:", parsed_data)
+                  RS485_read = parsed_data
+
+            except ValueError as e:
+                  print("Error parsing response message:", e)
+
 
 
       elif action == "getIOOutput":
