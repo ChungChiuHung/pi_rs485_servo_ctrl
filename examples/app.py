@@ -102,6 +102,9 @@ def action(deviceName, action):
       parser = ResponseMsgParser()
       cmd_delay_time = CmdDelayTime(57600)
 
+      # Config the waiting reponse timeout
+      timeout = 1 # Timeout in second
+      deadline = time.time() + timeout
 
       protocol_id=1
       destination_address = 1
@@ -119,8 +122,6 @@ def action(deviceName, action):
             cmd_delay_time.calculate_transmission_time_ms(set_param_2_command)
 
             print("Response: ")
-            timeout = 1 # Timeout in second
-            deadline = time.time() + timeout
             result = b''
             while time.time() < deadline:
                   if ser_port.inWaiting() > 0:
@@ -145,11 +146,7 @@ def action(deviceName, action):
             cmd_delay_time.calculate_transmission_time_ms(servo_on_command)
             
             print("Response: ")
-
-            timeout = 1 # Timeout in second
-            deadline = time.time() + timeout
             result = b''
-
             while time.time() < deadline:
                   if ser_port.inWaiting() > 0:
                         result += ser_port.read(ser_port.inWaiting())
@@ -173,30 +170,30 @@ def action(deviceName, action):
             cmd_delay_time.calculate_transmission_time_ms(servo_off_command)
 
             print("Response:")
-
-            timeout = 1 # Timeout in second
-            deadline = time.time() + timeout
             result = b''
-
             while time.time() < deadline:
                   if ser_port.inWaiting() > 0:
                         result += ser_port.read(ser_port.inWaiting())
-                  time.sleep(0.05) 
+                  delay_ms(50)
             print(result)
             RS485_read = parser.parse_message(result)
       
-      elif action == "getMsg":
-            print("GET VALUE")
-            bytes_object = bytes(ServoParams.GET_STATE_VALUE_4)
-            RS485_send = str(bytes_object)
-            ser_port.write(ServoParams.GET_STATE_VALUE_4)
-            sleep(0.1)
+      elif action == "getMsg":            
+            get_io_command = ServoParams.GET_INPUT_IO
+            RS485_send = print_byte_array_as_spaced_hex(get_io_command)
+            ser_port.write(get_io_command)
+
+            delay_ms(50)
+            cmd_delay_time.calculate_transmission_time_ms(get_io_command)
+            
             print("Response:")
-            result_1 = ser_port.inWaiting()
-            result_2 = ser_port.read(ser_port.inWaiting())
-            print(result_1)
-            print(result_2)
-            RS485_read = str(result_2)
+            result = b''
+            while time.time() < deadline:
+                  if ser_port.inWaiting() > 0:
+                        result += ser_port.read(ser_port.inWaiting())
+                  delay_ms(50)
+            print(result.hex)
+            RS485_read = parser.parse_message(result)
 
       templateData = {
             'title':'GPIO output Status!',
