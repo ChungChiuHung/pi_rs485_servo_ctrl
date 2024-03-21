@@ -192,9 +192,17 @@ def action(deviceName, action):
             ser_port.write(get_state_value_command)
 
             delay_ms(50)
-            cmd_delay_time.calculate_transmission_time_ms(get_io_command)
+            cmd_delay_time.calculate_transmission_time_ms(get_state_value_command)
             
             print("Response:")
+            result= b''
+            num_bytes_available = ser_port.inWaiting()
+            while time.time() < deadline:
+                  if num_bytes_available > 0:
+                        result = ser_port.read(num_bytes_available)
+                  delay_ms(50) 
+            print(result)
+            RS485_read = print_byte_array_as_spaced_hex(servo_off_command, f"{cmd_code}")
 
 
       elif action == "getIOOutput":
@@ -207,13 +215,6 @@ def action(deviceName, action):
 
             print("Response: ")
             result= b''
-            num_bytes_available = ser_port.inWaiting()
-            while time.time() < deadline:
-                  if num_bytes_available > 0:
-                        result = ser_port.read(num_bytes_available)
-                  delay_ms(50) 
-            print(result)
-            RS485_read = print_byte_array_as_spaced_hex(servo_off_command, f"{cmd_code}")
             num_bytes_available = ser_port.inWaiting()
             while time.time() < deadline:
                   if num_bytes_available > 0:
