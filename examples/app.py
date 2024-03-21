@@ -213,7 +213,9 @@ def action(deviceName, action):
 
 
       elif action == "getIOOutput":
-            fetcher.get_output_io_status()
+
+            RS485_read = fetcher.get_output_io_status()
+            print(RS485_read)
             #get_io_output_command = ServoParams.GET_OUTPUT_IO
             #RS485_send = print_byte_array_as_spaced_hex(get_io_output_command, "Command Code:")
             #ser_port.write(get_io_output_command)
