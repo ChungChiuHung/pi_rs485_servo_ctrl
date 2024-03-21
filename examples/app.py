@@ -210,35 +210,9 @@ def action(deviceName, action):
             except ValueError as e:
                   print("Error parsing response message:", e)
 
-
-
       elif action == "getIOOutput":
-
             RS485_read = fetcher.get_output_io_status()
             print(RS485_read)
-            #get_io_output_command = ServoParams.GET_OUTPUT_IO
-            #RS485_send = print_byte_array_as_spaced_hex(get_io_output_command, "Command Code:")
-            #ser_port.write(get_io_output_command)
-
-            #delay_ms(50)
-            #cmd_delay_time.calculate_transmission_time_ms(get_io_output_command)
-
-            #print("Response: ")
-            #result= b''
-            #while time.time() < deadline:
-            #      if ser_port.inWaiting() > 0:
-            #            result += ser_port.read(ser_port.inWaiting())
-            #      delay_ms(50) 
-            #print(result)
-            #print("Final Result: ",result)
-            #print_byte_array_as_spaced_hex(result, "Data Before Parse: ")
-            #try:
-            #      parsed_data = fetcher.get_output_io_status(result)
-            #      print("Parsed response data:", parsed_data)
-            #      RS485_read = parsed_data
-
-            #except ValueError as e:
-            #      print("Error parsing response message:", e)
 
       elif action == "setPoint_1":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
