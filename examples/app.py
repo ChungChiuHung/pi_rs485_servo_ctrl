@@ -195,14 +195,12 @@ def action(deviceName, action):
             #cmd_delay_time.calculate_transmission_time_ms(get_io_command)
             
             print("Response:")
-            result = b''
 
-            response = ""
+            response = b''
 
             while ser_port.in_waiting > 0 or not response:
-                  if num_bytes_available > 0:
-                        response_part = ser_port.readline()
-                        response += response_part
+                  response_part = ser_port.readline()
+                  response += response_part
                   if response.endswith('\n'):
                         break
                   delay_ms(100)
