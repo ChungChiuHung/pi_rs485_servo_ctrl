@@ -7,6 +7,7 @@
     <body>
         <main>
             <section class="actuators">
+                <!--
                 <h1>Actuators</h1>
                 <div class="status">
                     <h2>Status</h2>
@@ -14,6 +15,7 @@
                     <p>YLW LED ==> <span>{{ ledYlw }}</span></p>
                     <p>GRN LED ==> <span>{{ ledGrn }}</span></p>
                 </div>
+                -->
                 <div class="rs485">
                     <h1>RS485 R/W Status</h1>
                     <p>RS-485 Send ==> <span>{{ RS485_send }}</span></p>
@@ -21,13 +23,17 @@
                 </div>
                 <div class="commands">
                     <h2>Commands</h2>
+                    <!--
                     <p>PWM RED LED Ctrl ==> <a href="/ledRed/on" class="button">TURN ON</a> <a href="/ledRed/off" class="button">TURN OFF</a></p>
                     <p>GPIO YLW LED Ctrl ==> <a href="/ledYlw/on" class="button">TURN ON</a> <a href="/ledYlw/off" class="button">TURN OFF</a></p>
-                    <p>GPIO GRN LED Ctrl ==> <a href="/ledGrn/on" class="button">TURN ON</a> <a href="/ledGrn/off" class="button">TURN OFF</a></p>
+                    <p>GPIO GRN LED Ctrl ==> <a href="/ledGrn/on" class="button">TURN ON</a> <a href="/ledGrn/off" class="button">TURN OFF</a></p>   
+                    -->
                     <p>RS-485 R/W Ctrl ==> <a href="/RS485/servoOn" class="button">SERVO ON</a></p>
                     <p>RS-485 R/W Ctrl ==> <a href="/RS485/servoOff" class="button">SERVO OFF</a></p>
                     <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/getMsg" class="button">GET STATE VALUE</a></p>
-                    <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/setPoint" class="button">SET POINT</a></p>
+                    <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/setPoint_1" class="button">SET POINT 1</a></p>
+                    <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/setPoint_2" class="button">SET POINT 2</a></p>
+                    <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/Home" class="button">HOME</a></p>
                     <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/motionStart" class="button">MOTION START</a></p>
                     <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/motionPause" class="button">MOTION PAUSE</a></p>
 
