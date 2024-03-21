@@ -28,8 +28,8 @@ class ResponseMsgParser:
         return bit_statuses
 
     def parse_message(self, message):
-        #if len(message) < 8:
-        #    raise ValueError("Invalid message length")
+        if len(message) < 6:
+            raise ValueError("Invalid message length")
         
         protocol_header = message[0]
         destination_address = message[1]
