@@ -10,6 +10,7 @@ from command_code import CmdCode
 from set_servo_io_status import SetServoIOStatus
 from set_servo_io_status import BitMap
 from cal_cmd_response_time import CmdDelayTime
+from io_status_fetcher import IOStatusFetcher
 
 # Define your GPIO pins upfront
 RS485_ENABLE_PIN = 4  # pin for RS485 transmission enable
@@ -100,6 +101,8 @@ def action(deviceName, action):
       cmd_generator = BaseMsgGenerator()
       setter = SetServoIOStatus()
       parser = ResponseMsgParser()
+      fetcher = IOStatusFetcher()
+
       cmd_delay_time = CmdDelayTime(57600)
 
       # Config the waiting reponse timeout
@@ -194,6 +197,23 @@ def action(deviceName, action):
                   delay_ms(50)
             print(result.hex)
             RS485_read = parser.parse_message(result)
+
+      elif action == "getIOOutput":
+            get_io_output_command = ServoParams.GET_OUTPUT_IO
+            RS485_send = print_byte_array_as_spaced_hex(get_io_output_command, f"GET OUTPUT IO")
+            ser_port.write(get_io_output_command)
+
+            delay_ms(50)
+            cmd_delay_time.calculate_transmission_time_ms(get_io_output_command)
+
+            print("Response: ")
+            result= b''
+            while time.time() < deadline:
+                  if ser_port.inWaiting() > 0:
+                        result = ser_port.read(ser_port.in_waiting())
+                  delay_ms(50)
+            print(result.hex)
+            RS485_read = fetcher.get_output_io_status(result)
 
       elif action == "setPoint_1":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
