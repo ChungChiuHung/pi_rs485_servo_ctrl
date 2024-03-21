@@ -132,7 +132,7 @@ def action(deviceName, action):
             while time.time() < deadline:
                   if num_bytes_available > 0:
                         result = ser_port.read(num_bytes_available)
-                  time.sleep(0.05) 
+                  delay_ms(50) 
             print(result)
             RS485_read = print_byte_array_as_spaced_hex(result, f"{set_param_2_command}")
 
@@ -153,10 +153,9 @@ def action(deviceName, action):
             
             print("Response: ")
             result = b''
-            num_bytes_available = ser_port.inWaiting()
             while time.time() < deadline:
-                  if num_bytes_available > 0:
-                        result = ser_port.read(num_bytes_available)
+                  if ser_port.in_waiting() > 0:
+                        result = ser_port.read(ser_port.inWaiting())
                   delay_ms(50) 
             print(result)
             RS485_read = print_byte_array_as_spaced_hex(result, f"{cmd_code}")
