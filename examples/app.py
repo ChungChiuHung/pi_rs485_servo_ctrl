@@ -196,13 +196,12 @@ def action(deviceName, action):
             
             print("Response:")
             result= b''
-            num_bytes_available = ser_port.inWaiting()
             while time.time() < deadline:
-                  if num_bytes_available > 0:
-                        result = ser_port.read(num_bytes_available)
+                  if ser_port.inWating() > 0:
+                        result += ser_port.read(ser_port.inWaiting())
                   delay_ms(50) 
             print(result)
-            RS485_read = print_byte_array_as_spaced_hex(servo_off_command, f"{cmd_code}")
+            RS485_read = print_byte_array_as_spaced_hex(get_state_value_command, f"{cmd_code}")
 
 
       elif action == "getIOOutput":
