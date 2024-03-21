@@ -1,0 +1,21 @@
+172.20.10.5 - - [21/Mar/2024 17:55:48] "GET /recieveMsg/getIOOutput HTTP/1.1" 200 -
+{"MEND": false, "PAUSED": false, "HEND": false, "POINT_SELECT": 5, "MEND_T_LIMIT": false, "POSIN": false, "SREDY": true, "T_LIMIT": false, "MBRK": true, "SERVO": true, "ALM": false}
+172.20.10.5 - - [21/Mar/2024 17:55:50] "GET /recieveMsg/getIOOutput HTTP/1.1" 200 -
+{"MEND": false, "PAUSED": false, "HEND": false, "POINT_SELECT": 5, "MEND_T_LIMIT": false, "POSIN": false, "SREDY": true, "T_LIMIT": false, "MBRK": true, "SERVO": true, "ALM": false}
+172.20.10.5 - - [21/Mar/2024 17:55:51] "GET /recieveMsg/getIOOutput HTTP/1.1" 200 -
+{"MEND": false, "PAUSED": false, "HEND": false, "POINT_SELECT": 5, "MEND_T_LIMIT": false, "POSIN": false, "SREDY": true, "T_LIMIT": false, "MBRK": true, "SERVO": true, "ALM": false}
+172.20.10.5 - - [21/Mar/2024 17:55:52] "GET /recieveMsg/getIOOutput HTTP/1.1" 200 -
+{"MEND": false, "PAUSED": false, "HEND": false, "POINT_SELECT": 5, "MEND_T_LIMIT": false, "POSIN": false, "SREDY": true, "T_LIMIT": false, "MBRK": true, "SERVO": true, "ALM": false}
+172.20.10.5 - - [21/Mar/2024 17:55:54] "GET /recieveMsg/getIOOutput HTTP/1.1" 200 -
+{"MEND": false, "PAUSED": false, "HEND": false, "POINT_SELECT": 5, "MEND_T_LIMIT": false, "POSIN": false, "SREDY": true, "T_LIMIT": false, "MBRK": true, "SERVO": true, "ALM": false}
+172.20.10.5 - - [21/Mar/2024 17:55:55] "GET /recieveMsg/getIOOutput HTTP/1.1" 200 -
+{"MEND": false, "PAUSED": false, "HEND": false, "POINT_SELECT": 5, "MEND_T_LIMIT": false, "POSIN": false, "SREDY": true, "T_LIMIT": false, "MBRK": true, "SERVO": true, "ALM": false}
+172.20.10.5 - - [21/Mar/2024 17:55:56] "GET /recieveMsg/getIOOutput HTTP/1.1" 200 -
+{"MEND": false, "PAUSED": false, "HEND": false, "POINT_SELECT": 5, "MEND_T_LIMIT": false, "POSIN": false, "SREDY": true, "T_LIMIT": false, "MBRK": true, "SERVO": true, "ALM": false}
+172.20.10.5 - - [21/Mar/2024 17:55:57] "GET /recieveMsg/getIOOutput HTTP/1.1" 200 -
+{"MEND": false, "PAUSED": false, "HEND": false, "POINT_SELECT": 5, "MEND_T_LIMIT": false, "POSIN": false, "SREDY": true, "T_LIMIT": false, "MBRK": true, "SERVO": true, "ALM": false}
+172.20.10.5 - - [21/Mar/2024 17:55:59] "GET /recieveMsg/getIOOutput HTTP/1.1" 200 -
+{"MEND": true, "PAUSED": false, "HEND": false, "POINT_SELECT": 6, "MEND_T_LIMIT": false, "POSIN": true, "SREDY": true, "T_LIMIT": false, "MBRK": true, "SERVO": true, "ALM": false}
+172.20.10.5 - - [21/Mar/2024 17:56:00] "GET /recieveMsg/getIOOutput HTTP/1.1" 200 -
+{"MEND": true, "PAUSED": false, "HEND": false, "POINT_SELECT": 6, "MEND_T_LIMIT": false, "POSIN": true, "SREDY": true, "T_LIMIT": false, "MBRK": true, "SERVO": true, "ALM": false}
+172.20.10.5 - - [21/Mar/2024 17:56:02] "GET /recieveMsg/getIOOutput HTTP/1.1" 200 -
