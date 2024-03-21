@@ -195,6 +195,36 @@ def action(deviceName, action):
             print(result.hex)
             RS485_read = parser.parse_message(result)
 
+      elif action == "setPoint":
+            cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
+            parameter_data = setter.set_bit_status(BitMap.SEL_NO, 1)
+            point_sel_command = cmd_generator.generate_message(
+                  protocol_id,
+                  destination_address,
+                  dir_bit, error_code, cmd_code, parameter_data)
+            
+            RS485_send = print_byte_array_as_spaced_hex(point_sel_command, f"{cmd_code}")
+            ser_port.write(point_sel_command)
+
+            # Fixed delay plus transmission delay calculation
+            delay_ms(50)
+            cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
+            
+            print("Response: ")
+            result = b''
+            while time.time() < deadline:
+                  if ser_port.inWaiting() > 0:
+                        result += ser_port.read(ser_port.inWaiting())
+                  time.sleep(0.05) 
+            print(result)
+            RS485_read = parser.parse_message(result)
+      
+      elif action == "motionStart":
+            print("START")
+      elif action == "motionPause":
+            print("PAUSE")
+
+
       templateData = {
             'title':'GPIO output Status!',
             'ledRed' : ledRedSts,
