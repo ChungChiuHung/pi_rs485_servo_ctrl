@@ -111,6 +111,15 @@ def action(deviceName, action):
       if action == "servoOn":
             print("SERVO ON")            
 
+            cmd_code = CmdCode.SET_PARAM_2.value
+            set_param_2_command = cmd_generator.generate_message(
+                  protocol_id,
+                  destination_address,
+                  dir_bit, error_code, cmd_code, parameter_data)
+            
+            print_byte_array_as_spaced_hex(set_param_2_command)
+
+
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.SVON, 1)
             servo_on_command = cmd_generator.generate_message(
