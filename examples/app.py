@@ -101,7 +101,7 @@ def action(deviceName, action):
       cmd_generator = BaseMsgGenerator()
       setter = SetServoIOStatus()
       parser = ResponseMsgParser()
-      fetcher = IOStatusFetcher()
+      fetcher = IOStatusFetcher(ser_port)
 
       cmd_delay_time = CmdDelayTime(57600)
 
