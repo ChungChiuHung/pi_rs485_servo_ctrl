@@ -103,6 +103,8 @@ def action(deviceName, action):
       parser = ResponseMsgParser()
       fetcher = IOStatusFetcher(ser_port)
 
+      pause_toggle_bit = True
+
       cmd_delay_time = CmdDelayTime(57600)
 
       # Config the waiting reponse timeout
@@ -128,7 +130,7 @@ def action(deviceName, action):
             result = b''
             while time.time() < deadline:
                   if ser_port.inWaiting() > 0:
-                        result += ser_port.read(ser_port.inWaiting())
+                        result = ser_port.read(ser_port.inWaiting())
                   time.sleep(0.05) 
             print(result)
             RS485_read = print_byte_array_as_spaced_hex(result, f"{set_param_2_command}")
@@ -152,7 +154,7 @@ def action(deviceName, action):
             result = b''
             while time.time() < deadline:
                   if ser_port.inWaiting() > 0:
-                        result += ser_port.read(ser_port.inWaiting())
+                        result = ser_port.read(ser_port.inWaiting())
                   time.sleep(0.05) 
             print(result)
             RS485_read = print_byte_array_as_spaced_hex(result, f"{cmd_code}")
@@ -176,7 +178,7 @@ def action(deviceName, action):
             result = b''
             while time.time() < deadline:
                   if ser_port.inWaiting() > 0:
-                        result += ser_port.read(ser_port.inWaiting())
+                        result = ser_port.read(ser_port.inWaiting())
                   delay_ms(50)
             print(result)
             RS485_read = print_byte_array_as_spaced_hex(servo_off_command, f"{cmd_code}")
@@ -210,7 +212,7 @@ def action(deviceName, action):
             result= b''
             while time.time() < deadline:
                   if ser_port.inWaiting() > 0:
-                        result = ser_port.read(ser_port.in_waiting())
+                        result = ser_port.read(ser_port.inWaiting())
                   delay_ms(50)
             print(result.hex)
             RS485_read = fetcher.get_output_io_status(result)
@@ -264,7 +266,7 @@ def action(deviceName, action):
             result = b''
             while time.time() < deadline:
                   if ser_port.inWaiting() > 0:
-                        result += ser_port.read(ser_port.inWaiting())
+                        result = ser_port.read(ser_port.inWaiting())
                   time.sleep(0.05) 
             print(result)
             RS485_read = print_byte_array_as_spaced_hex(result, f"{cmd_code}")
@@ -294,7 +296,9 @@ def action(deviceName, action):
       elif action == "motionPause":
             print("PAUSE")
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
-            parameter_data = setter.set_bit_status(BitMap.PAUSE, 1)
+            parameter_data = setter.set_bit_status(BitMap.PAUSE, pause_toggle_bit)
+            temp_bit = not pause_toggle_bit
+            pause_toggle_bit = temp_bit
             motion_start_command = cmd_generator.generate_message(
                   protocol_id,
                   destination_address,
@@ -309,7 +313,7 @@ def action(deviceName, action):
             result=b''
             while time.time() < deadline:
                   if ser_port.inWaiting() > 0:
-                        result += ser_port.read(ser_port.in_waiting())
+                        result = ser_port.read(ser_port.inWating())
                   delay_ms(50)
             print(result)
             RS485_read = print_byte_array_as_spaced_hex(result, f"{cmd_code}")
