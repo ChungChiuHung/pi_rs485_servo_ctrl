@@ -128,7 +128,7 @@ def action(deviceName, action):
 
             print("Response: ")
             result = b''
-            num_bytes_available = ser_port.in_waiting()
+            num_bytes_available = ser_port.inWaiting()
             while time.time() < deadline:
                   if num_bytes_available > 0:
                         result = ser_port.read(num_bytes_available)
@@ -153,9 +153,9 @@ def action(deviceName, action):
             
             print("Response: ")
             result = b''
-            num_bytes_available = ser_port.in_waiting()
+            num_bytes_available = ser_port.inWaiting()
             while time.time() < deadline:
-                  if ser_port.inWaiting() > 0:
+                  if num_bytes_available > 0:
                         result = ser_port.read(num_bytes_available)
                   delay_ms(50) 
             print(result)
@@ -178,9 +178,9 @@ def action(deviceName, action):
 
             print("Response:")
             result = b''
-            num_bytes_available = ser_port.in_waiting()
+            num_bytes_available = ser_port.inWaiting()
             while time.time() < deadline:
-                  if ser_port.inWaiting() > 0:
+                  if num_bytes_available > 0:
                         result = ser_port.read(num_bytes_available)
                   delay_ms(50) 
             print(result)
@@ -196,9 +196,9 @@ def action(deviceName, action):
             
             print("Response:")
             result = b''
-            num_bytes_available = ser_port.in_waiting()
+            num_bytes_available = ser_port.inWaiting()
             while time.time() < deadline:
-                  if ser_port.inWaiting() > 0:
+                  if num_bytes_available > 0:
                         result = ser_port.read(num_bytes_available)
                   delay_ms(50) 
             print(result)
@@ -214,9 +214,9 @@ def action(deviceName, action):
 
             print("Response: ")
             result= b''
-            num_bytes_available = ser_port.in_waiting()
+            num_bytes_available = ser_port.inWaiting()
             while time.time() < deadline:
-                  if ser_port.inWaiting() > 0:
+                  if num_bytes_available > 0:
                         result = ser_port.read(num_bytes_available)
                   delay_ms(50) 
             print(result)
