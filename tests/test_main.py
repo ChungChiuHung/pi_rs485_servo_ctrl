@@ -1,13 +1,12 @@
 import unittest
-from message_generator import MessageGenerator
-from base_msg_generator import BaseMsgGenerator
-from command_code import CmdCode
-from servo_params import ServoParams
-from io_status_fetcher import IOStatusFetcher, IOStatusFetcher_Test
-from cal_cmd_response_time import CmdDelayTime
-from status_bit_mapping import BitMap, BitMapOutput
-from set_servo_io_status import SetServoIOStatus
-from response_parsing import ResponseMsgParser
+
+from test_base_msg_generator import BaseMsgGenerator
+from test_command_code import CmdCode
+from test_io_status_fetcher import IOStatusFetcher_Test
+from test_cal_cmd_response_time import CmdDelayTime
+from test_status_bit_mapping import BitMap
+from test_set_servo_io_status import SetServoIOStatus
+from test_response_parsing import ResponseMsgParser
 import math
 
 class TestServoCommunication(unittest.TestCase):

@@ -1,139 +1,142 @@
 import RPi.GPIO as GPIO
 import serial
-from time import sleep
+from time import time, sleep
 from flask import Flask, render_template, request
+from servo_params import ServoParams
+from base_msg_generator import BaseMsgGenerator
+from response_parsing import ResponseMsgParser
+from command_code import CmdCode
+from set_servo_io_status import SetServoIOStatus
+from set_servo_io_status import BitMap
+from cal_cmd_response_time import CmdDelayTime
 
-servo_comm = load.module("~/worktemp/rpiWebServer_RS485_ServoCtrl")
-from servo_comm.crc import CRC16CCITT
-from servo_comm.servoparams import ServoParams
-
-def delay_ms(milliseconds):
-      """
-      Delay execution for a given number of milliseconds.
-      Parameters:
-      milliseconds (int): The number of milliseconds to delay.
-      """
-      seconds = milliseconds / 1000.0 # Convert milliseconds to seconds
-      time.sleep(seconds)
-
-# RSE TX/RX Control Pin
-RS485_ENABLE_PIN = 4
+# Define your GPIO pins upfront
+RS485_ENABLE_PIN = 4  # pin for RS485 transmission enable
+LED_RED_PIN = 13           # pin assignments for LEDs
+LED_YLW_PIN = 19
+LED_GRN_PIN = 26
 
 app = Flask(__name__)
-GPIO.setmode(GPIO.BCM)
-GPIO.setwarnings(False)
-GPIO.setup(RS485_ENABLE_PIN, GPIO.OUT)
-GPIO.output(RS485_ENABLE_PIN, GPIO.HIGH) # Set High to Transimit
 
-# Open Serial Port ttyAMA0 (Replace ttyS0 With ttyAM0 for Pi1,Pi2,Pi0)
-# 57600, N, 8, 1
-ser_port = serial.Serial("/dev/ttyS0",57600)
-ser_port.bytesize = serial.EIGHTBITS
-ser_port.parity = serial.PARITY_NONE
-ser_port.stopbits = serial.STOPBITS_ONE
+# Initailize global variables for RS485 messages
+RS485_send = ''
+RS485_read = ''
+ser_port = None
 
-# ser_port.timeout = 0.5
-# ser_port.write_timeout = 0.5
+def initialize_gpio():
+      GPIO.setmode(GPIO.BCM)
+      GPIO.setwarnings(False)
+      GPIO.setup(RS485_ENABLE_PIN, GPIO.OUT)
+      GPIO.output(RS485_ENABLE_PIN, GPIO.HIGH) # Set High to Transmit
 
-# define actuators GPIO
-ledRed = 13
-ledYlw = 19
-ledGrn = 26
+      GPIO.setup(LED_RED_PIN, GPIO.OUT)
+      GPIO.setup(LED_YLW_PIN, GPIO.OUT)
+      GPIO.setup(LED_GRN_PIN, GPIO.OUT)
+      GPIO.output(LED_RED_PIN, GPIO.LOW)
+      GPIO.output(LED_YLW_PIN, GPIO.LOW)
+      GPIO.output(LED_GRN_PIN, GPIO.LOW)
 
-# initialize GPIO status variables
-ledRedSts = 0
-ledYlwSts = 0
-ledGrnSts = 0
+      # To create a PWM instance
+      # GPIO.PWM(pinNumber, Frequency)
+      pwm_red_led = GPIO.PWM(LED_RED_PIN, 2)
+      pwm_red_led.start(0) # Start PWM with 0% duty cycle (off)
 
-RS485_send = ""
-RS485_read = ""
+      return pwm_red_led
 
-# Define led pins as output 
-GPIO.setup(ledRed, GPIO.OUT)
-GPIO.setup(ledYlw, GPIO.OUT)
-GPIO.setup(ledGrn, GPIO.OUT)
-
-# To create a PWM instance
-# GPIO.PWM(pinNumber, Frequency)
-p = GPIO.PWM(ledRed, 2)
+def cleanup_gpio():
+      GPIO.cleanup()
 
 
-# Turn leds OFF
-GPIO.output(ledRed, GPIO.LOW)
-GPIO.output(ledYlw, GPIO.LOW)
-GPIO.output(ledGrn, GPIO.LOW)
+def initialize_serial():
+      global ser_port
+      ser_port = serial.Serial("/dev/ttyS0", 57600)
+      ser_port.bytesize = serial.EIGHTBITS
+      ser_port.parity = serial.PARITY_NONE
+      ser_port.stopbits = serial.STOPBITS_ONE
+      return ser_port
 
+def delay_ms(milliseconds):
+      seconds = milliseconds / 1000.0 # Convert milliseconds to seconds
+      sleep(seconds)
+
+def print_byte_array_as_spaced_hex(byte_array, data_name):
+    hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
+    print(f"{data_name}: {hex_string}")
 
 @app.route("/")
 def index():
-	# Read Sensors Status
-	ledRedSts = GPIO.input(ledRed)
-	ledYlwSts = GPIO.input(ledYlw)
-	ledGrnSts = GPIO.input(ledGrn)
+      ledRedSts = GPIO.input(LED_RED_PIN)
+      ledYlwSts = GPIO.input(LED_YLW_PIN)
+      ledGrnSts = GPIO.input(LED_GRN_PIN)
 
-	templateData = {
-      'title' : 'GPIO output Status!',
-      'ledRed'  : ledRedSts,
-      'ledYlw'  : ledYlwSts,
-      'ledGrn'  : ledGrnSts,
-      'RS485_read':RS485_read,
-      'RS485_send':RS485_send,
+      templateData = {
+        'title': 'GPIO output Status!',
+        'ledRed': ledRedSts,
+        'ledYlw': ledYlwSts,
+        'ledGrn': ledGrnSts,
+        'RS485_read': RS485_read,
+        'RS485_send': RS485_send,
       }
-	return render_template('index.html', **templateData)
+      return render_template('index.html', **templateData) 
 
 @app.route("/<deviceName>/<action>")
 def action(deviceName, action):
-      if deviceName == 'ledRed':
-            actuator = ledRed
-      if deviceName == 'ledYlw':
-            actuator = ledYlw
-      if deviceName == 'ledGrn':
-            actuator = ledGrn
-      if deviceName == 'RS485':
-            print("Send Msg!!")
-      if deviceName == 'recieveMsg':
-            print("Get Msg!!")
+      global RS485_send, RS485_read, pwm_red_led, ser_port
 
-      if action == "on":
-            if actuator == ledRed:
-                  p.start(50)
-                  print("Start PWM!")
-            else:
-                  GPIO.output(actuator, GPIO.HIGH)
-      elif action == "off":
-            if actuator == ledRed:
-                  p.stop()
-                  print("Stop PWM!")
-            else: 
-                  GPIO.output(actuator, GPIO.LOW)
-      
-      elif action == "servoOn":
+      # Initialize or update the device statuses
+      ledRedSts = GPIO.input(LED_RED_PIN)
+      ledYlwSts = GPIO.input(LED_YLW_PIN)
+      ledGrnSts = GPIO.input(LED_GRN_PIN)
+
+      # After performing actions, update the statuses if needed
+      if deviceName == 'ledRed' and action in ['on', 'off']:
+            ledRedSts = GPIO.input(LED_RED_PIN)
+      elif deviceName == 'ledYlw' and action in ['on', 'off']:
+            ledYlwSts = GPIO.input(LED_YLW_PIN)
+      elif deviceName == 'ledGrn' and action in ['on', 'off']:
+            ledGrnSts = GPIO.input(LED_GRN_PIN)
+
+      cmd_generator = BaseMsgGenerator()
+      setter = SetServoIOStatus()
+      parser = ResponseMsgParser()
+      cmd_delay_time = CmdDelayTime(57600)
+
+
+      protocol_id=1
+      destination_address = 1
+      dir_bit = 0
+      error_code = 0
+
+
+      if action == "servoOn":
             print("SERVO ON")            
-            print("SET PARAM 2!")
 
-            bytes_object = bytes(ServoParams.SET_PARAM_2)
-            RS485_send = str(bytes_object)
+            cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
+            parameter_data = setter.set_bit_status(BitMap.SVON, 1)
+            servo_on_command = cmd_generator.generate_message(
+                  protocol_id,
+                  destination_address,
+                  dir_bit, error_code, cmd_code, parameter_data)
+            
+            RS485_send = print_byte_array_as_spaced_hex(servo_on_command, f"{cmd_code}")
+            ser_port.write(servo_on_command)
 
-            ser_port.write(ServoParams.SET_PARAM_2)
-            sleep(0.1)
+            # Fixed delay plus transmission delay calculation
+            delay_ms(50)
+            cmd_delay_time.calculate_transmission_time_ms(servo_on_command)
+            
             print("Response: ")
-            result_1 = ser_port.inWaiting()
-            result_2 = ser_port.read(ser_port.inWaiting())
-            print(result_1)
-            print(result_2)
 
-            RS485_read = str(result_2)
+            timeout = 1 # Timeout in second
+            deadline = time.time() + timeout
+            result = b''
 
-            print("SERVO ON")
-            ser_port.write(ServoParams.SERVO_ON)
-            # ser_port.write(result_data_with_crc_list)
-            sleep(0.1)
-
-            print("Response:")
-            result_1 = ser_port.inWaiting()
-            result_2 = ser_port.read(ser_port.inWaiting())
-            print(result_1)
-            print(result_2)
+            while time.time() < deadline:
+                  if ser_port.inWaiting() > 0:
+                        result += ser_port.read(ser_port.inWaiting())
+                  time.sleep(0.05) 
+            print(result)
+            RS485_read = parser.parse_message(result)
 
       elif action == "servoOff":
             print("SERVO OFF")
@@ -160,14 +163,9 @@ def action(deviceName, action):
             print(result_1)
             print(result_2)
             RS485_read = str(result_2)
-      
-      p.ChangeFrequency(2)
-      ledRedSts = GPIO.input(ledRed)
-      ledYlwSts = GPIO.input(ledYlw)
-      ledGrnSts = GPIO.input(ledGrn)
-
 
       templateData = {
+            'title':'GPIO output Status!',
             'ledRed' : ledRedSts,
             'ledYlw' : ledYlwSts,
             'ledGrn' : ledGrnSts,
@@ -176,5 +174,14 @@ def action(deviceName, action):
       }
 
       return render_template('index.html', **templateData)
+
 if __name__ == "__main__":
-   app.run(host='0.0.0.0', port=5000, debug=True)
+   pwm_red_led = initialize_gpio()
+   initialize_serial()
+   try:
+         app.run(host='0.0.0.0', port=5000, debug = True)
+   finally:
+         pwm_red_led.stop()
+         cleanup_gpio()
+         if ser_port:
+            ser_port.close()
