@@ -209,15 +209,6 @@ def action(deviceName, action):
             # Fixed delay plus transmission delay calculation
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
-            
-            print("Response: ")
-            result = b''
-            while time.time() < deadline:
-                  if ser_port.inWaiting() > 0:
-                        result += ser_port.read(ser_port.inWaiting())
-                  time.sleep(0.05) 
-            print(result)
-            RS485_read = print_byte_array_as_spaced_hex(result, f"{cmd_code}")
 
       elif action == "setPoint_2":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
@@ -233,15 +224,6 @@ def action(deviceName, action):
             # Fixed delay plus transmission delay calculation
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
-            
-            print("Response: ")
-            result = b''
-            while time.time() < deadline:
-                  if ser_port.inWaiting() > 0:
-                        result += ser_port.read(ser_port.inWaiting())
-                  time.sleep(0.05) 
-            print(result)
-            RS485_read = print_byte_array_as_spaced_hex(result, f"{cmd_code}")
       
       elif action == "Home":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
@@ -281,15 +263,6 @@ def action(deviceName, action):
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(motion_start_command)
 
-            print("Response: ")
-            result=b''
-            while time.time() < deadline:
-                  if ser_port.inWaiting() > 0:
-                        result += ser_port.read(ser_port.in_waiting())
-                  delay_ms(50)
-            print(result)
-            RS485_read = print_byte_array_as_spaced_hex(result, f"{cmd_code}")
-
             parameter_data = setter.set_bit_status(BitMap.START1, 1)
             motion_start_command = cmd_generator.generate_message(
                   protocol_id,
@@ -297,15 +270,6 @@ def action(deviceName, action):
                   dir_bit, error_code, cmd_code, parameter_data)
             RS485_send = print_byte_array_as_spaced_hex(motion_start_command, f"{cmd_code}")
             ser_port.write(motion_start_command)
-
-            print("Response: ")
-            result=b''
-            while time.time() < deadline:
-                  if ser_port.inWaiting() > 0:
-                        result += ser_port.read(ser_port.in_waiting())
-                  delay_ms(50)
-            print(result)
-            RS485_read = print_byte_array_as_spaced_hex(result, f"{cmd_code}")
 
       elif action == "motionPause":
             print("PAUSE")
