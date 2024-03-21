@@ -197,7 +197,7 @@ def action(deviceName, action):
             print("Response:")
             result= b''
             while time.time() < deadline:
-                  if ser_port.inWating() > 0:
+                  if ser_port.inWaiting() > 0:
                         result += ser_port.read(ser_port.inWaiting())
                   delay_ms(50) 
             print(result)
