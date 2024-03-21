@@ -109,17 +109,26 @@ def action(deviceName, action):
 
 
       if action == "servoOn":
-            print("SERVO ON")            
+            # SET_PARAM_2 command        
+            set_param_2_command = ServoParams.SET_PARAM_2
+            RS485_send = print_byte_array_as_spaced_hex(set_param_2_command, f"{ServoParams.SET_PARAM_2}")
+            ser_port.write(set_param_2_command)
 
-            cmd_code = CmdCode.SET_PARAM_2.value
-            set_param_2_command = cmd_generator.generate_message(
-                  protocol_id,
-                  destination_address,
-                  dir_bit, error_code, cmd_code, parameter_data)
-            
-            print_byte_array_as_spaced_hex(set_param_2_command)
+            delay_ms(50)
+            cmd_delay_time.calculate_transmission_time_ms(set_param_2_command)
 
+            print("Response: ")
+            timeout = 1 # Timeout in second
+            deadline = time.time() + timeout
+            result = b''
+            while time.time() < deadline:
+                  if ser_port.inWaiting() > 0:
+                        result += ser_port.read(ser_port.inWaiting())
+                  time.sleep(0.05) 
+            print(result)
+            RS485_read = parser.parse_message(result)
 
+            # SERVO_ON Command
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.SVON, 1)
             servo_on_command = cmd_generator.generate_message(
