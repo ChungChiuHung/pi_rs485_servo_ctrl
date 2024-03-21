@@ -159,16 +159,31 @@ def action(deviceName, action):
 
       elif action == "servoOff":
             print("SERVO OFF")
-            bytes_object = bytes(ServoParams.SERVO_OFF)
-            RS485_send = str(bytes_object)
-            ser_port.write(ServoParams.SERVO_OFF)
-            sleep(0.1)
+            cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
+            parameter_data = setter.set_bit_status(BitMap.SVON, 0)
+            servo_off_command = cmd_generator.generate_message(
+                  protocol_id,
+                  destination_address,
+                  dir_bit, error_code, cmd_code, parameter_data)
+            
+            RS485_send = print_byte_array_as_spaced_hex(servo_off_command, f"{cmd_code}")
+            ser_port.write(servo_off_command)
+
+            delay_ms(50)
+            cmd_delay_time.calculate_transmission_time_ms(servo_off_command)
+
             print("Response:")
-            result_1 = ser_port.inWaiting()
-            result_2 = ser_port.read(ser_port.inWaiting())
-            print(result_1)
-            print(result_2)
-            RS485_read = str(result_2)
+
+            timeout = 1 # Timeout in second
+            deadline = time.time() + timeout
+            result = b''
+
+            while time.time() < deadline:
+                  if ser_port.inWaiting() > 0:
+                        result += ser_port.read(ser_port.inWaiting())
+                  time.sleep(0.05) 
+            print(result)
+            RS485_read = parser.parse_message(result)
       
       elif action == "getMsg":
             print("GET VALUE")
