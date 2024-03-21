@@ -1,6 +1,7 @@
 import RPi.GPIO as GPIO
 import serial
-from time import time, sleep
+import time
+from time import sleep
 from flask import Flask, render_template, request
 from servo_params import ServoParams
 from base_msg_generator import BaseMsgGenerator
