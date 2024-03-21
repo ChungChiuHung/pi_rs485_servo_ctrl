@@ -220,7 +220,7 @@ def action(deviceName, action):
                         result = ser_port.read(num_bytes_available)
                   delay_ms(50) 
             print(result)
-            RS485_read = fetcher.get_output_io_status(result)
+            #RS485_read = fetcher.get_output_io_status(result)
 
       elif action == "setPoint_1":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
