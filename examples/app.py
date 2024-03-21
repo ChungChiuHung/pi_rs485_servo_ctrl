@@ -221,6 +221,27 @@ def action(deviceName, action):
       
       elif action == "motionStart":
             print("START")
+            cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
+            parameter_data = setter.set_bit_status(BitMap.START1, 1)
+            motion_start_command = cmd_generator.generate_message(
+                  protocol_id,
+                  destination_address,
+                  dir_bit, error_code, cmd_code, parameter_data)
+            RS485_send = print_byte_array_as_spaced_hex(motion_start_command, f"{cmd_code}")
+            ser_port.write(motion_start_command)
+
+            delay_ms(50)
+            cmd_delay_time.calculate_transmission_time_ms(motion_start_command)
+
+            print("Response: ")
+            result=b''
+            while time.time() < deadline:
+                  if ser_port.inWaiting() > 0:
+                        result += ser_port.read(ser_port.in_waiting())
+                  delay_ms(50)
+            print(result)
+            RS485_read = parser.parse_message(result)
+            
       elif action == "motionPause":
             print("PAUSE")
 
