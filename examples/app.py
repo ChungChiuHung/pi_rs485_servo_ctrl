@@ -199,9 +199,10 @@ def action(deviceName, action):
             while time.time() < deadline:
                   if ser_port.inWaiting() > 0:
                         result += ser_port.read(ser_port.inWaiting())
+                        print("Retrive Result: ",result)
                   delay_ms(50) 
-            print(result)
-            print_byte_array_as_spaced_hex(result, f"{get_state_value_command}")
+            print("Final Result: ",result)
+            print_byte_array_as_spaced_hex(result, "Data Before Parse: ")
             try:
                   parsed_data = parser.parse_message(result)
                   print("Parsed response data:", parsed_data)
