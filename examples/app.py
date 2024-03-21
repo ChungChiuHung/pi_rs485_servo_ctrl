@@ -191,8 +191,8 @@ def action(deviceName, action):
             RS485_send = print_byte_array_as_spaced_hex(get_io_command, f"{CmdCode.GET_STATE_VALUE_4}")
             ser_port.write(get_io_command)
 
-            #delay_ms(50)
-            #cmd_delay_time.calculate_transmission_time_ms(get_io_command)
+            delay_ms(50)
+            cmd_delay_time.calculate_transmission_time_ms(get_io_command)
             
             print("Response:")
 
