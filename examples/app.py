@@ -201,7 +201,7 @@ def action(deviceName, action):
                         result += ser_port.read(ser_port.inWaiting())
                   delay_ms(50) 
             print(result)
-            RS485_read = print_byte_array_as_spaced_hex(get_state_value_command, f"{cmd_code}")
+            RS485_read = print_byte_array_as_spaced_hex(result, f"{get_state_value_command}")
 
 
       elif action == "getIOOutput":
