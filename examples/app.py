@@ -306,7 +306,6 @@ def action(deviceName, action):
             'RS485_send':RS485_send,
             'SERVO_ON' : SERVO_ON,
             'SERVO_OFF' : SERVO_OFF,
-            'GET_MSG' : GET_MSG,
             'GET_IO_OUTPUT' : GET_IO_OUTPUT,
             'SET_POINT_1' : SET_POINT_1,
             'SET_POINT_2' : SET_POINT_2,
