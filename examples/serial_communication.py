@@ -59,7 +59,7 @@ class SerialCommunication:
             self.delay_ms(delay_before_read) # Check periodically
 
         # Clear the progress bar line
-        print(f"\r{' ' * (len('Remaining time: X.XX seconds [{}]') + bar_length).format(bar)}", end='\r')
+        print(f"\r{' ' * (len(f'Remaining time: {remaining_time:.2f} seconds [{bar}]') + bar_length)}", end='\r')
         
         print("Response received:")
         self.print_byte_array_as_spaced_hex(result, f"{command_description} Response hex: ")
