@@ -44,15 +44,9 @@ class SerialCommunication:
             elapsed_time = time.time() - start_time
             remaining_time = wait_response_timeout_sec - elapsed_time
             if remaining_time <= 0:
-                # Clear the current line and display the expiration message
-                print(f"\r{' ' * (bar_length + 50)}, end='\r")
-                print("Response waiting time expired.")
                 break
 
-            # Calculate filled length
             filled_length = int(round(bar_length * (elapsed_time / wait_response_timeout_sec)))
-
-            # Create the bar string
             bar = Fore.GREEN + '█' * filled_length + Fore.RED + '█' * (bar_length - filled_length)
 
             # Print the progress bar with remaining time
@@ -64,7 +58,10 @@ class SerialCommunication:
                 break
             self.delay_ms(delay_before_read) # Check periodically
 
-        print("\nOriginal Data: ", result)
+        # Clear the progress bar line
+        print(f"\r{' ' * (len('Remaining time: X.XX seconds [{}]') + bar_length).format(bar)}", end='\r')
+        
+        print("Response received:")
         self.print_byte_array_as_spaced_hex(result, f"{command_description} Response hex: ")
 
         return result
