@@ -4,8 +4,8 @@ from colorama import Fore, Style, init
 from cal_cmd_response_time import CmdDelayTime
 
 class SerialCommunication:
-    def __init__(self) -> None:
-           pass
+    def __init__(self):
+           init(autoreset=True)
 
     def delay_ms(self, milliseconds):
       seconds = milliseconds / 1000.0 # Convert milliseconds to seconds
@@ -54,7 +54,7 @@ class SerialCommunication:
             bar = Fore.GREEN + '█' * filled_length + Fore.RED + '█' * (bar_length - filled_length)
 
             # Print the progress bar with remaining time
-            print(f"\rRemaining time: {remaining_time:.2f} seconds [{bar}]", end='')
+            print(f"\rRemaining time: {remaining_time:.2f} seconds [{bar}]", end='', flush=True)
 
             print(f"Remaining time: {remaining_time:.2f} seconds")
             waiting_bytes = ser_port.inWaiting()
