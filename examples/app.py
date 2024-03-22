@@ -113,7 +113,6 @@ def action(deviceName, action):
             ledGrnSts = GPIO.input(LED_GRN_PIN)
 
       cmd_generator = BaseMsgGenerator()
-      cmd_io_geneartor = MessageCommander()
       setter = SetServoIOStatus()
       parser = ResponseMsgParser()
       fetcher = IOStatusFetcher(ser_port)
