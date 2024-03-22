@@ -50,7 +50,7 @@ class SerialCommunication:
             bar = Fore.GREEN + '█' * filled_length + Fore.RED + '█' * (bar_length - filled_length)
 
             # Print the progress bar with remaining time
-            print(f"\rRemaining time: {remaining_time:.2f} seconds [{bar}]", end='', flush=True)
+            print(f"\rRemaining time: {max(0, remaining_time):.2f} seconds [{bar}]", end='', flush=True)
 
             waiting_bytes = ser_port.inWaiting()
             if waiting_bytes > 0:
@@ -58,8 +58,9 @@ class SerialCommunication:
                 break
             self.delay_ms(delay_before_read) # Check periodically
 
-        # Clear the progress bar line
-        print(f"\r{' ' * (len(f'Remaining time: {remaining_time:.2f} seconds [{bar}]') + bar_length)}", end='\r')
+        # Keep the bar at 100% after finishing the countdown
+        bar = Fore.GREEN + '█' * bar_length
+        print(f"\rRemaining time: 0.00 seconds [{bar}]", end='', flush=True)
         
         print("Response received:")
         self.print_byte_array_as_spaced_hex(result, f"{command_description} Response hex: ")
