@@ -102,6 +102,15 @@ def index():
         'ledGrn': ledGrnSts,
         'RS485_read': RS485_read,
         'RS485_send': RS485_send,
+        'SERVO_ON' : SERVO_ON,
+        'SERVO_OFF' : SERVO_OFF,
+        'GET_MSG' : GET_MSG,
+        'GET_IO_OUTPUT' : GET_IO_OUTPUT,
+        'SET_POINT_1' : SET_POINT_1,
+        'SET_POINT_2' : SET_POINT_2,
+        'SET_POINT_HOME' : SET_POINT_HOME,
+        'MOTION_START' : MOTION_START,
+        'MOTION_PAUSE' : MOTION_PAUSE,
       }
       return render_template('index.html', **templateData) 
 
@@ -306,6 +315,7 @@ def action(deviceName, action):
             'RS485_send':RS485_send,
             'SERVO_ON' : SERVO_ON,
             'SERVO_OFF' : SERVO_OFF,
+            'GET_MSG' : GET_MSG,
             'GET_IO_OUTPUT' : GET_IO_OUTPUT,
             'SET_POINT_1' : SET_POINT_1,
             'SET_POINT_2' : SET_POINT_2,
