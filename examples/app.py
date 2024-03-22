@@ -11,6 +11,7 @@ from set_servo_io_status import SetServoIOStatus
 from set_servo_io_status import BitMap
 from cal_cmd_response_time import CmdDelayTime
 from io_status_fetcher import IOStatusFetcher
+from serial_communication import SerialCommunication
 
 # Define your GPIO pins upfront
 RS485_ENABLE_PIN = 4  # pin for RS485 transmission enable
@@ -141,13 +142,13 @@ def action(deviceName, action):
 
             print("Response: ")
             result = b''
-            num_bytes_available = ser_port.inWaiting()
+            
             while time.time() < deadline:
-                  if num_bytes_available > 0:
-                        result = ser_port.read(num_bytes_available)
+                  if ser_port.inWaiting() > 0:
+                        result = ser_port.read(ser_port.inWaiting())
                   delay_ms(50) 
             print(result)
-            RS485_read = print_byte_array_as_spaced_hex(result, f"{set_param_2_command}")
+            RS485_read = print_byte_array_as_spaced_hex(result, "From Amplifier: ")
 
             # SERVO_ON Command
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
@@ -157,7 +158,7 @@ def action(deviceName, action):
                   destination_address,
                   dir_bit, error_code, cmd_code, parameter_data)
             
-            RS485_send = print_byte_array_as_spaced_hex(servo_on_command, f"{cmd_code}")
+            RS485_send = print_byte_array_as_spaced_hex(servo_on_command, f"SERVO_ON")
             ser_port.write(servo_on_command)
 
             # Fixed delay plus transmission delay calculation
@@ -170,8 +171,15 @@ def action(deviceName, action):
                   if ser_port.in_waiting() > 0:
                         result = ser_port.read(ser_port.inWaiting())
                   delay_ms(50) 
-            print(result)
-            RS485_read = print_byte_array_as_spaced_hex(result, f"{cmd_code}")
+            print("Original Result: ",result)
+            RS485_read = print_byte_array_as_spaced_hex(result, f"SERVO_ON")
+
+            # Try The New Method
+
+            input_cmd = servo_on_command
+            serial_comm = SerialCommunication()
+            serial_comm.send_command_and_wait_for_response(ser_port, servo_on_command,
+                                                           "SERVO_ON", 50, 1)
 
       elif action == "servoOff":
             print("SERVO OFF")
@@ -182,7 +190,7 @@ def action(deviceName, action):
                   destination_address,
                   dir_bit, error_code, cmd_code, parameter_data)
             
-            RS485_send = print_byte_array_as_spaced_hex(servo_off_command, f"{cmd_code}")
+            RS485_send = print_byte_array_as_spaced_hex(servo_off_command, f"SERVO_OFF")
             ser_port.write(servo_off_command)
 
             delay_ms(50)
@@ -190,13 +198,12 @@ def action(deviceName, action):
 
             print("Response:")
             result = b''
-            num_bytes_available = ser_port.inWaiting()
             while time.time() < deadline:
-                  if num_bytes_available > 0:
-                        result = ser_port.read(num_bytes_available)
+                  if ser_port.inWaiting() > 0:
+                        result = ser_port.read(ser_port.inWaiting())
                   delay_ms(50) 
-            print(result)
-            RS485_read = print_byte_array_as_spaced_hex(servo_off_command, f"{cmd_code}")
+            print("Original Result: ",result)
+            RS485_read = print_byte_array_as_spaced_hex(servo_off_command, f"SERVO_OFF")
       
       elif action == "getMsg":            
             get_state_value_command = ServoParams.GET_STATE_VALUE_4
