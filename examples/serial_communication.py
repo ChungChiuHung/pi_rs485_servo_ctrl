@@ -61,8 +61,8 @@ class SerialCommunication:
         # Keep the bar at 100% after finishing the countdown
         bar = Fore.GREEN + '█' * bar_length
         print(f"\rRemaining time: 0.00 seconds [{bar}]", end='', flush=True)
-        
-        print("Response received:")
+
+        print("\nResponse received:")
         self.print_byte_array_as_spaced_hex(result, f"{command_description} Response hex: ")
 
         return result
