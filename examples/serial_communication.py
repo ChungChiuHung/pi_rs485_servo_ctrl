@@ -44,7 +44,9 @@ class SerialCommunication:
             elapsed_time = time.time() - start_time
             remaining_time = wait_response_timeout_sec - elapsed_time
             if remaining_time <= 0:
-                print("\nResponse waiting time expired.")
+                # Clear the current line and display the expiration message
+                print(f"\r{' ' * (bar_length + 50)}, end='\r")
+                print("Response waiting time expired.")
                 break
 
             # Calculate filled length
@@ -56,7 +58,6 @@ class SerialCommunication:
             # Print the progress bar with remaining time
             print(f"\rRemaining time: {remaining_time:.2f} seconds [{bar}]", end='', flush=True)
 
-            print(f"Remaining time: {remaining_time:.2f} seconds")
             waiting_bytes = ser_port.inWaiting()
             if waiting_bytes > 0:
                 result += ser_port.read(waiting_bytes)
