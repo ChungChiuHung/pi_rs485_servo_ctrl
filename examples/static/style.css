@@ -33,11 +33,21 @@ main {
 }
 
 /* Button styling */
-.button {
+.button-on {
     display: inline-block;
     text-decoration: none;
     color: white;
     background-color: #007bff;
+    padding: 10px 15px;
+    border-radius: 5px;
+    transition: background-color 0.3s;
+}
+
+.button-off {
+    display: inline-block;
+    text-decoration: none;
+    color: white;
+    background-color: #5111a3;
     padding: 10px 15px;
     border-radius: 5px;
     transition: background-color 0.3s;

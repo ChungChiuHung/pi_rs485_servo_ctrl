@@ -6,7 +6,7 @@
     </head>
     <body>
         <main>
-            <section class="actuators">
+            <section class="Servo Amplifier Controller(RS485)">
                 <!--
                 <h1>Actuators</h1>
                 <div class="status">
@@ -28,7 +28,7 @@
                     <p>GPIO YLW LED Ctrl ==> <a href="/ledYlw/on" class="button">TURN ON</a> <a href="/ledYlw/off" class="button">TURN OFF</a></p>
                     <p>GPIO GRN LED Ctrl ==> <a href="/ledGrn/on" class="button">TURN ON</a> <a href="/ledGrn/off" class="button">TURN OFF</a></p>   
                     -->
-                    <p>RS-485 R/W Ctrl ==> <a href="/RS485/servoOn" class="button">SERVO ON</a></p>
+                    <p>RS-485 R/W Ctrl ==> <a href="/RS485/servoOn" class="{{'button-on' if servoOn else 'button-off'}}">SERVO ON</a></p>
                     <p>RS-485 R/W Ctrl ==> <a href="/RS485/servoOff" class="button">SERVO OFF</a></p>
                     <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/getMsg" class="button">GET STATE VALUE</a></p>
                     <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/getIOOutput" class="button">GET IO OUTPUT STATE VALUE</a></p>
