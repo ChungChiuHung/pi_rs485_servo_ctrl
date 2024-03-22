@@ -1,5 +1,6 @@
 import time
 from time import sleep
+from colorama import Fore, Style, init
 from cal_cmd_response_time import CmdDelayTime
 
 class SerialCommunication:
@@ -14,7 +15,7 @@ class SerialCommunication:
         hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
         print(f"{data_name}: {hex_string}")
 
-    def send_command_and_wait_for_response(self, ser_port, command, command_description, delay_before_read=50, wait_respnose_timeout_sec=1):
+    def send_command_and_wait_for_response(self, ser_port, command, command_description, delay_before_read=50, wait_response_timeout_sec=1):
         """
         Send a command to the serial port and wait for a response.
         :param ser_port: The serial port instance.
@@ -30,6 +31,8 @@ class SerialCommunication:
         print("Waiting for response...")
         self.delay_ms(delay_before_read)
         current_baud_rate = ser_port.baudrate
+
+        bar_length = 30 # Define the progress bar length
         start_time = time.time()
 
         cmd_delay_time = CmdDelayTime(current_baud_rate)
@@ -39,10 +42,20 @@ class SerialCommunication:
         
         while True:
             elapsed_time = time.time() - start_time
-            remaining_time = wait_respnose_timeout_sec - elapsed_time
+            remaining_time = wait_response_timeout_sec - elapsed_time
             if remaining_time <= 0:
-                print("Response waiting time expired.")
+                print("\nResponse waiting time expired.")
                 break
+
+            # Calculate filled length
+            filled_length = int(round(bar_length * (elapsed_time / wait_response_timeout_sec)))
+
+            # Create the bar string
+            bar = Fore.GREEN + '█' * filled_length + Fore.RED + '█' * (bar_length - filled_length)
+
+            # Print the progress bar with remaining time
+            print(f"\rRemaining time: {remaining_time:.2f} seconds [{bar}]", end='')
+
             print(f"Remaining time: {remaining_time:.2f} seconds")
             waiting_bytes = ser_port.inWaiting()
             if waiting_bytes > 0:
@@ -50,7 +63,7 @@ class SerialCommunication:
                 break
             self.delay_ms(delay_before_read) # Check periodically
 
-        print("Original Data: ", result)
+        print("\nOriginal Data: ", result)
         self.print_byte_array_as_spaced_hex(result, f"{command_description} Response hex: ")
 
         return result
