@@ -115,17 +115,16 @@ def action(deviceName, action):
       cmd_generator = BaseMsgGenerator()
       setter = SetServoIOStatus()
       parser = ResponseMsgParser()
-      fetcher = IOStatusFetcher(ser_port)
-      serial_comm = SerialCommunication()
-
-      pause_toggle_bit = True
-
-      cmd_delay_time = CmdDelayTime(57600)
 
       # Config the waiting reponse timeout
+      delay_time_before_read_ms = 50
       timeout = 1 # Timeout in second
-      deadline = time.time() + timeout
 
+      fetcher = IOStatusFetcher(ser_port)
+      serial_comm = SerialCommunication(ser_port, delay_time_before_read_ms, timeout)
+      cmd_delay_time = CmdDelayTime(ser_port.baudrate)
+      
+      pause_toggle_bit = True
       protocol_id=1
       destination_address = 1
       dir_bit = 0
@@ -135,8 +134,8 @@ def action(deviceName, action):
       if action == "servoOn":
             # SET_PARAM_2 command        
             set_param_2_command = ServoParams.SET_PARAM_2      
-            serial_comm.send_command_and_wait_for_response(ser_port, set_param_2_command,
-                                                           "SET_PARAM_2", 50, 1)
+            serial_comm.send_command_and_wait_for_response(set_param_2_command,
+                                                           "SET_PARAM_2")
 
             # SERVO_ON Command
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
@@ -146,8 +145,8 @@ def action(deviceName, action):
                   destination_address,
                   dir_bit, error_code, cmd_code, parameter_data)
             
-            serial_comm.send_command_and_wait_for_response(ser_port, servo_on_command,
-                                                           "SERVO_ON", 50, 1)
+            serial_comm.send_command_and_wait_for_response(servo_on_command,
+                                                           "SERVO_ON")
 
       elif action == "servoOff":
             print("SERVO OFF")
@@ -158,13 +157,13 @@ def action(deviceName, action):
                   destination_address,
                   dir_bit, error_code, cmd_code, parameter_data)
             
-            serial_comm.send_command_and_wait_for_response(ser_port, servo_off_command,
-                                                           "SERVO_OFF", 50,1)
+            serial_comm.send_command_and_wait_for_response(servo_off_command,
+                                                           "SERVO_OFF")
       
       elif action == "getMsg":            
             get_state_value_command = ServoParams.GET_STATE_VALUE_4
-            result = serial_comm.send_command_and_wait_for_response(ser_port, get_state_value_command,
-                                                           "GET_STATE_VALUE_4", 50, 1)
+            result = serial_comm.send_command_and_wait_for_response(get_state_value_command,
+                                                           "GET_STATE_VALUE_4")
             try:
                   parsed_data = parser.parse_message(result)
                   print("Parsed response data:", parsed_data)
