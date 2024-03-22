@@ -43,7 +43,7 @@ class SerialCommunication:
             if remaining_time <= 0:
                 print("Response waiting time expired.")
                 break
-            print("Remaining time: {remaining_time:.2f} seconds")
+            print(f"Remaining time: {remaining_time:.2f} seconds")
             waiting_bytes = ser_port.inWaiting()
             if waiting_bytes > 0:
                 result += ser_port.read(waiting_bytes)
