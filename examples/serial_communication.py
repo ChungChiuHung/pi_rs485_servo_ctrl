@@ -4,8 +4,11 @@ from colorama import Fore, Style, init
 from cal_cmd_response_time import CmdDelayTime
 
 class SerialCommunication:
-    def __init__(self):
+    def __init__(self,ser_port,delay_before_read, wait_response_timeout_sec):
            init(autoreset=True)
+           self.ser_port = ser_port
+           self.delay_before_read = delay_before_read
+           self.wait_response_timeout_sec = wait_response_timeout_sec
 
     def delay_ms(self, milliseconds):
       seconds = milliseconds / 1000.0 # Convert milliseconds to seconds
@@ -15,7 +18,7 @@ class SerialCommunication:
         hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
         print(f"{data_name}: {hex_string}")
 
-    def send_command_and_wait_for_response(self, ser_port, command, command_description, delay_before_read=50, wait_response_timeout_sec=1):
+    def send_command_and_wait_for_response(self, command, command_description):
         """
         Send a command to the serial port and wait for a response.
         :param ser_port: The serial port instance.
@@ -26,11 +29,11 @@ class SerialCommunication:
         """
         print(f"Start Sending Command:{command_description}")
         self.print_byte_array_as_spaced_hex(command, f"{command_description}:")
-        ser_port.write(command)
+        self.ser_port.write(command)
 
         print("Waiting for response...")
-        self.delay_ms(delay_before_read)
-        current_baud_rate = ser_port.baudrate
+        self.delay_ms(self.delay_before_read)
+        current_baud_rate = self.ser_port.baudrate
 
         bar_length = 30 # Define the progress bar length
         start_time = time.time()
@@ -42,21 +45,21 @@ class SerialCommunication:
         
         while True:
             elapsed_time = time.time() - start_time
-            remaining_time = wait_response_timeout_sec - elapsed_time
+            remaining_time = self.wait_response_timeout_sec - elapsed_time
             if remaining_time <= 0:
                 break
 
-            filled_length = int(round(bar_length * (elapsed_time / wait_response_timeout_sec)))
+            filled_length = int(round(bar_length * (elapsed_time / self.wait_response_timeout_sec)))
             bar = Fore.GREEN + '█' * filled_length + Fore.RED + '█' * (bar_length - filled_length)
 
             # Print the progress bar with remaining time
             print(f"\rRemaining time: {max(0, remaining_time):.2f} seconds [{bar}]", end='', flush=True)
 
-            waiting_bytes = ser_port.inWaiting()
+            waiting_bytes = self.ser_port.inWaiting()
             if waiting_bytes > 0:
-                result += ser_port.read(waiting_bytes)
+                result += self.ser_port.read(waiting_bytes)
                 break
-            self.delay_ms(delay_before_read) # Check periodically
+            self.delay_ms(self.delay_before_read) # Check periodically
 
         # Keep the bar at 100% after finishing the countdown
         bar = Fore.GREEN + '█' * bar_length

@@ -158,38 +158,13 @@ def action(deviceName, action):
                   destination_address,
                   dir_bit, error_code, cmd_code, parameter_data)
             
-            RS485_send = print_byte_array_as_spaced_hex(servo_off_command, f"SERVO_OFF")
-            ser_port.write(servo_off_command)
-
-            delay_ms(50)
-            cmd_delay_time.calculate_transmission_time_ms(servo_off_command)
-
-            print("Response:")
-            result = b''
-            while time.time() < deadline:
-                  if ser_port.inWaiting() > 0:
-                        result = ser_port.read(ser_port.inWaiting())
-                  delay_ms(50) 
-            print("Original Result: ",result)
-            RS485_read = print_byte_array_as_spaced_hex(servo_off_command, f"SERVO_OFF")
+            serial_comm.send_command_and_wait_for_response(ser_port, servo_off_command,
+                                                           "SERVO_OFF", 50,1)
       
       elif action == "getMsg":            
             get_state_value_command = ServoParams.GET_STATE_VALUE_4
-            RS485_send = print_byte_array_as_spaced_hex(get_state_value_command, f"{CmdCode.GET_STATE_VALUE_4}")
-            ser_port.write(get_state_value_command)
-
-            delay_ms(50)
-            cmd_delay_time.calculate_transmission_time_ms(get_state_value_command)
-            
-            print("Response:")
-            result= b''
-            while time.time() < deadline:
-                  if ser_port.inWaiting() > 0:
-                        result += ser_port.read(ser_port.inWaiting())
-                        print("Retrive Result: ",result)
-                  delay_ms(50) 
-            print("Final Result: ",result)
-            print_byte_array_as_spaced_hex(result, "Data Before Parse: ")
+            result = serial_comm.send_command_and_wait_for_response(ser_port, get_state_value_command,
+                                                           "GET_STATE_VALUE_4", 50, 1)
             try:
                   parsed_data = parser.parse_message(result)
                   print("Parsed response data:", parsed_data)
