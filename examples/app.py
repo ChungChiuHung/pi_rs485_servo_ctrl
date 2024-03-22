@@ -134,21 +134,9 @@ def action(deviceName, action):
       if action == "servoOn":
             # SET_PARAM_2 command        
             set_param_2_command = ServoParams.SET_PARAM_2
-            RS485_send = print_byte_array_as_spaced_hex(set_param_2_command, f"SET_PARAM_2")
-            ser_port.write(set_param_2_command)
-
-            delay_ms(50)
-            cmd_delay_time.calculate_transmission_time_ms(set_param_2_command)
-
-            print("Response: ")
-            result = b''
-            
-            while time.time() < deadline:
-                  if ser_port.inWaiting() > 0:
-                        result = ser_port.read(ser_port.inWaiting())
-                  delay_ms(50) 
-            print(result)
-            RS485_read = print_byte_array_as_spaced_hex(result, "From Amplifier: ")
+            serial_comm = SerialCommunication()
+            serial_comm.send_command_and_wait_for_response(ser_port, set_param_2_command,
+                                                           "SET_PARAM_2", 50, 1)
 
             # SERVO_ON Command
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
