@@ -91,6 +91,10 @@ MOTION_PAUSE = False
 
 @app.route("/")
 def index():
+      global SERVO_ON, SERVO_OFF, GET_MSG,GET_IO_OUTPUT
+      global SET_POINT_1,SET_POINT_2,SET_POINT_HOME
+      global MOTION_START,MOTION_PAUSE
+
       ledRedSts = GPIO.input(LED_RED_PIN)
       ledYlwSts = GPIO.input(LED_YLW_PIN)
       ledGrnSts = GPIO.input(LED_GRN_PIN)
@@ -117,7 +121,10 @@ def index():
 @app.route("/<deviceName>/<action>")
 def action(deviceName, action):
       global RS485_send, RS485_read, pwm_red_led, ser_port
-
+      global SERVO_ON, SERVO_OFF, GET_MSG,GET_IO_OUTPUT
+      global SET_POINT_1,SET_POINT_2,SET_POINT_HOME
+      global MOTION_START,MOTION_PAUSE
+      
       # Initialize or update the device statuses
       ledRedSts = GPIO.input(LED_RED_PIN)
       ledYlwSts = GPIO.input(LED_YLW_PIN)
