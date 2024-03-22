@@ -116,6 +116,7 @@ def action(deviceName, action):
       setter = SetServoIOStatus()
       parser = ResponseMsgParser()
       fetcher = IOStatusFetcher(ser_port)
+      serial_comm = SerialCommunication()
 
       pause_toggle_bit = True
 
@@ -133,8 +134,7 @@ def action(deviceName, action):
 
       if action == "servoOn":
             # SET_PARAM_2 command        
-            set_param_2_command = ServoParams.SET_PARAM_2
-            serial_comm = SerialCommunication()
+            set_param_2_command = ServoParams.SET_PARAM_2      
             serial_comm.send_command_and_wait_for_response(ser_port, set_param_2_command,
                                                            "SET_PARAM_2", 50, 1)
 
@@ -146,27 +146,7 @@ def action(deviceName, action):
                   destination_address,
                   dir_bit, error_code, cmd_code, parameter_data)
             
-            RS485_send = print_byte_array_as_spaced_hex(servo_on_command, f"SERVO_ON")
-            ser_port.write(servo_on_command)
-
-            # Fixed delay plus transmission delay calculation
-            delay_ms(50)
-            cmd_delay_time.calculate_transmission_time_ms(servo_on_command)
-            
-            print("Response: ")
-            result = b''
-            while time.time() < deadline:
-                  if ser_port.in_waiting() > 0:
-                        result = ser_port.read(ser_port.inWaiting())
-                  delay_ms(50) 
-            print("Original Result: ",result)
-            RS485_read = print_byte_array_as_spaced_hex(result, f"SERVO_ON")
-
-            # Try The New Method
-
-            input_cmd = servo_on_command
-            serial_comm = SerialCommunication()
-            serial_comm.send_command_and_wait_for_response(ser_port, input_cmd,
+            serial_comm.send_command_and_wait_for_response(ser_port, servo_on_command,
                                                            "SERVO_ON", 50, 1)
 
       elif action == "servoOff":
