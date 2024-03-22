@@ -21,25 +21,35 @@ class SerialCommunication:
         :param command: The command bytes to send.
         :param command_description: Description of the command for logging.
         :param total_timeout: Total timeout in milliseconds to wait for a response.
-        :return: The response bytes read from the serail port
+        :return: Ther esponse bytes read from the serail port
         """
-        self.print_byte_array_as_spaced_hex(command, f"{command_description}")
+        print(f"Start Sending Command:{command_description}")
+        self.print_byte_array_as_spaced_hex(command, f"{command_description}:")
         ser_port.write(command)
 
-        print("Wait for response...")
+        print("Waiting for response...")
         self.delay_ms(delay_before_read)
         current_baud_rate = ser_port.baudrate
-        cmd_delay_time = CmdDelayTime(current_baud_rate)
-        cmd_delay_time.calculate_transmission_time_ms(command)      
-        result = b''
+        start_time = time.time()
 
-        while time.time() < wait_respnose_timeout_sec:
+        cmd_delay_time = CmdDelayTime(current_baud_rate)
+        cmd_delay_time.calculate_transmission_time_ms(command)    
+ 
+        result = b''
+        
+        while True:
+            elapsed_time = time.time() - start_time
+            remaning_time = wait_respnose_timeout_sec - elapsed_time
+            if remaning_time <= 0:
+                print("Response waiting time expired.")
+                break
+            print("Remaining time: {remaining_teim:.2f} seconds")
             waiting_bytes = ser_port.inWaiting()
             if waiting_bytes > 0:
-                result = ser_port.read(waiting_bytes)
+                result += ser_port.read(waiting_bytes)
                 break
-            self.delay_ms(delay_before_read)
-        
+            self.delay_ms(delay_before_read) # Check periodically
+
         print("Original Data: ", result)
         self.print_byte_array_as_spaced_hex(result, f"{command_description} Response hex: ")
 

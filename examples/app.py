@@ -178,7 +178,7 @@ def action(deviceName, action):
 
             input_cmd = servo_on_command
             serial_comm = SerialCommunication()
-            serial_comm.send_command_and_wait_for_response(ser_port, servo_on_command,
+            serial_comm.send_command_and_wait_for_response(ser_port, input_cmd,
                                                            "SERVO_ON", 50, 1)
 
       elif action == "servoOff":
