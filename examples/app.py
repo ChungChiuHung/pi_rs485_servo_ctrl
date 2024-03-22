@@ -4,7 +4,7 @@ import time
 from time import sleep
 from flask import Flask, render_template, request
 from servo_params import ServoParams
-from base_msg_generator import BaseMsgGenerator
+from base_msg_generator import BaseMsgGenerator, MessageCommander
 from response_parsing import ResponseMsgParser
 from command_code import CmdCode
 from set_servo_io_status import SetServoIOStatus
@@ -113,6 +113,7 @@ def action(deviceName, action):
             ledGrnSts = GPIO.input(LED_GRN_PIN)
 
       cmd_generator = BaseMsgGenerator()
+      cmd_io_geneartor = MessageCommander()
       setter = SetServoIOStatus()
       parser = ResponseMsgParser()
       fetcher = IOStatusFetcher(ser_port)
@@ -139,12 +140,17 @@ def action(deviceName, action):
                                                            "SET_PARAM_2", 50, 1)
 
             # SERVO_ON Command
-            cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
-            parameter_data = setter.set_bit_status(BitMap.SVON, 1)
-            servo_on_command = cmd_generator.generate_message(
-                  protocol_id,
-                  destination_address,
-                  dir_bit, error_code, cmd_code, parameter_data)
+            # cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
+            # parameter_data = setter.set_bit_status(BitMap.SVON, 1)
+            # servo_on_command = cmd_generator.generate_message(
+            #       protocol_id,
+            #       destination_address,
+            #       dir_bit, error_code, cmd_code, parameter_data)
+
+            message_commander = MessageCommander(protocol_id, destination_address, dir_bit, error_code)
+            status_bit = "SVON"
+            status_value = 1
+            servo_on_command = message_commander.generate_set_state_cmd(status_bit, status_value)
             
             serial_comm.send_command_and_wait_for_response(ser_port, servo_on_command,
                                                            "SERVO_ON", 50, 1)

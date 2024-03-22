@@ -1,4 +1,6 @@
 from crc import CRC16CCITT
+from command_code import CmdCode
+from set_servo_io_status import SetServoIOStatus
 
 class BaseMsgGenerator:
     def __init__(self):
@@ -38,3 +40,25 @@ class BaseMsgGenerator:
         crc = self.crc_calculator.calculate_crc(message)
 
         return message + crc
+
+
+class MessageCommander:
+    def __init__(self, protocol_id, destination_address, dir_bit, error_code):
+        self.cmd_generator = BaseMsgGenerator()
+        self.set_bit_status = SetServoIOStatus()
+        self.protocol_id = protocol_id
+        self.destination_address = destination_address
+        self.dir_bit = dir_bit
+        self.error_code = error_code
+    
+    def generate_set_state_cmd(self, status_bit, status_value):
+        cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
+        parameter_data = self.set_bit_status(status_bit, status_value)
+        return self.cmd_generator.generate_message(
+            self.protocol_id,
+            self.destination_address,
+            self.dir_bit,
+            self.error_code,
+            cmd_code,
+            parameter_data
+        )
