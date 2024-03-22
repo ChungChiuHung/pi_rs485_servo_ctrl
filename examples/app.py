@@ -140,17 +140,12 @@ def action(deviceName, action):
                                                            "SET_PARAM_2", 50, 1)
 
             # SERVO_ON Command
-            # cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
-            # parameter_data = setter.set_bit_status(BitMap.SVON, 1)
-            # servo_on_command = cmd_generator.generate_message(
-            #       protocol_id,
-            #       destination_address,
-            #       dir_bit, error_code, cmd_code, parameter_data)
-
-            message_commander = MessageCommander(protocol_id, destination_address, dir_bit, error_code)
-            status_bit = "SVON"
-            status_value = 1
-            servo_on_command = message_commander.generate_set_state_cmd(status_bit, status_value)
+            cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
+            parameter_data = setter.set_bit_status(BitMap.SVON, 1)
+            servo_on_command = cmd_generator.generate_message(
+                  protocol_id,
+                  destination_address,
+                  dir_bit, error_code, cmd_code, parameter_data)
             
             serial_comm.send_command_and_wait_for_response(ser_port, servo_on_command,
                                                            "SERVO_ON", 50, 1)
