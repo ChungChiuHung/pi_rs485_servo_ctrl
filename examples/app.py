@@ -50,12 +50,25 @@ def cleanup_gpio():
 
 
 def initialize_serial():
-      global ser_port
-      ser_port = serial.Serial("/dev/ttyS0", 57600)
-      ser_port.bytesize = serial.EIGHTBITS
-      ser_port.parity = serial.PARITY_NONE
-      ser_port.stopbits = serial.STOPBITS_ONE
-      return ser_port
+      global ser_port # Indicate that we're using the global variable
+      serial_ports = ["/dev/ttyS0", "/dev/ttyAMA0", "/dev/serial0", "/dev/ttyUSB0"]
+      baud_rate = 57600
+      timeout = 1
+
+      for port in serial_ports:
+            try:
+                  ser_port = serial.Serial(port, baud_rate, timeout=timeout)
+                  ser_port.bytesize = serial.EIGHTBITS
+                  ser_port.parity = serial.PARITY_NONE
+                  ser_port.stopbits = serial.STOPBITS_ONE
+
+                  print(f"Successfully connected to {port}")
+                  break
+            except (OSError, serial.SerialException):
+                  continue
+
+      if ser_port is None:
+            raise IOError("No available serial port found.")
 
 def delay_ms(milliseconds):
       seconds = milliseconds / 1000.0 # Convert milliseconds to seconds
