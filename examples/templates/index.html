@@ -28,15 +28,15 @@
                     <p>GPIO YLW LED Ctrl ==> <a href="/ledYlw/on" class="button">TURN ON</a> <a href="/ledYlw/off" class="button">TURN OFF</a></p>
                     <p>GPIO GRN LED Ctrl ==> <a href="/ledGrn/on" class="button">TURN ON</a> <a href="/ledGrn/off" class="button">TURN OFF</a></p>   
                     -->
-                    <p>RS-485 R/W Ctrl ==> <a href="/RS485/servoOn" class="{{'button-on' if servoOn else 'button-off'}}">SERVO ON</a></p>
-                    <p>RS-485 R/W Ctrl ==> <a href="/RS485/servoOff" class="button">SERVO OFF</a></p>
-                    <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/getMsg" class="button">GET STATE VALUE</a></p>
-                    <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/getIOOutput" class="button">GET IO OUTPUT STATE VALUE</a></p>
-                    <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/setPoint_1" class="button">SET POINT 1</a></p>
-                    <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/setPoint_2" class="button">SET POINT 2</a></p>
-                    <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/Home" class="button">HOME</a></p>
-                    <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/motionStart" class="button">MOTION START</a></p>
-                    <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/motionPause" class="button">MOTION PAUSE</a></p>
+                    <p>RS-485 R/W Ctrl ==> <a href="/RS485/servoOn" class="{{'button-on' if SERVO_ON else 'button-off'}}">SERVO ON</a></p>
+                    <p>RS-485 R/W Ctrl ==> <a href="/RS485/servoOff" class="{{'button-on' if SERVO_OFF else 'button-off'}}">SERVO OFF</a></p>
+                    <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/getMsg" class="{{'button-on' if GET_MSG else 'button-off'}}">GET STATE VALUE</a></p>
+                    <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/getIOOutput" class="{{'button-on' if GET_IO_STATE else 'button-off'}}">GET IO OUTPUT STATE VALUE</a></p>
+                    <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/setPoint_1" class="{{'button-on' if SET_POINT_1 else 'button-off'}}">SET POINT 1</a></p>
+                    <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/setPoint_2" class="{{'button-on' if SET_POINT_2 else 'button-off'}}">SET POINT 2</a></p>
+                    <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/Home" class="{{'button-on' if SET_POINT_HOME else 'button-off'}}">HOME</a></p>
+                    <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/motionStart" class="{{'button-on' if MOTION_START else 'button-off'}}">MOTION START</a></p>
+                    <p>RS-485 R/W Ctrl ==> <a href="/recieveMsg/motionPause" class="{{'button-on' if MOTION_PAUSE else 'button-off'}}">MOTION PAUSE</a></p>
 
                 </div>
             </section>

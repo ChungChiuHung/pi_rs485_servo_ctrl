@@ -49,7 +49,6 @@ def initialize_gpio():
 def cleanup_gpio():
       GPIO.cleanup()
 
-
 def initialize_serial():
       global ser_port # Indicate that we're using the global variable
       serial_ports = ["/dev/ttyS0", "/dev/ttyAMA0", "/dev/serial0", "/dev/ttyUSB0"]
@@ -78,6 +77,17 @@ def delay_ms(milliseconds):
 def print_byte_array_as_spaced_hex(byte_array, data_name):
     hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
     print(f"{data_name}: {hex_string}")
+
+SERVO_ON = False
+SERVO_OFF = False
+GET_MSG = False
+GET_IO_OUTPUT = False
+SET_POINT_1 = False
+SET_POINT_2 = False
+SET_POINT_HOME = False
+MOTION_START = False
+MOTION_PAUSE = False
+
 
 @app.route("/")
 def index():
@@ -147,6 +157,9 @@ def action(deviceName, action):
             
             serial_comm.send_command_and_wait_for_response(servo_on_command,
                                                            "SERVO_ON")
+            
+            SERVO_ON = True
+            SERVO_OFF = False
 
       elif action == "servoOff":
             print("SERVO OFF")
@@ -159,8 +172,12 @@ def action(deviceName, action):
             
             serial_comm.send_command_and_wait_for_response(servo_off_command,
                                                            "SERVO_OFF")
+            
+            SERVO_ON = False
+            SERVO_OFF = True
       
-      elif action == "getMsg":            
+      elif action == "getMsg":
+            GET_MSG = True            
             get_state_value_command = ServoParams.GET_STATE_VALUE_4
             result = serial_comm.send_command_and_wait_for_response(get_state_value_command,
                                                            "GET_STATE_VALUE_4")
@@ -171,6 +188,8 @@ def action(deviceName, action):
 
             except ValueError as e:
                   print("Error parsing response message:", e)
+            
+            GET_MSG = False
 
       elif action == "getIOOutput":
             RS485_read = fetcher.get_output_io_status()
@@ -191,6 +210,10 @@ def action(deviceName, action):
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
 
+            SET_POINT_1 = True
+            SET_POINT_2 = False
+            SET_POINT_HOME = False
+
       elif action == "setPoint_2":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.SEL_NO, 6)
@@ -205,6 +228,10 @@ def action(deviceName, action):
             # Fixed delay plus transmission delay calculation
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
+
+            SET_POINT_1 = False
+            SET_POINT_2 = True
+            SET_POINT_HOME = False
       
       elif action == "Home":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
@@ -220,8 +247,13 @@ def action(deviceName, action):
             # Fixed delay plus transmission delay calculation
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
+
+            SET_POINT_1 = False
+            SET_POINT_2 = False
+            SET_POINT_HOME = True
             
       elif action == "motionStart":
+            MOTION_START = True
             print("START")
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.START1, 0)
@@ -246,8 +278,11 @@ def action(deviceName, action):
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(motion_start_command)
 
+            MOTION_START = False
+
       elif action == "motionPause":
             print("PAUSE")
+            MOTION_PAUSE = pause_toggle_bit
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.PAUSE, pause_toggle_bit)
             pause_toggle_bit ^= 1
@@ -260,6 +295,7 @@ def action(deviceName, action):
 
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(motion_start_command)
+            
 
       templateData = {
             'title':'GPIO output Status!',
@@ -268,7 +304,16 @@ def action(deviceName, action):
             'ledGrn' : ledGrnSts,
             'RS485_read':RS485_read,
             'RS485_send':RS485_send,
-      }
+            'SERVO_ON' : SERVO_ON,
+            'SERVO_OFF' : SERVO_OFF,
+            'GET_MSG' : GET_MSG,
+            'GET_IO_OUTPUT' : GET_IO_OUTPUT,
+            'SET_POINT_1' : SET_POINT_1,
+            'SET_POINT_2' : SET_POINT_2,
+            'SET_POINT_HOME' : SET_POINT_HOME,
+            'MOTION_START' : MOTION_START,
+            'MOTION_PAUSE' : MOTION_PAUSE,
+            }
 
       return render_template('index.html', **templateData)
 
