@@ -133,7 +133,7 @@ def action(deviceName, action):
       if action == "servoOn":
             # SET_PARAM_2 command        
             set_param_2_command = ServoParams.SET_PARAM_2
-            RS485_send = print_byte_array_as_spaced_hex(set_param_2_command, f"{ServoParams.SET_PARAM_2}")
+            RS485_send = print_byte_array_as_spaced_hex(set_param_2_command, f"SET_PARAM_2")
             ser_port.write(set_param_2_command)
 
             delay_ms(50)
