@@ -219,6 +219,10 @@ def action(deviceName, action):
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
 
+            session["SET_POINT_1"]=True
+            session["SET_POINT_2"]=False
+            session["SET_POINT_HOME"]=False
+
       elif action == "setPoint_2":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.SEL_NO, 6)
@@ -234,7 +238,10 @@ def action(deviceName, action):
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
 
-      
+            session["SET_POINT_1"]=False
+            session["SET_POINT_2"]=True
+            session["SET_POINT_HOME"]=False
+
       elif action == "Home":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.SEL_NO, 1)
@@ -250,6 +257,9 @@ def action(deviceName, action):
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
 
+            session["SET_POINT_1"]=False
+            session["SET_POINT_2"]=False
+            session["SET_POINT_HOME"]=True
             
       elif action == "motionStart":
             print("START")
