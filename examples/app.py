@@ -80,7 +80,7 @@ def print_byte_array_as_spaced_hex(byte_array, data_name):
     print(f"{data_name}: {hex_string}")
 
 
-pause_toggle_bit = 1
+pause_toggle_bit = False
 SERVO_ON = False
 SERVO_OFF = False
 GET_MSG = False
