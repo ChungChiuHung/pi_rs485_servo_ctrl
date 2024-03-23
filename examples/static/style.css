@@ -104,11 +104,6 @@ main {
     background-color: #888787; /* Red background */
 }
 
-.button {
-    color: #fff; /* White text */
-    background-color: #3652dc; /* Red background */
-}
-
 /* Hover effects */
 .button-on:hover, .button-off:hover, button:hover {
     transform: scale(1.05); /* Slightly increase size */
@@ -116,3 +111,20 @@ main {
     border-color: #ddd; /* Light border on hover */
 }
 
+.button-container {
+    margin-bottom: 10px; /* Adds space between the buttons */
+}
+
+.button {
+    display: block; /* Makes each button fill the container width */
+    width: 100%;
+    padding: 10px;
+    margin: 5px 0; /* Adds vertical space between buttons */
+    font-size: 16px; /* Increases font size for better readability */
+    cursor: pointer; /* Changes cursor to pointer on hover over the buttons */
+}
+
+.button:hover {
+    background-color: #555; /* Darkens the button on hover for visual feedback */
+    color: white;
+}
