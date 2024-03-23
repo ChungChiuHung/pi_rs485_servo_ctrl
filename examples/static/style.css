@@ -59,6 +59,11 @@ main {
     background-color: #888787; /* Red background */
 }
 
+.button {
+    color: #fff; /* White text */
+    background-color: #3652dc; /* Red background */
+}
+
 /* Hover effects */
 .button-on:hover, .button-off:hover {
     transform: scale(1.05); /* Slightly increase size */
