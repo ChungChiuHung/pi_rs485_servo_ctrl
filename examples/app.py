@@ -1,6 +1,6 @@
 import RPi.GPIO as GPIO
 import serial
-import time
+import os
 from time import sleep
 from flask import Flask, render_template, request, session
 from servo_params import ServoParams
@@ -20,6 +20,7 @@ LED_YLW_PIN = 19
 LED_GRN_PIN = 26
 
 app = Flask(__name__)
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'JOJO0912956011')
 
 # Initailize global variables for RS485 messages
 RS485_send = ''
