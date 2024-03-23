@@ -121,7 +121,7 @@ def index():
 
 @app.route("/<deviceName>/<action>")
 def action(deviceName, action):
-      global RS485_send, RS485_read, pwm_red_led, 
+      global RS485_send, RS485_read, pwm_red_led
       global SERVO_ON,SERVO_OFF
       global GET_MSG,GET_IO_OUTPUT
       global SET_POINT_1,SET_POINT_2,SET_POINT_HOME
