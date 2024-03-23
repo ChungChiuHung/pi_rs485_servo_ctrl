@@ -82,16 +82,12 @@ def print_byte_array_as_spaced_hex(byte_array, data_name):
 @app.route("/")
 def index():
       # Initialize session variables if they don't exist
-      session.setdefault('SERVO_ON', False)
-      session.setdefault('SERVO_OFF', False)
-      session.setdefault('GET_MSG', False)
-      session.setdefault('GET_IO_OUTPUT', False)
-      session.setdefault('SET_POINT_1', False)
-      session.setdefault('SET_POINT_2', False)
-      session.setdefault('SET_POINT_HOME', False)
-      session.setdefault('MOTION_START', False)
-      session.setdefault('MOTION_PAUSE', False)
+      for key in ['SERVO_ON', 'SERVO_OFF', 'GET_MSG',
+                  'GET_IO_OUTPUT', 'SET_POINT_1', 'SET_POINT_2',
+                  'SET_POINT_HOME', 'MOTION_START', 'MOTION_PAUSE']:
+        session.setdefault(key, False)
 
+      
       ledRedSts = GPIO.input(LED_RED_PIN)
       ledYlwSts = GPIO.input(LED_YLW_PIN)
       ledGrnSts = GPIO.input(LED_GRN_PIN)
