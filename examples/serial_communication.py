@@ -53,8 +53,8 @@ class SerialCommunication:
            init(autoreset=True)
            self.port_handler = port_handler
            self.command_timeout = command_timeout
-           self.last_send_message = None
-           self.last_received_message = None
+           self.last_send_message = b''
+           self.last_received_message = b''
 
     def delay_ms(self, milliseconds):
       time.sleep(milliseconds / 1000.0)
