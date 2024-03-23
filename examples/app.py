@@ -322,6 +322,8 @@ def action(deviceName, action):
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.PAUSE, pause_toggle_bit)
             pause_toggle_bit ^= 1
+
+            print("PAUSE: ",pause_toggle_bit)
             motion_puase_command = cmd_generator.generate_message(
                   protocol_id,
                   destination_address,
