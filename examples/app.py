@@ -221,16 +221,18 @@ def action(deviceName, action):
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.SEL_NO, 5)
             point_sel_command = cmd_generator.generate_message(
-                  protocol_id,
-                  destination_address,
-                  dir_bit, error_code, cmd_code, parameter_data)
-            
-            RS485_send = print_byte_array_as_spaced_hex(point_sel_command, f"{cmd_code}")
-            ser_port.write(point_sel_command)
+                   protocol_id,
+                   destination_address,
+                   dir_bit, error_code, cmd_code, parameter_data)
+            serial_comm.send_command_and_wait_for_response(point_sel_command,
+                                                           "SEL_POINT_1")
 
+            # RS485_send = print_byte_array_as_spaced_hex(point_sel_command, f"{cmd_code}")
+            # ser_port.write(point_sel_command)
+# 
             # Fixed delay plus transmission delay calculation
-            delay_ms(50)
-            cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
+            # delay_ms(50)
+            # cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
 
             SET_POINT_1=True
             SET_POINT_2=False
@@ -244,12 +246,15 @@ def action(deviceName, action):
                   destination_address,
                   dir_bit, error_code, cmd_code, parameter_data)
             
-            RS485_send = print_byte_array_as_spaced_hex(point_sel_command, f"{cmd_code}")
-            ser_port.write(point_sel_command)
+            serial_comm.send_command_and_wait_for_response(point_sel_command,
+                                                           "SEL_POINT_2")
 
-            # Fixed delay plus transmission delay calculation
-            delay_ms(50)
-            cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
+            #RS485_send = print_byte_array_as_spaced_hex(point_sel_command, f"{cmd_code}")
+            #ser_port.write(point_sel_command)
+#
+            ## Fixed delay plus transmission delay calculation
+            #delay_ms(50)
+            #cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
 
             SET_POINT_1=False
             SET_POINT_2=True
@@ -263,12 +268,15 @@ def action(deviceName, action):
                   destination_address,
                   dir_bit, error_code, cmd_code, parameter_data)
             
-            RS485_send = print_byte_array_as_spaced_hex(point_sel_command, f"{cmd_code}")
-            ser_port.write(point_sel_command)
-
-            # Fixed delay plus transmission delay calculation
-            delay_ms(50)
-            cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
+            serial_comm.send_command_and_wait_for_response(point_sel_command,
+                                                           "SEL_POINT_HOME")
+            
+            #RS485_send = print_byte_array_as_spaced_hex(point_sel_command, f"{cmd_code}")
+            #ser_port.write(point_sel_command)
+#
+            ## Fixed delay plus transmission delay calculation
+            #delay_ms(50)
+            #cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
 
             SET_POINT_1=False
             SET_POINT_2=False
@@ -282,22 +290,28 @@ def action(deviceName, action):
                   protocol_id,
                   destination_address,
                   dir_bit, error_code, cmd_code, parameter_data)
-            RS485_send = print_byte_array_as_spaced_hex(motion_start_command, f"{cmd_code}")
-            ser_port.write(motion_start_command)
-
-            delay_ms(50)
-            cmd_delay_time.calculate_transmission_time_ms(motion_start_command)
+            #RS485_send = print_byte_array_as_spaced_hex(motion_start_command, f"{cmd_code}")
+            #ser_port.write(motion_start_command)
+#
+            #delay_ms(50)
+            #cmd_delay_time.calculate_transmission_time_ms(motion_start_command)
+            serial_comm.send_command_and_wait_for_response(motion_start_command,
+                                                           "MOTION_START")
+            
 
             parameter_data = setter.set_bit_status(BitMap.START1, 1)
             motion_start_command = cmd_generator.generate_message(
                   protocol_id,
                   destination_address,
                   dir_bit, error_code, cmd_code, parameter_data)
-            RS485_send = print_byte_array_as_spaced_hex(motion_start_command, f"{cmd_code}")
-            ser_port.write(motion_start_command)
-
-            delay_ms(50)
-            cmd_delay_time.calculate_transmission_time_ms(motion_start_command)
+            
+            serial_comm.send_command_and_wait_for_response(motion_start_command,
+                                                           "MOTION_START")
+            # RS485_send = print_byte_array_as_spaced_hex(motion_start_command, f"{cmd_code}")
+            # ser_port.write(motion_start_command)
+# 
+            # delay_ms(50)
+            # cmd_delay_time.calculate_transmission_time_ms(motion_start_command)
 
 
       elif action == "motionPause":
@@ -305,15 +319,18 @@ def action(deviceName, action):
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.PAUSE, pause_toggle_bit)
             pause_toggle_bit ^= 1
-            motion_start_command = cmd_generator.generate_message(
+            motion_puase_command = cmd_generator.generate_message(
                   protocol_id,
                   destination_address,
                   dir_bit, error_code, cmd_code, parameter_data)
-            RS485_send = print_byte_array_as_spaced_hex(motion_start_command, f"{cmd_code}")
-            ser_port.write(motion_start_command)
-
-            delay_ms(50)
-            cmd_delay_time.calculate_transmission_time_ms(motion_start_command)
+            
+            serial_comm.send_command_and_wait_for_response(motion_puase_command,
+                                                           "MOTION_PAUSE")
+            # RS485_send = print_byte_array_as_spaced_hex(motion_start_command, f"{cmd_code}")
+            # ser_port.write(motion_start_command)
+# 
+            # delay_ms(50)
+            # cmd_delay_time.calculate_transmission_time_ms(motion_start_command)
             
 
       templateData = {
