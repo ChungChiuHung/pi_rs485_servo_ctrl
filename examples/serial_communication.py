@@ -1,7 +1,12 @@
 import time
+import json
 from time import sleep
 from colorama import Fore, Style, init
 from cal_cmd_response_time import CmdDelayTime
+from command_code import CmdCode
+from servo_params import ServoParams
+from status_bit_mapping import BitMap, BitMapOutput
+
 
 class SerialCommunication:
     def __init__(self,ser_port,delay_before_read, wait_response_timeout_sec):
@@ -72,6 +77,35 @@ class SerialCommunication:
         response_received = True
 
         return (result , response_received)
+    
+    #IOStatusFetcher:  
+    def parse_logic_io(self, logic_io_bytes):
+        io_status= {}
+        value = int.from_bytes(logic_io_bytes, byteorder='big')
+
+        for bit in BitMapOutput:
+            if isinstance(bit.value, tuple):
+                mask = (1 << (bit.value[1] - bit.value[0] + 1)) - 1
+                io_status[bit.name] = (value >> bit.value[0]) & mask
+            else:
+                io_status[bit.name] = bool(value &(1 << bit.value))
+            
+        return io_status
+    
+    def get_output_io_status(self):
+        get_output_io = ServoParams.GET_OUTPUT_IO
+        response_recieved = False
+        result, response_recieved = self.send_command_and_wait_for_response(get_output_io, 
+                                                                            "GET_IO_STATES")
+
+        if result and len(result) >= 6:
+            logic_io_bytes = result[4:8]
+            parsed_status = self.parse_logic_io(logic_io_bytes)
+            return json.dumps(parsed_status), response_recieved
+        
+        response_recieved = True
+
+        return (json.dumps({"error" : "No response or invalid response length"}), response_recieved)
 
 
     

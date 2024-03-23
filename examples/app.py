@@ -2,7 +2,7 @@ import RPi.GPIO as GPIO
 import serial
 import time
 from time import sleep
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, session
 from servo_params import ServoParams
 from base_msg_generator import BaseMsgGenerator, MessageCommander
 from response_parsing import ResponseMsgParser
@@ -78,22 +78,18 @@ def print_byte_array_as_spaced_hex(byte_array, data_name):
     hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
     print(f"{data_name}: {hex_string}")
 
-SERVO_ON = False
-SERVO_OFF = False
-GET_MSG = False
-GET_IO_OUTPUT = False
-SET_POINT_1 = False
-SET_POINT_2 = False
-SET_POINT_HOME = False
-MOTION_START = False
-MOTION_PAUSE = False
-
-
 @app.route("/")
 def index():
-      global SERVO_ON, SERVO_OFF, GET_MSG,GET_IO_OUTPUT
-      global SET_POINT_1,SET_POINT_2,SET_POINT_HOME
-      global MOTION_START,MOTION_PAUSE
+      # Initialize session variables if they don't exist
+      session.setdefault('SERVO_ON', False)
+      session.setdefault('SERVO_OFF', False)
+      session.setdefault('GET_MSG', False)
+      session.setdefault('GET_IO_OUTPUT', False)
+      session.setdefault('SET_POINT_1', False)
+      session.setdefault('SET_POINT_2', False)
+      session.setdefault('SET_POINT_HOME', False)
+      session.setdefault('MOTION_START', False)
+      session.setdefault('MOTION_PAUSE', False)
 
       ledRedSts = GPIO.input(LED_RED_PIN)
       ledYlwSts = GPIO.input(LED_YLW_PIN)
@@ -106,15 +102,15 @@ def index():
         'ledGrn': ledGrnSts,
         'RS485_read': RS485_read,
         'RS485_send': RS485_send,
-        'SERVO_ON' : SERVO_ON,
-        'SERVO_OFF' : SERVO_OFF,
-        'GET_MSG' : GET_MSG,
-        'GET_IO_OUTPUT' : GET_IO_OUTPUT,
-        'SET_POINT_1' : SET_POINT_1,
-        'SET_POINT_2' : SET_POINT_2,
-        'SET_POINT_HOME' : SET_POINT_HOME,
-        'MOTION_START' : MOTION_START,
-        'MOTION_PAUSE' : MOTION_PAUSE,
+        'SERVO_ON' : session['SERVO_ON'],
+        'SERVO_OFF' : session['SERVO_OFF'],
+        'GET_MSG' : session['GET_MSG'],
+        'GET_IO_OUTPUT' : session['GET_IO_OUTPUT'],
+        'SET_POINT_1' : session['SET_POINT_1'],
+        'SET_POINT_2' : session['SET_POINT_2'],
+        'SET_POINT_HOME' : session['SET_POINT_HOME'],
+        'MOTION_START' : session['MOTION_START'],
+        'MOTION_PAUSE' : session['MOTION_PAUSE'],
       }
       return render_template('index.html', **templateData) 
 
@@ -173,12 +169,10 @@ def action(deviceName, action):
             
             serial_comm.send_command_and_wait_for_response(servo_on_command,
                                                            "SERVO_ON")
-            
-            SERVO_ON = True
-            SERVO_OFF = False
+            session['SERVO_NO'] = True
+            session['SERVO_OFF']= False
 
       elif action == "servoOff":
-            print("SERVO OFF")
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.SVON, 0)
             servo_off_command = cmd_generator.generate_message(
@@ -189,18 +183,17 @@ def action(deviceName, action):
             serial_comm.send_command_and_wait_for_response(servo_off_command,
                                                            "SERVO_OFF")
             
-            SERVO_ON = False
-            SERVO_OFF = True
+            session['SERVO_NO'] = False
+            session['SERVO_OFF']= True
       
       elif action == "getMsg":
-            GET_MSG = True
+            session['GET_MSG'] = True
             print("GET_MSG: ",GET_MSG)
             get_state_value_command = ServoParams.GET_STATE_VALUE_4
             result, response_received = serial_comm.send_command_and_wait_for_response(get_state_value_command,
                                                            "GET_STATE_VALUE_4")
 
-            GET_MSG = not response_received 
-            print("GET_MSG: ",GET_MSG)
+            session['GET_MSG'] = not response_received
 
             try:
                   parsed_data = parser.parse_message(result)
@@ -211,8 +204,12 @@ def action(deviceName, action):
                   print("Error parsing response message:", e)
 
       elif action == "getIOOutput":
-            RS485_read = fetcher.get_output_io_status()
-            print(RS485_read)
+            session['GET_IO_OUTPUT'] = True
+            # RS485_read = fetcher.get_output_io_status()
+            # print(RS485_read)
+            result, response_received = serial_comm.get_output_io_status()
+
+            session['GET_IO_OUTPUT'] = not response_received
 
       elif action == "setPoint_1":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value

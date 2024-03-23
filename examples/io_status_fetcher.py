@@ -3,6 +3,8 @@ import time
 from status_bit_mapping import BitMapOutput
 from servo_params import ServoParams
 
+
+
 class IOStatusFetcher:
     def __init__(self, ser_port):
         self.ser_port = ser_port
