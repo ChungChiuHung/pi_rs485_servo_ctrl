@@ -1,9 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
     <head>
+        <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Servo Control</title>
         <link rel="stylesheet" href='../static/style.css'/>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
     </head>
 <body>
     <div class="navbar">
@@ -12,8 +14,47 @@
     </div>
     <div class="main">
         <h1>Walking Lamp Control</h1>
-        <div class="button-container"><button class="button">START</button></div>
-        <div class="button-container"><button class="button">STOP</button></div>
+        <div class="button-container">
+            <button class="button" id="start">START</button>
+            <span id="start_status"></span>
+        </div>
+        <div class="button-container">
+            <button class="button" id="stop">STOP</button>
+            <span id="stop_status"></span>
+        </div>
+        <script>
+            $(document).ready(function() {
+                $('#start').click(function(){
+                    $.ajax({
+                        url:'/action',
+                        type: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify({action_type:'START'}),
+                        success: function(response){
+                            console.log('Success:', response);
+                        },
+                        error:function(error){
+                            console.log('Error',error)
+                        }
+                    });
+                });
+
+                $('#stop').click(function(){
+                    $.ajax({
+                        url:'/action',
+                        type:'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify({action_type:'STOP'}),
+                        success: function(response){
+                            console.log('Success', response);
+                        },
+                        error: function(error) {
+                            console.log('Error', error)
+                        }
+                    });
+                });
+            });
+        </script>
     </div>
 </body>
 </html>

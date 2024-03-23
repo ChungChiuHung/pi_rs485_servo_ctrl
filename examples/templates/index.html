@@ -5,6 +5,27 @@
         <title>Servo Control</title>
         <link rel="stylesheet" href='../static/style.css'/>
     </head>
+    <script>
+        function sendCommand(action) {
+            event.preventDefault(); //Prevent default form action
+            fetch('/action/$(action)',{
+                method: 'POST',
+                headers:{
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({action:action})
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Success:', data);
+                // Optionally update the UI here
+                document.getElementById('${action}_status').innerText = 'Completed';
+            })
+            .catch((error) => {
+                conosle.error('Error:', error);
+            });
+        }
+    </script>
     <body>
         <div class="navbar">
             <a href="/">Home</a>
@@ -26,11 +47,7 @@
                 <div class="commands">
                     <h2>Commands</h2>
                     <!--
-                    <p>PWM RED LED Ctrl ==> <a href="/ledRed/on" class="button">TURN ON</a> <a href="/ledRed/off" class="button">TURN OFF</a></p>
-                    <p>GPIO YLW LED Ctrl ==> <a href="/ledYlw/on" class="button">TURN ON</a> <a href="/ledYlw/off" class="button">TURN OFF</a></p>
-                    <p>GPIO GRN LED Ctrl ==> <a href="/ledGrn/on" class="button">TURN ON</a> <a href="/ledGrn/off" class="button">TURN OFF</a></p>   
-                    -->
-                    <p><a href="/RS485/servoOn" class="{{'button-on' if SERVO_ON else 'button-off'}}">SERVO ON</a></p>
+                        <p><a href="/RS485/servoOn" class="{{'button-on' if SERVO_ON else 'button-off'}}">SERVO ON</a></p>
                     <p><a href="/RS485/servoOff" class="{{'button-on' if SERVO_OFF else 'button-off'}}">SERVO OFF</a></p>
                     <p><a href="/recieveMsg/getMsg" class="button-container"><button class="button">GET STATE VALUE</button></a></p>
                     <p><a href="/recieveMsg/getIOOutput" class="button-container"><button class="button">GET IO OUTPUT STATE VALUE</button></a></p>
@@ -39,7 +56,16 @@
                     <p><a href="/recieveMsg/Home" class="{{'button-on' if SET_POINT_HOME else 'button-off'}}">HOME</a></p>
                     <p><a href="/recieveMsg/motionStart" class="button-container"><button class="button">MOTION START</button></a></p>
                     <p><a href="/recieveMsg/motionPause" class="button-container"><button class="button">MOTION PAUSE</button></a></p>
-
+                    --> 
+                    <div class="button-container"><button class="button" onclick="sendCommand('servoOn')">SERVO ON</button><span id="servoOn_status"></span></div>
+                    <div class="button-container"><button class="button" onclick="sendCommand('servoOff')">SERVO OFF</button><span id="servoOff_status"></span></div>
+                    <div class="button-container"><button class="button" onclick="sendCommand('getMsg')">GET STATE VALUE</button><span id="getMsg_status"></span></div>
+                    <div class="button-container"><button class="button" onclick="sendCommand('getIOOutput')">GET IO OUTPUT STATE VALUE</button><span id="getIOOutput_status"></span></div>
+                    <div class="button-container"><button class="button" onclick="sendCommand('setPoint_1')">SET POINT 1</button><span id="setPoint_1_status"></span></div>
+                    <div class="button-container"><button class="button" onclick="sendCommand('setPoint_2')">SET POINT 2</button><span id="setPoint_2_status"></span></div>
+                    <div class="button-container"><button class="button" onclick="sendCommand('Home')">HOME</button><span id="Home_status"></span></div>
+                    <div class="button-container"><button class="button" onclick="sendCommand('motionStart')">MOTION START</button><span id="motionStart_status"></span></div>
+                    <div class="button-container"><button class="button" onclick="sendCommand('motionPause')">MOTION PAUSE</button><span id="motionPause_status"></span></div>
                 </div>
             </section>
             <a href="/">Go Back to Home</a>

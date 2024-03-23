@@ -2,7 +2,7 @@ import RPi.GPIO as GPIO
 import serial
 import os
 from time import sleep
-from flask import Flask, render_template, request, session
+from flask import Flask, render_template, request, session, jsonify
 from servo_params import ServoParams
 from base_msg_generator import BaseMsgGenerator, MessageCommander
 from response_parsing import ResponseMsgParser
@@ -80,7 +80,6 @@ def print_byte_array_as_spaced_hex(byte_array, data_name):
     print(f"{data_name}: {hex_string}")
 
 
-pause_toggle_bit = False
 SERVO_ON = False
 SERVO_OFF = False
 GET_MSG = False
@@ -94,6 +93,15 @@ MOTION_PAUSE = False
 @app.route('/')
 def home():
       return render_template('home.html')
+
+@app.route('/action', methods=['POST'])
+def action():
+      action_type = request.json.get('action_type')
+      # Handle the action
+      print(f"Action Received: {action_type}")
+      # Perform the raspi action here based on action type
+
+      return jsonify({"status":"success", "action_type":action_type})
 
 @app.route('/index')
 def index():
@@ -335,13 +343,7 @@ def action(deviceName, action):
             
             serial_comm.send_command_and_wait_for_response(motion_puase_command,
                                                            "MOTION_PAUSE")
-            # RS485_send = print_byte_array_as_spaced_hex(motion_start_command, f"{cmd_code}")
-            # ser_port.write(motion_start_command)
-# 
-            # delay_ms(50)
-            # cmd_delay_time.calculate_transmission_time_ms(motion_start_command)
             
-
       templateData = {
             'title':'GPIO output Status!',
             'ledRed' : ledRedSts,
