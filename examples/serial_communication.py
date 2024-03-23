@@ -59,7 +59,6 @@ class SerialCommunication:
             waiting_bytes = self.ser_port.inWaiting()
             if waiting_bytes > 0:
                 result += self.ser_port.read(waiting_bytes)
-                response_received = True
                 break
             self.delay_ms(self.delay_before_read) # Check periodically
 
@@ -69,6 +68,8 @@ class SerialCommunication:
 
         print("\nResponse received:")
         self.print_byte_array_as_spaced_hex(result, f"{command_description} Response hex: ")
+
+        response_received = True
 
         return (result , response_received)
 
