@@ -2,81 +2,101 @@ import time
 import json
 import serial
 from time import sleep
-from colorama import Fore, Style, init
+from colorama import Fore, init
 from cal_cmd_response_time import CmdDelayTime
 from command_code import CmdCode
 from servo_params import ServoParams
 from status_bit_mapping import BitMap, BitMapOutput
 
+class SerialPortHandler:
+    def __init__(self, baud_rate=57600, timeout=1):
+        self.serial_port = None
+        self.baud_rate = baud_rate
+        self.timeout = timeout
+        self.available_ports = ["/dev/ttyS0", "/dev/ttyAMA0", "/dev/serial0", "/dev/ttyUSB0"]
+
+    def open_serial(self):
+        for port in self.available_ports:
+            try:
+                self.serial_port = serial.Serial(port, self.baud_rate, timeout=self.timeout)
+                self.serial_port.bytesize = serial.EIGHTBITS
+                self.serial_port.parity = serial.PARITY_NONE
+                self.serial_port.stopbits = serial.STOPBITS_ONE
+                print(f"Successfully connected to {port}")
+                return True
+            except (OSError, serial.SerialException):
+                continue
+        return False
+
+    def close_serial(self):
+        if self.serial_port and self.serial_port.is_open:
+            self.serial_port.close()
+            print("Serial port closed.")
+
+    def write(self, data):
+        if self.serial_port and self.serial_port.is_open:
+            self.serial_port.write(data)
+
+    def read(self, timeout_sec):
+        end_time = time.time() + timeout_sec
+        while time.time() < end_time:
+            if self.serial_port and self.serial_port.in_waiting:
+                return self.serial_port.read(self.serial_port.in_waiting)
+        return b''
 
 class SerialCommunication:
-    def __init__(self,ser_port,delay_before_read, wait_response_timeout_sec):
+    def __init__(self, port_handler, command_timeout=1):
            init(autoreset=True)
-           self.ser_port = ser_port
-           self.delay_before_read = delay_before_read
-           self.wait_response_timeout_sec = wait_response_timeout_sec
-           self._last_send_message = b''
-           self._last_received_message = b''
+           self.port_handler = port_handler
+           self.command_timeout = command_timeout
+           self.last_send_message = None
+           self.last_received_message = None
 
     def delay_ms(self, milliseconds):
-      seconds = milliseconds / 1000.0 # Convert milliseconds to seconds
-      sleep(seconds)
+      time.sleep(milliseconds / 1000.0)
 
     def print_byte_array_as_spaced_hex(self,byte_array, data_name):
         hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
         print(f"{data_name}: {hex_string}")
 
     def send_command_and_wait_for_response(self, command, command_description):
-        self._last_send_message = command
         try:
-            print(f"Start Sending Command:{command_description}")
-            self.print_byte_array_as_spaced_hex(command, f"{command_description}:")
+            self.last_send_message = command
+            print(f"Sending {command_description}:")
+            self.print_byte_array_as_spaced_hex(command, command_description)
             self.ser_port.write(command)
-            print("Waiting for response...")
-            self.delay_ms(self.delay_before_read)
-            current_baud_rate = self.ser_port.baudrate
 
-            bar_length = 30 # Define the progress bar length
-            start_time = time.time()
-
-            cmd_delay_time = CmdDelayTime(current_baud_rate)
-            cmd_delay_time.calculate_transmission_time_ms(command)
-            response_received = False
- 
             result = b''
-        
-            while True:
+            start_time = time.time()
+            while time.time()-start_time < self.command_timeout:
                 elapsed_time = time.time() - start_time
-                remaining_time = self.wait_response_timeout_sec - elapsed_time
-                if remaining_time <= 0:
+                progress = elapsed_time / self.command_timeout
+                progress_bar = self.create_progress_bar(progress)
+                print(f"\r{command_description} progress: {progress_bar}", end="")
+
+                incoming_data = self.port_handler.read()
+                if incoming_data:
+                    response += incoming_data
                     break
 
-                filled_length = int(round(bar_length * (elapsed_time / self.wait_response_timeout_sec)))
-                bar = Fore.GREEN + '█' * filled_length + Fore.RED + '█' * (bar_length - filled_length)
-
-                # Print the progress bar with remaining time
-                print(f"\rRemaining time: {max(0, remaining_time):.2f} seconds [{bar}]", end='', flush=True)
-
-                waiting_bytes = self.ser_port.inWaiting()
-                if waiting_bytes > 0:
-                    result += self.ser_port.read(waiting_bytes)
-                    break
-                self.delay_ms(self.delay_before_read) # Check periodically
-
-                # Keep the bar at 100% after finishing the countdown
-                bar = Fore.GREEN + '█' * bar_length
-                print(f"\rRemaining time: 0.00 seconds [{bar}]", end='', flush=True)
-
-                print("\nResponse received:")
-                self.print_byte_array_as_spaced_hex(result, f"{command_description} Response hex: ")
+            if response:
+                print(f"\n{command_description} response received")
+                self.last_received_message = response
+                self.print_byte_array_as_spaced_hex(response, "Response")
+            else:
+                print(f"\n{command_description} time out waiting for response.")
+            return response
         
-                self._last_received_message = result
-                response_received = True
-                return (result , response_received)
-            
         except serial.SerialException as e:
             print(f"Error sending command: {e}")
-            return b'',False
+            return None
+    
+
+    @staticmethod
+    def create_progress_bar(progress, bar_length=30):
+        filled_length = int(round(bar_length * progress))
+        bar = Fore.GREEN + '█' * filled_length + Fore.RED + '█' * (bar_length - filled_length)
+        return bar
     
     #IOStatusFetcher:  
     def parse_logic_io(self, logic_io_bytes):
@@ -112,3 +132,9 @@ class SerialCommunication:
 
     def last_received_message(self):
         return ' '.join(f"{byte:02X}" for byte in self._last_received_message)
+    
+    def get_serial_port(self):
+        return self._serial_port
+    
+    def close(self):
+        self._serial_port.close

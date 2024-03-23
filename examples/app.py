@@ -1,8 +1,5 @@
-import RPi.GPIO as GPIO
-import serial
-import os
-from time import sleep
 from flask import Flask, render_template, request, session, jsonify
+from gpio_utils import GPIOUtils
 from servo_params import ServoParams
 from base_msg_generator import BaseMsgGenerator, MessageCommander
 from response_parsing import ResponseMsgParser
@@ -11,18 +8,26 @@ from set_servo_io_status import SetServoIOStatus
 from set_servo_io_status import BitMap
 from cal_cmd_response_time import CmdDelayTime
 from io_status_fetcher import IOStatusFetcher
-from serial_communication import SerialCommunication
+from serial_communication import SerialCommunication, SerialPortHandler
 
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'JOJO0912956011')
 
-# Define your GPIO pins upfront
-RS485_ENABLE_PIN = 4  # pin for RS485 transmission enable
+
+# Instantiate GPIOUtils and SerialPortHandler
+gpio_utils = GPIOUtils()
+serial_port_handler = SerialPortHandler(baud_rate=57600, timeout=1)
+if not serial_port_handler.open_serial():
+      print("Failed to open serial port. Existing...")
+      exit(1)
+
+# Initialize Serial Communication with the port handler
+serial_comm = SerialCommunication(port_handler = serial_port_handler, command_timeout=2)
 
 # Initailize global variables for RS485 messages
 RS485_send = ''
 RS485_read = ''
-ser_port = None
+ser_port = serial_port_handler
 
 SERVO_ON = False
 SERVO_OFF = False
@@ -43,7 +48,7 @@ delay_time_before_read_ms = 50
 timeout = 1 # Timeout in second
 
 #fetcher = IOStatusFetcher(ser_port)
-serial_comm = SerialCommunication(ser_port, delay_time_before_read_ms, timeout)
+serial_comm = SerialCommunication(serial_port_handler, delay_time_before_read_ms, timeout)
 cmd_delay_time = CmdDelayTime(ser_port.baudrate)
       
 pause_toggle_bit = True
@@ -51,45 +56,6 @@ protocol_id=1
 destination_address = 1
 dir_bit = 0
 error_code = 0
-
-def initialize_gpio():
-      GPIO.setmode(GPIO.BCM)
-      GPIO.setwarnings(False)
-      GPIO.setup(RS485_ENABLE_PIN, GPIO.OUT)
-      GPIO.output(RS485_ENABLE_PIN, GPIO.HIGH) # Set High to Transmit
-
-def cleanup_gpio():
-      GPIO.cleanup()
-
-def initialize_serial():
-      global ser_port # Indicate that we're using the global variable
-      serial_ports = ["/dev/ttyS0", "/dev/ttyAMA0", "/dev/serial0", "/dev/ttyUSB0"]
-      baud_rate = 57600
-      timeout = 1
-
-      for port in serial_ports:
-            try:
-                  ser_port = serial.Serial(port, baud_rate, timeout=timeout)
-                  ser_port.bytesize = serial.EIGHTBITS
-                  ser_port.parity = serial.PARITY_NONE
-                  ser_port.stopbits = serial.STOPBITS_ONE
-
-                  print(f"Successfully connected to {port}")
-                  break
-            except (OSError, serial.SerialException):
-                  continue
-
-      if ser_port is None:
-            raise IOError("No available serial port found.")
-
-def delay_ms(milliseconds):
-      seconds = milliseconds / 1000.0 # Convert milliseconds to seconds
-      sleep(seconds)
-
-def print_byte_array_as_spaced_hex(byte_array, data_name):
-    hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
-    print(f"{data_name}: {hex_string}")
-
 
 @app.route('/')
 def home():
@@ -259,9 +225,10 @@ def index():
 if __name__ == "__main__":
    initialize_gpio()
    initialize_serial()
+   gpio_utils.initialize_gpio()
+   serial_port_handler.initialize_serial()
    try:
          app.run(host='0.0.0.0', port=5000, debug = True)
    finally:
-         cleanup_gpio()
-         if ser_port:
-            ser_port.close()
+         gpio_utils.cleanup_gpio()
+         serial_port_handler.close_serial()
