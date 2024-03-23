@@ -79,14 +79,22 @@ def print_byte_array_as_spaced_hex(byte_array, data_name):
     hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
     print(f"{data_name}: {hex_string}")
 
+SERVO_ON = False
+SERVO_OFF = False
+GET_MSG = False
+GET_IO_OUTPUT = False
+SET_POINT_1 = False
+SET_POINT_2 = False
+SET_POINT_HOME = False
+MOTION_START = False
+MOTION_PAUSE = False
+
 @app.route("/")
 def index():
-      # Initialize session variables if they don't exist
-      for key in ['SERVO_ON', 'SERVO_OFF', 'GET_MSG',
-                  'GET_IO_OUTPUT', 'SET_POINT_1', 'SET_POINT_2',
-                  'SET_POINT_HOME', 'MOTION_START', 'MOTION_PAUSE']:
-        session.setdefault(key, False)
-
+      global SERVO_ON,SERVO_OFF
+      global GET_MSG,GET_IO_OUTPUT
+      global SET_POINT_1,SET_POINT_2,SET_POINT_HOME
+      global MOTION_START,MOTION_PAUSE
       
       ledRedSts = GPIO.input(LED_RED_PIN)
       ledYlwSts = GPIO.input(LED_YLW_PIN)
@@ -99,21 +107,26 @@ def index():
         'ledGrn': ledGrnSts,
         'RS485_read': RS485_read,
         'RS485_send': RS485_send,
-        'SERVO_ON' : session['SERVO_ON'],
-        'SERVO_OFF' : session['SERVO_OFF'],
-        'GET_MSG' : session['GET_MSG'],
-        'GET_IO_OUTPUT' : session['GET_IO_OUTPUT'],
-        'SET_POINT_1' : session['SET_POINT_1'],
-        'SET_POINT_2' : session['SET_POINT_2'],
-        'SET_POINT_HOME' : session['SET_POINT_HOME'],
-        'MOTION_START' : session['MOTION_START'],
-        'MOTION_PAUSE' : session['MOTION_PAUSE'],
+        'SERVO_ON' : SERVO_ON,
+        'SERVO_OFF' : SERVO_OFF,
+        'GET_MSG' : GET_MSG,
+        'GET_IO_OUTPUT' : GET_IO_OUTPUT,
+        'SET_POINT_1' : SET_POINT_1,
+        'SET_POINT_2' : SET_POINT_2,
+        'SET_POINT_HOME' : SET_POINT_HOME,
+        'MOTION_START' : MOTION_START,
+        'MOTION_PAUSE' : MOTION_PAUSE,
       }
       return render_template('index.html', **templateData) 
 
 @app.route("/<deviceName>/<action>")
 def action(deviceName, action):
-      global RS485_send, RS485_read, pwm_red_led, ser_port
+      global RS485_send, RS485_read, pwm_red_led, 
+      global SERVO_ON,SERVO_OFF
+      global GET_MSG,GET_IO_OUTPUT
+      global SET_POINT_1,SET_POINT_2,SET_POINT_HOME
+      global MOTION_START,MOTION_PAUSE
+
       
       # Initialize or update the device statuses
       ledRedSts = GPIO.input(LED_RED_PIN)
@@ -163,8 +176,8 @@ def action(deviceName, action):
             
             serial_comm.send_command_and_wait_for_response(servo_on_command,
                                                            "SERVO_ON")
-            session['SERVO_ON'] = True
-            session['SERVO_OFF']= False
+            SERVO_ON = True
+            SERVO_OFF = False
 
       elif action == "servoOff":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
@@ -177,16 +190,16 @@ def action(deviceName, action):
             serial_comm.send_command_and_wait_for_response(servo_off_command,
                                                            "SERVO_OFF")
             
-            session['SERVO_ON'] = False
-            session['SERVO_OFF']= True
+            SERVO_ON = False
+            SERVO_OFF = True
       
       elif action == "getMsg":
-            session['GET_MSG'] = True
+            GET_MSG = True
             get_state_value_command = ServoParams.GET_STATE_VALUE_4
             result, response_received = serial_comm.send_command_and_wait_for_response(get_state_value_command,
                                                            "GET_STATE_VALUE_4")
 
-            session['GET_MSG'] = not response_received
+            GET_MSG = not response_received
 
             try:
                   parsed_data = parser.parse_message(result)
@@ -197,12 +210,12 @@ def action(deviceName, action):
                   print("Error parsing response message:", e)
 
       elif action == "getIOOutput":
-            session['GET_IO_OUTPUT'] = True
+            GET_IO_OUTPUT = True
             # RS485_read = fetcher.get_output_io_status()
             # print(RS485_read)
             result, response_received = serial_comm.get_output_io_status()
 
-            session['GET_IO_OUTPUT'] = not response_received
+            GET_IO_OUTPUT = not response_received
 
       elif action == "setPoint_1":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
@@ -219,9 +232,9 @@ def action(deviceName, action):
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
 
-            session["SET_POINT_1"]=True
-            session["SET_POINT_2"]=False
-            session["SET_POINT_HOME"]=False
+            SET_POINT_1=True
+            SET_POINT_2=False
+            SET_POINT_HOME=False
 
       elif action == "setPoint_2":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
@@ -238,9 +251,9 @@ def action(deviceName, action):
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
 
-            session["SET_POINT_1"]=False
-            session["SET_POINT_2"]=True
-            session["SET_POINT_HOME"]=False
+            SET_POINT_1=False
+            SET_POINT_2=True
+            SET_POINT_HOME=False
 
       elif action == "Home":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
@@ -257,9 +270,9 @@ def action(deviceName, action):
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
 
-            session["SET_POINT_1"]=False
-            session["SET_POINT_2"]=False
-            session["SET_POINT_HOME"]=True
+            SET_POINT_1=False
+            SET_POINT_2=False
+            SET_POINT_HOME=True
             
       elif action == "motionStart":
             print("START")
@@ -288,8 +301,7 @@ def action(deviceName, action):
 
 
       elif action == "motionPause":
-            print("PAUSE")
-            session['MOTION_PAUSE'] = pause_toggle_bit
+            MOTION_PAUSE= pause_toggle_bit
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.PAUSE, pause_toggle_bit)
             pause_toggle_bit ^= 1
@@ -311,15 +323,15 @@ def action(deviceName, action):
             'ledGrn' : ledGrnSts,
             'RS485_read':RS485_read,
             'RS485_send':RS485_send,
-            'SERVO_ON' : session['SERVO_ON'],
-            'SERVO_OFF' : session['SERVO_OFF'],
-            'GET_MSG' : session['GET_MSG'],
-            'GET_IO_OUTPUT' : session['GET_IO_OUTPUT'],
-            'SET_POINT_1' : session['SET_POINT_1'],
-            'SET_POINT_2' : session['SET_POINT_2'],
-            'SET_POINT_HOME' : session['SET_POINT_HOME'],
-            'MOTION_START' : session['MOTION_START'],
-            'MOTION_PAUSE' : session['MOTION_PAUSE'],
+            'SERVO_ON' : SERVO_ON,
+            'SERVO_OFF' : SERVO_OFF,
+            'GET_MSG' : GET_MSG,
+            'GET_IO_OUTPUT' : GET_IO_OUTPUT,
+            'SET_POINT_1' : SET_POINT_1,
+            'SET_POINT_2' : SET_POINT_2,
+            'SET_POINT_HOME' : SET_POINT_HOME,
+            'MOTION_START' : MOTION_START,
+            'MOTION_PAUSE' : MOTION_PAUSE,
             }
 
       return render_template('index.html', **templateData)
