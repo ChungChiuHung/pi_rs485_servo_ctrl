@@ -182,7 +182,6 @@ def action(deviceName, action):
       
       elif action == "getMsg":
             session['GET_MSG'] = True
-            print("GET_MSG: ",session['GET_MSG'])
             get_state_value_command = ServoParams.GET_STATE_VALUE_4
             result, response_received = serial_comm.send_command_and_wait_for_response(get_state_value_command,
                                                            "GET_STATE_VALUE_4")
