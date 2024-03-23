@@ -118,9 +118,6 @@ def index():
 @app.route("/<deviceName>/<action>")
 def action(deviceName, action):
       global RS485_send, RS485_read, pwm_red_led, ser_port
-      global SERVO_ON, SERVO_OFF, GET_MSG,GET_IO_OUTPUT
-      global SET_POINT_1,SET_POINT_2,SET_POINT_HOME
-      global MOTION_START,MOTION_PAUSE
       
       # Initialize or update the device statuses
       ledRedSts = GPIO.input(LED_RED_PIN)
@@ -227,10 +224,6 @@ def action(deviceName, action):
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
 
-            SET_POINT_1 = True
-            SET_POINT_2 = False
-            SET_POINT_HOME = False
-
       elif action == "setPoint_2":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.SEL_NO, 6)
@@ -246,9 +239,6 @@ def action(deviceName, action):
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
 
-            SET_POINT_1 = False
-            SET_POINT_2 = True
-            SET_POINT_HOME = False
       
       elif action == "Home":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
@@ -265,12 +255,8 @@ def action(deviceName, action):
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
 
-            SET_POINT_1 = False
-            SET_POINT_2 = False
-            SET_POINT_HOME = True
             
       elif action == "motionStart":
-            MOTION_START = True
             print("START")
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.START1, 0)
@@ -295,11 +281,10 @@ def action(deviceName, action):
             delay_ms(50)
             cmd_delay_time.calculate_transmission_time_ms(motion_start_command)
 
-            MOTION_START = False
 
       elif action == "motionPause":
             print("PAUSE")
-            MOTION_PAUSE = pause_toggle_bit
+            session['MOTION_PAUSE'] = pause_toggle_bit
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.PAUSE, pause_toggle_bit)
             pause_toggle_bit ^= 1
