@@ -79,6 +79,8 @@ def print_byte_array_as_spaced_hex(byte_array, data_name):
     hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
     print(f"{data_name}: {hex_string}")
 
+
+pause_toggle_bit = 1
 SERVO_ON = False
 SERVO_OFF = False
 GET_MSG = False
@@ -121,7 +123,7 @@ def index():
 
 @app.route("/<deviceName>/<action>")
 def action(deviceName, action):
-      global RS485_send, RS485_read, pwm_red_led
+      global RS485_send, RS485_read, pwm_red_led, pause_toggle_bit
       global SERVO_ON,SERVO_OFF
       global GET_MSG,GET_IO_OUTPUT
       global SET_POINT_1,SET_POINT_2,SET_POINT_HOME
