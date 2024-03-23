@@ -91,7 +91,11 @@ SET_POINT_HOME = False
 MOTION_START = False
 MOTION_PAUSE = False
 
-@app.route("/")
+@app.route('/')
+def home():
+      return render_template('home.html')
+
+@app.route('/index')
 def index():
       global SERVO_ON,SERVO_OFF
       global GET_MSG,GET_IO_OUTPUT
@@ -322,8 +326,8 @@ def action(deviceName, action):
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.PAUSE, temp)
             pause_toggle_bit = not temp
-
             print("PAUSE: ",pause_toggle_bit)
+            
             motion_puase_command = cmd_generator.generate_message(
                   protocol_id,
                   destination_address,
