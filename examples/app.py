@@ -143,7 +143,7 @@ def action(deviceName, action):
       delay_time_before_read_ms = 50
       timeout = 1 # Timeout in second
 
-      fetcher = IOStatusFetcher(ser_port)
+      #fetcher = IOStatusFetcher(ser_port)
       serial_comm = SerialCommunication(ser_port, delay_time_before_read_ms, timeout)
       cmd_delay_time = CmdDelayTime(ser_port.baudrate)
       
@@ -170,7 +170,7 @@ def action(deviceName, action):
             
             serial_comm.send_command_and_wait_for_response(servo_on_command,
                                                            "SERVO_ON")
-            session['SERVO_NO'] = True
+            session['SERVO_ON'] = True
             session['SERVO_OFF']= False
 
       elif action == "servoOff":
@@ -184,7 +184,7 @@ def action(deviceName, action):
             serial_comm.send_command_and_wait_for_response(servo_off_command,
                                                            "SERVO_OFF")
             
-            session['SERVO_NO'] = False
+            session['SERVO_ON'] = False
             session['SERVO_OFF']= True
       
       elif action == "getMsg":
