@@ -223,10 +223,8 @@ def index():
       return render_template('index.html', **templateData) 
 
 if __name__ == "__main__":
-   initialize_gpio()
-   initialize_serial()
    gpio_utils.initialize_gpio()
-   serial_port_handler.initialize_serial()
+   serial_port_handler.open_serial()
    try:
          app.run(host='0.0.0.0', port=5000, debug = True)
    finally:
