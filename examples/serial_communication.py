@@ -39,7 +39,8 @@ class SerialCommunication:
         start_time = time.time()
 
         cmd_delay_time = CmdDelayTime(current_baud_rate)
-        cmd_delay_time.calculate_transmission_time_ms(command)    
+        cmd_delay_time.calculate_transmission_time_ms(command)
+        response_received = False
  
         result = b''
         
@@ -58,6 +59,7 @@ class SerialCommunication:
             waiting_bytes = self.ser_port.inWaiting()
             if waiting_bytes > 0:
                 result += self.ser_port.read(waiting_bytes)
+                response_received = True
                 break
             self.delay_ms(self.delay_before_read) # Check periodically
 
@@ -68,7 +70,7 @@ class SerialCommunication:
         print("\nResponse received:")
         self.print_byte_array_as_spaced_hex(result, f"{command_description} Response hex: ")
 
-        return result , False
+        return (result , response_received)
 
 
     

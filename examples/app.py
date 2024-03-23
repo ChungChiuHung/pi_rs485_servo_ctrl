@@ -195,8 +195,9 @@ def action(deviceName, action):
       elif action == "getMsg":
             GET_MSG = True
             get_state_value_command = ServoParams.GET_STATE_VALUE_4
-            result, GET_MSG = serial_comm.send_command_and_wait_for_response(get_state_value_command,
+            result, response_received = serial_comm.send_command_and_wait_for_response(get_state_value_command,
                                                            "GET_STATE_VALUE_4")
+            GET_MSG = not response_received
             try:
                   parsed_data = parser.parse_message(result)
                   print("Parsed response data:", parsed_data)
