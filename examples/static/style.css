@@ -14,10 +14,42 @@ body {
 .navbar a {
     float: left;
     display: block;
-    color: white;
+    color: #d4d4d4;
     text-align: center;
     padding: 14px 20px;
     text-decoration: none;
+}
+
+.navbar a:hover{
+    background-color: #007acc;
+    color:white;
+}
+
+.form-group {
+    display: flex;
+    justify-content: flex-start;
+    align-items:center;
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    flex-basis: 20%;
+    margin-right: 10px;
+    color:#596cd6
+}
+
+.form-group input[type="text"] {
+    flex-grow:1;
+    background-color: #252526;
+    color:#dcdcdc;
+    border:1px solid #3c3c3c;
+    border-radius:4px;
+    padding: 8px;
+    font-size: 16px;
+}
+
+.form-group input[type="text"]::placeholder{
+    color: #808080;
 }
 
 /* Styling for the main section */
