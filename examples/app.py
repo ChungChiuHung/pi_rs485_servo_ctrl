@@ -208,8 +208,8 @@ def handle_action():
 def index():
       templateData = {
         'title': 'Servo Control Panel',
-        'RS485_read': serial_comm.last_send_message(),
-        'RS485_send': serial_comm.last_received_message(),
+        'RS485_read': serial_comm.last_send_message,
+        'RS485_send': serial_comm.last_received_message,
         'SERVO_ON' : SERVO_ON,
         'SERVO_OFF' : SERVO_OFF,
         'GET_MSG' : GET_MSG,
