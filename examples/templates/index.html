@@ -1,37 +1,47 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPIO Control</title>
-    <link rel="stylesheet" href="../static/style.css"/>
-</head>
-<body>
-<main>
-    <section class="Servo Amplifier Controller (RS485)">
-        <div class="rs485">
-            <h1>RS485 R/W Status</h1>
-            <p>RS-485 Send ==> <span>{{ RS485_send }}</span></p>
-            <p>RS-485 Receive ==> <span>{{ RS485_read }}</span></p>
-        </div>
-        <div class="commands">
-            <h2>Commands</h2>
-            <div class="buttons-container">
-                <a href="/RS485/servoOn" class="{{'button-on' if SERVO_ON else 'button-off'}}">SERVO ON</a>
-                <a href="/RS485/servoOff" class="{{'button-on' if SERVO_OFF else 'button-off'}}">SERVO OFF</a>
-                <a href="/recieveMsg/getMsg" class="{{'button-on' if GET_MSG else 'button-off'}}">GET STATE VALUE</a>
-                <a href="/recieveMsg/getIOOutput" class="{{'button-on' if GET_IO_STATE else 'button-off'}}">GET IO OUTPUT STATE VALUE</a>
-                <a href="/recieveMsg/setPoint_1" class="{{'button-on' if SET_POINT_1 else 'button-off'}}">SET POINT 1</a>
-                <a href="/recieveMsg/setPoint_2" class="{{'button-on' if SET_POINT_2 else 'button-off'}}">SET POINT 2</a>
-                <a href="/recieveMsg/Home" class="{{'button-on' if SET_POINT_HOME else 'button-off'}}">HOME</a>
-                <a href="/recieveMsg/motionStart" class="{{'button-on' if MOTION_START else 'button-off'}}">MOTION START</a>
-                <a href="/recieveMsg/motionPause" class="{{'button-on' if MOTION_PAUSE else 'button-off'}}">MOTION PAUSE</a>
-            </div>
-        </div>
-    </section>
-</main>
-</body>
-</html>
+<html>
+    <head>
+        <title>GPIO Control</title>
+        <link rel="stylesheet" href='../static/style.css'/>
+    </head>
+    <body>
+        <main>
+            <section class="Servo Amplifier Controller(RS485)">
+                <!--
+                <h1>Actuators</h1>
+                <div class="status">
+                    <h2>Status</h2>
+                    <p>RED LED ==> <span>{{ ledRed }}</span></p>
+                    <p>YLW LED ==> <span>{{ ledYlw }}</span></p>
+                    <p>GRN LED ==> <span>{{ ledGrn }}</span></p>
+                </div>
+                -->
+                <div class="rs485">
+                    <h1>RS485 R/W Status</h1>
+                    <p>RS-485 Send ==> <span>{{ RS485_send }}</span></p>
+                    <p>RS-485 Receive ==> <span>{{ RS485_read }}</span></p>
+                </div>
+                <div class="commands">
+                    <h2>Commands</h2>
+                    <!--
+                    <p>PWM RED LED Ctrl ==> <a href="/ledRed/on" class="button">TURN ON</a> <a href="/ledRed/off" class="button">TURN OFF</a></p>
+                    <p>GPIO YLW LED Ctrl ==> <a href="/ledYlw/on" class="button">TURN ON</a> <a href="/ledYlw/off" class="button">TURN OFF</a></p>
+                    <p>GPIO GRN LED Ctrl ==> <a href="/ledGrn/on" class="button">TURN ON</a> <a href="/ledGrn/off" class="button">TURN OFF</a></p>   
+                    -->
+                    <p><a href="/RS485/servoOn" class="{{'button-on' if SERVO_ON else 'button-off'}}">SERVO ON</a></p>
+                    <p><a href="/RS485/servoOff" class="{{'button-on' if SERVO_OFF else 'button-off'}}">SERVO OFF</a></p>
+                    <p><a href="/recieveMsg/getMsg" class="{{'button-on' if GET_MSG else 'button-off'}}">GET STATE VALUE</a></p>
+                    <p><a href="/recieveMsg/getIOOutput" class="{{'button-on' if GET_IO_STATE else 'button-off'}}">GET IO OUTPUT STATE VALUE</a></p>
+                    <p><a href="/recieveMsg/setPoint_1" class="{{'button-on' if SET_POINT_1 else 'button-off'}}">SET POINT 1</a></p>
+                    <p><a href="/recieveMsg/setPoint_2" class="{{'button-on' if SET_POINT_2 else 'button-off'}}">SET POINT 2</a></p>
+                    <p><a href="/recieveMsg/Home" class="{{'button-on' if SET_POINT_HOME else 'button-off'}}">HOME</a></p>
+                    <p><a href="/recieveMsg/motionStart" class="{{'button-on' if MOTION_START else 'button-off'}}">MOTION START</a></p>
+                    <p><a href="/recieveMsg/motionPause" class="{{'button-on' if MOTION_PAUSE else 'button-off'}}">MOTION PAUSE</a></p>
 
+                </div>
+            </section>
+        </main>
+    </body>
+</html>
 
 
