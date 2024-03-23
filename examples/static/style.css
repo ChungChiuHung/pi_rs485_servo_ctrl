@@ -1,7 +1,7 @@
 /* General body styling */
 body {
     font-family: 'Arial', sans-serif;
-    background-color: #f4f4f4;
+    background-color: #000000;
     margin: 0;
     padding: 20px;
     color: #333;
@@ -37,7 +37,7 @@ main {
     display: inline-block;
     text-decoration: none;
     color: white;
-    background-color: #fafa35;
+    background-color: #00e1ffbf;
     padding: 10px 15px;
     border-radius: 5px;
     transition: background-color 0.3s;
