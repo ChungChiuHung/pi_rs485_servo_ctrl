@@ -193,9 +193,9 @@ def action(deviceName, action):
             SERVO_OFF = True
       
       elif action == "getMsg":
-            GET_MSG = True            
+            GET_MSG = True
             get_state_value_command = ServoParams.GET_STATE_VALUE_4
-            result = serial_comm.send_command_and_wait_for_response(get_state_value_command,
+            result, GET_MSG = serial_comm.send_command_and_wait_for_response(get_state_value_command,
                                                            "GET_STATE_VALUE_4")
             try:
                   parsed_data = parser.parse_message(result)
@@ -204,8 +204,6 @@ def action(deviceName, action):
 
             except ValueError as e:
                   print("Error parsing response message:", e)
-            
-            GET_MSG = False
 
       elif action == "getIOOutput":
             RS485_read = fetcher.get_output_io_status()

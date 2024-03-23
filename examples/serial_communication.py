@@ -68,7 +68,7 @@ class SerialCommunication:
         print("\nResponse received:")
         self.print_byte_array_as_spaced_hex(result, f"{command_description} Response hex: ")
 
-        return result
+        return result , False
 
 
     
