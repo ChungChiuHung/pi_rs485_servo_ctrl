@@ -14,6 +14,8 @@ class SerialCommunication:
            self.ser_port = ser_port
            self.delay_before_read = delay_before_read
            self.wait_response_timeout_sec = wait_response_timeout_sec
+           self._last_send_message = b''
+           self._last_received_message = b''
 
     def delay_ms(self, milliseconds):
       seconds = milliseconds / 1000.0 # Convert milliseconds to seconds
@@ -24,14 +26,7 @@ class SerialCommunication:
         print(f"{data_name}: {hex_string}")
 
     def send_command_and_wait_for_response(self, command, command_description):
-        """
-        Send a command to the serial port and wait for a response.
-        :param ser_port: The serial port instance.
-        :param command: The command bytes to send.
-        :param command_description: Description of the command for logging.
-        :param total_timeout: Total timeout in milliseconds to wait for a response.
-        :return: Ther esponse bytes read from the serail port
-        """
+        self._last_send_message = command
         print(f"Start Sending Command:{command_description}")
         self.print_byte_array_as_spaced_hex(command, f"{command_description}:")
         self.ser_port.write(command)
@@ -73,7 +68,8 @@ class SerialCommunication:
 
         print("\nResponse received:")
         self.print_byte_array_as_spaced_hex(result, f"{command_description} Response hex: ")
-
+        
+        self._last_received_message = result
         response_received = True
 
         return (result , response_received)
@@ -106,6 +102,9 @@ class SerialCommunication:
         response_recieved = True
 
         return (json.dumps({"error" : "No response or invalid response length"}), response_recieved)
-
-
     
+    def last_send_message(self):
+        return ' '.join(f"{byte:02X}" for byte in self._last_send_message)
+
+    def last_received_message(self):
+        return ' '.join(f"{byte:02X}" for byte in self._last_received_message)

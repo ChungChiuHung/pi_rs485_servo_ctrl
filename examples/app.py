@@ -13,39 +13,50 @@ from cal_cmd_response_time import CmdDelayTime
 from io_status_fetcher import IOStatusFetcher
 from serial_communication import SerialCommunication
 
-# Define your GPIO pins upfront
-RS485_ENABLE_PIN = 4  # pin for RS485 transmission enable
-LED_RED_PIN = 13           # pin assignments for LEDs
-LED_YLW_PIN = 19
-LED_GRN_PIN = 26
-
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'JOJO0912956011')
+
+# Define your GPIO pins upfront
+RS485_ENABLE_PIN = 4  # pin for RS485 transmission enable
 
 # Initailize global variables for RS485 messages
 RS485_send = ''
 RS485_read = ''
 ser_port = None
 
+SERVO_ON = False
+SERVO_OFF = False
+GET_MSG = False
+GET_IO_OUTPUT = False
+SET_POINT_1 = False
+SET_POINT_2 = False
+SET_POINT_HOME = False
+MOTION_START = False
+MOTION_PAUSE = False
+
+cmd_generator = BaseMsgGenerator()
+setter = SetServoIOStatus()
+parser = ResponseMsgParser()
+
+# Config the waiting reponse timeout
+delay_time_before_read_ms = 50
+timeout = 1 # Timeout in second
+
+#fetcher = IOStatusFetcher(ser_port)
+serial_comm = SerialCommunication(ser_port, delay_time_before_read_ms, timeout)
+cmd_delay_time = CmdDelayTime(ser_port.baudrate)
+      
+pause_toggle_bit = True
+protocol_id=1
+destination_address = 1
+dir_bit = 0
+error_code = 0
+
 def initialize_gpio():
       GPIO.setmode(GPIO.BCM)
       GPIO.setwarnings(False)
       GPIO.setup(RS485_ENABLE_PIN, GPIO.OUT)
       GPIO.output(RS485_ENABLE_PIN, GPIO.HIGH) # Set High to Transmit
-
-      GPIO.setup(LED_RED_PIN, GPIO.OUT)
-      GPIO.setup(LED_YLW_PIN, GPIO.OUT)
-      GPIO.setup(LED_GRN_PIN, GPIO.OUT)
-      GPIO.output(LED_RED_PIN, GPIO.LOW)
-      GPIO.output(LED_YLW_PIN, GPIO.LOW)
-      GPIO.output(LED_GRN_PIN, GPIO.LOW)
-
-      # To create a PWM instance
-      # GPIO.PWM(pinNumber, Frequency)
-      pwm_red_led = GPIO.PWM(LED_RED_PIN, 2)
-      pwm_red_led.start(0) # Start PWM with 0% duty cycle (off)
-
-      return pwm_red_led
 
 def cleanup_gpio():
       GPIO.cleanup()
@@ -80,101 +91,18 @@ def print_byte_array_as_spaced_hex(byte_array, data_name):
     print(f"{data_name}: {hex_string}")
 
 
-SERVO_ON = False
-SERVO_OFF = False
-GET_MSG = False
-GET_IO_OUTPUT = False
-SET_POINT_1 = False
-SET_POINT_2 = False
-SET_POINT_HOME = False
-MOTION_START = False
-MOTION_PAUSE = False
-
 @app.route('/')
 def home():
       return render_template('home.html')
 
 @app.route('/action', methods=['POST'])
-def action():
-      action_type = request.json.get('action_type')
-      # Handle the action
-      print(f"Action Received: {action_type}")
+def handle_action():
+      action_type = request.json.get('action')
+      response = {}
+      print(f"Received action: {action_type}")
       # Perform the raspi action here based on action type
 
-      return jsonify({"status":"success", "action_type":action_type})
-
-@app.route('/index')
-def index():
-      global SERVO_ON,SERVO_OFF
-      global GET_MSG,GET_IO_OUTPUT
-      global SET_POINT_1,SET_POINT_2,SET_POINT_HOME
-      global MOTION_START,MOTION_PAUSE
-      
-      ledRedSts = GPIO.input(LED_RED_PIN)
-      ledYlwSts = GPIO.input(LED_YLW_PIN)
-      ledGrnSts = GPIO.input(LED_GRN_PIN)
-
-      templateData = {
-        'title': 'GPIO output Status!',
-        'ledRed': ledRedSts,
-        'ledYlw': ledYlwSts,
-        'ledGrn': ledGrnSts,
-        'RS485_read': RS485_read,
-        'RS485_send': RS485_send,
-        'SERVO_ON' : SERVO_ON,
-        'SERVO_OFF' : SERVO_OFF,
-        'GET_MSG' : GET_MSG,
-        'GET_IO_OUTPUT' : GET_IO_OUTPUT,
-        'SET_POINT_1' : SET_POINT_1,
-        'SET_POINT_2' : SET_POINT_2,
-        'SET_POINT_HOME' : SET_POINT_HOME,
-        'MOTION_START' : MOTION_START,
-        'MOTION_PAUSE' : MOTION_PAUSE,
-      }
-      return render_template('index.html', **templateData) 
-
-@app.route("/<deviceName>/<action>")
-def action(deviceName, action):
-      global RS485_send, RS485_read, pwm_red_led, pause_toggle_bit
-      global SERVO_ON,SERVO_OFF
-      global GET_MSG,GET_IO_OUTPUT
-      global SET_POINT_1,SET_POINT_2,SET_POINT_HOME
-      global MOTION_START,MOTION_PAUSE
-
-      
-      # Initialize or update the device statuses
-      ledRedSts = GPIO.input(LED_RED_PIN)
-      ledYlwSts = GPIO.input(LED_YLW_PIN)
-      ledGrnSts = GPIO.input(LED_GRN_PIN)
-
-      # After performing actions, update the statuses if needed
-      if deviceName == 'ledRed' and action in ['on', 'off']:
-            ledRedSts = GPIO.input(LED_RED_PIN)
-      elif deviceName == 'ledYlw' and action in ['on', 'off']:
-            ledYlwSts = GPIO.input(LED_YLW_PIN)
-      elif deviceName == 'ledGrn' and action in ['on', 'off']:
-            ledGrnSts = GPIO.input(LED_GRN_PIN)
-
-      cmd_generator = BaseMsgGenerator()
-      setter = SetServoIOStatus()
-      parser = ResponseMsgParser()
-
-      # Config the waiting reponse timeout
-      delay_time_before_read_ms = 50
-      timeout = 1 # Timeout in second
-
-      #fetcher = IOStatusFetcher(ser_port)
-      serial_comm = SerialCommunication(ser_port, delay_time_before_read_ms, timeout)
-      cmd_delay_time = CmdDelayTime(ser_port.baudrate)
-      
-      pause_toggle_bit = True
-      protocol_id=1
-      destination_address = 1
-      dir_bit = 0
-      error_code = 0
-
-
-      if action == "servoOn":
+      if action_type == "servoOn":
             # SET_PARAM_2 command        
             set_param_2_command = ServoParams.SET_PARAM_2      
             serial_comm.send_command_and_wait_for_response(set_param_2_command,
@@ -190,10 +118,9 @@ def action(deviceName, action):
             
             serial_comm.send_command_and_wait_for_response(servo_on_command,
                                                            "SERVO_ON")
-            SERVO_ON = True
-            SERVO_OFF = False
+            response['message']="Servo turned on successfully."
 
-      elif action == "servoOff":
+      elif action_type == "servoOff":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.SVON, 0)
             servo_off_command = cmd_generator.generate_message(
@@ -204,16 +131,12 @@ def action(deviceName, action):
             serial_comm.send_command_and_wait_for_response(servo_off_command,
                                                            "SERVO_OFF")
             
-            SERVO_ON = False
-            SERVO_OFF = True
+            response['message'] = "Servo turned off successfully."
       
-      elif action == "getMsg":
-            GET_MSG = True
+      elif action_type == "getMsg":
             get_state_value_command = ServoParams.GET_STATE_VALUE_4
             result, response_received = serial_comm.send_command_and_wait_for_response(get_state_value_command,
                                                            "GET_STATE_VALUE_4")
-
-            GET_MSG = not response_received
 
             try:
                   parsed_data = parser.parse_message(result)
@@ -223,15 +146,16 @@ def action(deviceName, action):
             except ValueError as e:
                   print("Error parsing response message:", e)
 
-      elif action == "getIOOutput":
-            GET_IO_OUTPUT = True
+            response['message'] = "Get Servo IO Input Status Value."
+
+      elif action_type == "getIOOutput":
             # RS485_read = fetcher.get_output_io_status()
             # print(RS485_read)
             result, response_received = serial_comm.get_output_io_status()
 
-            GET_IO_OUTPUT = not response_received
+            response['message'] = "Get Servo IO Output Status Value."
 
-      elif action == "setPoint_1":
+      elif action_type == "setPoint_1":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.SEL_NO, 5)
             point_sel_command = cmd_generator.generate_message(
@@ -241,18 +165,9 @@ def action(deviceName, action):
             serial_comm.send_command_and_wait_for_response(point_sel_command,
                                                            "SEL_POINT_1")
 
-            # RS485_send = print_byte_array_as_spaced_hex(point_sel_command, f"{cmd_code}")
-            # ser_port.write(point_sel_command)
-# 
-            # Fixed delay plus transmission delay calculation
-            # delay_ms(50)
-            # cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
+            response['message'] = "Set the Postion in Point 1."
 
-            SET_POINT_1=True
-            SET_POINT_2=False
-            SET_POINT_HOME=False
-
-      elif action == "setPoint_2":
+      elif action_type == "setPoint_2":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.SEL_NO, 6)
             point_sel_command = cmd_generator.generate_message(
@@ -263,18 +178,9 @@ def action(deviceName, action):
             serial_comm.send_command_and_wait_for_response(point_sel_command,
                                                            "SEL_POINT_2")
 
-            #RS485_send = print_byte_array_as_spaced_hex(point_sel_command, f"{cmd_code}")
-            #ser_port.write(point_sel_command)
-#
-            ## Fixed delay plus transmission delay calculation
-            #delay_ms(50)
-            #cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
+            response['message'] = "Set the Postion in Point 2."
 
-            SET_POINT_1=False
-            SET_POINT_2=True
-            SET_POINT_HOME=False
-
-      elif action == "Home":
+      elif action_type == "Home":
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.SEL_NO, 1)
             point_sel_command = cmd_generator.generate_message(
@@ -285,18 +191,9 @@ def action(deviceName, action):
             serial_comm.send_command_and_wait_for_response(point_sel_command,
                                                            "SEL_POINT_HOME")
             
-            #RS485_send = print_byte_array_as_spaced_hex(point_sel_command, f"{cmd_code}")
-            #ser_port.write(point_sel_command)
-#
-            ## Fixed delay plus transmission delay calculation
-            #delay_ms(50)
-            #cmd_delay_time.calculate_transmission_time_ms(point_sel_command)
-
-            SET_POINT_1=False
-            SET_POINT_2=False
-            SET_POINT_HOME=True
+            response['message'] = "Set the Postion in HOME."
             
-      elif action == "motionStart":
+      elif action_type == "motionStart":
             print("START")
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             parameter_data = setter.set_bit_status(BitMap.START1, 0)
@@ -304,11 +201,7 @@ def action(deviceName, action):
                   protocol_id,
                   destination_address,
                   dir_bit, error_code, cmd_code, parameter_data)
-            #RS485_send = print_byte_array_as_spaced_hex(motion_start_command, f"{cmd_code}")
-            #ser_port.write(motion_start_command)
-#
-            #delay_ms(50)
-            #cmd_delay_time.calculate_transmission_time_ms(motion_start_command)
+            
             serial_comm.send_command_and_wait_for_response(motion_start_command,
                                                            "MOTION_START")
             
@@ -321,14 +214,10 @@ def action(deviceName, action):
             
             serial_comm.send_command_and_wait_for_response(motion_start_command,
                                                            "MOTION_START")
-            # RS485_send = print_byte_array_as_spaced_hex(motion_start_command, f"{cmd_code}")
-            # ser_port.write(motion_start_command)
-# 
-            # delay_ms(50)
-            # cmd_delay_time.calculate_transmission_time_ms(motion_start_command)
+            response['message'] = "Motion Start."
 
 
-      elif action == "motionPause":
+      elif action_type == "motionPause":
             temp = pause_toggle_bit
             print("PAUSE: ",temp)
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
@@ -343,34 +232,36 @@ def action(deviceName, action):
             
             serial_comm.send_command_and_wait_for_response(motion_puase_command,
                                                            "MOTION_PAUSE")
-            
-      templateData = {
-            'title':'GPIO output Status!',
-            'ledRed' : ledRedSts,
-            'ledYlw' : ledYlwSts,
-            'ledGrn' : ledGrnSts,
-            'RS485_read':RS485_read,
-            'RS485_send':RS485_send,
-            'SERVO_ON' : SERVO_ON,
-            'SERVO_OFF' : SERVO_OFF,
-            'GET_MSG' : GET_MSG,
-            'GET_IO_OUTPUT' : GET_IO_OUTPUT,
-            'SET_POINT_1' : SET_POINT_1,
-            'SET_POINT_2' : SET_POINT_2,
-            'SET_POINT_HOME' : SET_POINT_HOME,
-            'MOTION_START' : MOTION_START,
-            'MOTION_PAUSE' : MOTION_PAUSE,
-            }
+            response['message'] = "Motion Pause."
+      else:
+            response['error'] = "Action not recognized."
 
-      return render_template('index.html', **templateData)
+      return jsonify(response)
+
+@app.route('/index')
+def index():
+      templateData = {
+        'title': 'Servo Control Panel',
+        'RS485_read': serial_comm.last_send_message(),
+        'RS485_send': serial_comm.last_received_message(),
+        'SERVO_ON' : SERVO_ON,
+        'SERVO_OFF' : SERVO_OFF,
+        'GET_MSG' : GET_MSG,
+        'GET_IO_OUTPUT' : GET_IO_OUTPUT,
+        'SET_POINT_1' : SET_POINT_1,
+        'SET_POINT_2' : SET_POINT_2,
+        'SET_POINT_HOME' : SET_POINT_HOME,
+        'MOTION_START' : MOTION_START,
+        'MOTION_PAUSE' : MOTION_PAUSE,
+      }
+      return render_template('index.html', **templateData) 
 
 if __name__ == "__main__":
-   pwm_red_led = initialize_gpio()
+   initialize_gpio()
    initialize_serial()
    try:
          app.run(host='0.0.0.0', port=5000, debug = True)
    finally:
-         pwm_red_led.stop()
          cleanup_gpio()
          if ser_port:
             ser_port.close()
