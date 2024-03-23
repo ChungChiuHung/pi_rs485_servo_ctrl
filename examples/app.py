@@ -317,11 +317,11 @@ def action(deviceName, action):
 
 
       elif action == "motionPause":
-            
-            print("PAUSE: ",pause_toggle_bit)
+            temp = pause_toggle_bit
+            print("PAUSE: ",temp)
             cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
-            parameter_data = setter.set_bit_status(BitMap.PAUSE, pause_toggle_bit)
-            pause_toggle_bit ^= 1
+            parameter_data = setter.set_bit_status(BitMap.PAUSE, temp)
+            pause_toggle_bit = not temp
 
             print("PAUSE: ",pause_toggle_bit)
             motion_puase_command = cmd_generator.generate_message(
