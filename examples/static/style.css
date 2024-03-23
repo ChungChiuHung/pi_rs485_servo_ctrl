@@ -34,7 +34,7 @@ main {
 }
 
 /* Button base styling */
-.button-on, .button-off {
+.button-on, .button-off, button {
     display: inline-block;
     text-decoration: none;
     padding: 10px 20px;
@@ -65,7 +65,7 @@ main {
 }
 
 /* Hover effects */
-.button-on:hover, .button-off:hover {
+.button-on:hover, .button-off:hover, button:hover {
     transform: scale(1.05); /* Slightly increase size */
     background-color: #555; /* Darker background on hover */
     border-color: #ddd; /* Light border on hover */
