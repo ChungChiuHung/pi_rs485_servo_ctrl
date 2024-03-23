@@ -33,23 +33,36 @@ main {
     font-weight: bold;
 }
 
-/* Button styling */
-.buttons-container {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); /* Adjust button width as necessary */
-    gap: 10px;
-    padding: 20px 0;
-}
-
+/* Button base styling */
 .button-on, .button-off {
-    width: 100%; /* Ensure full width */
-    text-align: center; /* Center text */
-    box-sizing: border-box; /* Include padding and border in element's width and height */
-    padding: 10px; /* Adjust padding as necessary */
-    display: inline-block; /* Display inline for side-by-side alignment */
+    display: inline-block;
+    text-decoration: none;
+    padding: 10px 20px;
+    margin: 5px;
+    border-radius: 5px;
+    font-weight: bold;
+    text-align: center;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: background-color 0.3s, transform 0.2s, border 0.3s;
 }
 
-.button:hover {
-    background-color: #e1e1e1; /* Light hover effect */
-    color: #000; /* Dark text on hover */
+/* SERVO ON button styling */
+.button-on {
+    color: #fff; /* White text */
+    background-color: #4CAF50; /* Green background */
 }
+
+/* SERVO OFF and other buttons styling */
+.button-off {
+    color: #fff; /* White text */
+    background-color: #f44336; /* Red background */
+}
+
+/* Hover effects */
+.button-on:hover, .button-off:hover {
+    transform: scale(1.05); /* Slightly increase size */
+    background-color: #555; /* Darker background on hover */
+    border-color: #ddd; /* Light border on hover */
+}
+
