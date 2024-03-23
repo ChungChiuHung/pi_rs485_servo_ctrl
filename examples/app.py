@@ -49,7 +49,7 @@ delay_time_before_read_ms = 50
 timeout = 1 # Timeout in second
 
 #fetcher = IOStatusFetcher(ser_port)
-cmd_delay_time = CmdDelayTime(ser_port.baudrate)
+cmd_delay_time = CmdDelayTime(ser_port.get_baud_rate)
       
 pause_toggle_bit = True
 protocol_id=1

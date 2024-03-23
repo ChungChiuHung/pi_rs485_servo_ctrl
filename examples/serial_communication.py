@@ -15,6 +15,10 @@ class SerialPortHandler:
         self.timeout = timeout
         self.available_ports = ["/dev/ttyS0", "/dev/ttyAMA0", "/dev/serial0", "/dev/ttyUSB0"]
 
+    
+    def get_baud_rate(self):
+        return self.serial_port.baudrate
+
     def open_serial(self):
         for port in self.available_ports:
             try:
