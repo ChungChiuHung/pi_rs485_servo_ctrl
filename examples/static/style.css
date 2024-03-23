@@ -56,7 +56,7 @@ main {
 /* SERVO OFF and other buttons styling */
 .button-off {
     color: #fff; /* White text */
-    background-color: #f44336; /* Red background */
+    background-color: #888787; /* Red background */
 }
 
 /* Hover effects */
