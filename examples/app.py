@@ -49,7 +49,6 @@ delay_time_before_read_ms = 50
 timeout = 1 # Timeout in second
 
 #fetcher = IOStatusFetcher(ser_port)
-serial_comm = SerialCommunication(serial_port_handler, delay_time_before_read_ms, timeout)
 cmd_delay_time = CmdDelayTime(ser_port.baudrate)
       
 pause_toggle_bit = True
