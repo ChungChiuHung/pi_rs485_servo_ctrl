@@ -29,7 +29,7 @@
                         url:'/action',
                         type: 'POST',
                         contentType: 'application/json',
-                        data: JSON.stringify({action_type:'START'}),
+                        data: JSON.stringify({action_type:'motionStart'}),
                         success: function(response){
                             console.log('Success:', response);
                         },
@@ -44,7 +44,7 @@
                         url:'/action',
                         type:'POST',
                         contentType: 'application/json',
-                        data: JSON.stringify({action_type:'STOP'}),
+                        data: JSON.stringify({action_type:'motionStop'}),
                         success: function(response){
                             console.log('Success', response);
                         },
