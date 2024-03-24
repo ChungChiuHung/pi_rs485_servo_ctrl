@@ -63,7 +63,7 @@ def home():
 
 @app.route('/action', methods=['POST'])
 def handle_action():
-      action_type = request.json.get('action')
+      action_type = request.get_json('action')
       response = {}
       print(f"Received action: {action_type}")
       # Perform the raspi action here based on action type
