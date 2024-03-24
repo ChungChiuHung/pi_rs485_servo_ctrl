@@ -80,12 +80,15 @@ def index():
       return render_template('index.html', **templateData) 
 
 @app.route('/action', methods=['POST'])
-
-def handle_action(action):
+def handle_action():
       global SERVO_ON, SERVO_OFF, GET_MSG, GET_IO_OUTPUT, SET_POINT_1, SET_POINT_2, SET_POINT_HOME, MOTION_START, MOTION_PAUSE
+      
+      data = request.json
+      action_type = data.get('action')
       action = request.json.get('action')
       response = {"status":"success","action":action}
       print(f"Received action: {action}")
+      print(f"Received action: {action_type}")
       # Perform the raspi action here based on action type
 
       if action == "servoOn":
