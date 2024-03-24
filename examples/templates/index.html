@@ -4,11 +4,11 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Servo Control</title>
         <link rel="stylesheet" href='../static/style.css'/>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
     </head>
     <script>
         function sendCommand(action) {
-            event.preventDefault(); //Prevent default form action
-            fetch('/action/$(action)',{
+            fetch('/action/'+ action,{
                 method: 'POST',
                 headers:{
                     'Content-Type': 'application/json',
@@ -19,7 +19,7 @@
             .then(data => {
                 console.log('Success:', data);
                 // Optionally update the UI here
-                document.getElementById('${action}_status').innerText = 'Completed';
+                document.getElementById(action + '_status').innerText = 'Completed';
             })
             .catch((error) => {
                 conosle.error('Error:', error);
@@ -46,17 +46,6 @@
                 </div>
                 <div class="commands">
                     <h2>Commands</h2>
-                    <!--
-                        <p><a href="/RS485/servoOn" class="{{'button-on' if SERVO_ON else 'button-off'}}">SERVO ON</a></p>
-                    <p><a href="/RS485/servoOff" class="{{'button-on' if SERVO_OFF else 'button-off'}}">SERVO OFF</a></p>
-                    <p><a href="/recieveMsg/getMsg" class="button-container"><button class="button">GET STATE VALUE</button></a></p>
-                    <p><a href="/recieveMsg/getIOOutput" class="button-container"><button class="button">GET IO OUTPUT STATE VALUE</button></a></p>
-                    <p><a href="/recieveMsg/setPoint_1" class="{{'button-on' if SET_POINT_1 else 'button-off'}}">SET POINT 1</a></p>
-                    <p><a href="/recieveMsg/setPoint_2" class="{{'button-on' if SET_POINT_2 else 'button-off'}}">SET POINT 2</a></p>
-                    <p><a href="/recieveMsg/Home" class="{{'button-on' if SET_POINT_HOME else 'button-off'}}">HOME</a></p>
-                    <p><a href="/recieveMsg/motionStart" class="button-container"><button class="button">MOTION START</button></a></p>
-                    <p><a href="/recieveMsg/motionPause" class="button-container"><button class="button">MOTION PAUSE</button></a></p>
-                    --> 
                     <div class="button-container"><button class="button" onclick="sendCommand('servoOn')">SERVO ON</button><span id="servoOn_status"></span></div>
                     <div class="button-container"><button class="button" onclick="sendCommand('servoOff')">SERVO OFF</button><span id="servoOff_status"></span></div>
                     <div class="button-container"><button class="button" onclick="sendCommand('getMsg')">GET STATE VALUE</button><span id="getMsg_status"></span></div>
