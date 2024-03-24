@@ -83,6 +83,7 @@ def index():
 
 def handle_action(action):
       global SERVO_ON, SERVO_OFF, GET_MSG, GET_IO_OUTPUT, SET_POINT_1, SET_POINT_2, SET_POINT_HOME, MOTION_START, MOTION_PAUSE
+      action = request.json.get('action')
       response = {"status":"success","action":action}
       print(f"Received action: {action}")
       # Perform the raspi action here based on action type
