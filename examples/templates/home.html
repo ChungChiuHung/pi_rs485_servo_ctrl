@@ -8,6 +8,17 @@
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script>
             $(document).ready(function(){
+                function clearStatuses(excludeAction){
+                    // List all action IDs
+                    let actions = ['start','stop'];
+                    action.array.forEach(function(action) {
+                        if(action !== excludeAction) {
+                            $('#'+action + '_status').text(''); // Clear the status text
+                        }
+                    });
+
+                }
+
                 function sendCommand(actionType) {
                     $.ajax({
                         url:'/action',
