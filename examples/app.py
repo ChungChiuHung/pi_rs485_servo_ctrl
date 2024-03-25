@@ -80,7 +80,7 @@ def index():
       return render_template('index.html', **templateData) 
 
 @app.route('/action', methods=['POST'])
-def handle_action():
+def action():
       global SERVO_ON, SERVO_OFF, GET_MSG, GET_IO_OUTPUT, SET_POINT_1, SET_POINT_2, SET_POINT_HOME, MOTION_START, MOTION_PAUSE
       
       data = request.json
