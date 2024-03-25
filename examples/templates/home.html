@@ -8,6 +8,7 @@
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script>
             $(document).read(function(){
+                event.preventDefault();
                 function sendCommand(actionType) {
                     $.ajax({
                         url:'/action',
@@ -35,7 +36,7 @@
 <body>
     <div class="navbar">
         <a href="/">Home</a>
-        <a href="/index">Config</a>
+        <a href="/home">Config</a>
     </div>
     <div class="main">
         <h1>Walking Lamp Control</h1>
