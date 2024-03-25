@@ -65,8 +65,6 @@ def home():
 def index():
       templateData = {
         'title': 'Servo Control Panel',
-        'START':START,
-        'STOP':STOP,
         'RS485_read': RS485_send,
         'RS485_send': RS485_read,
         'SERVO_ON' : SERVO_ON,

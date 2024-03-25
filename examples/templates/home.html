@@ -20,6 +20,7 @@
                 }
 
                 function sendCommand(actionType) {
+                    clearStatuses(actionType)
                     $.ajax({
                         url:'/action',
                         type:'POST',
