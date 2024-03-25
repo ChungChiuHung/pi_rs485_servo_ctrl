@@ -42,10 +42,11 @@ class SerialPortHandler:
             self.serial_port.write(data)
 
     def read(self, timeout_sec):
-        end_time = time.time() + timeout_sec
-        while time.time() < end_time:
-            if self.serial_port and self.serial_port.in_waiting:
+        if self.serail_port and self.serial_port.is_open:
+            time.sleep(timeout_sec)
+            if self.serial_port.in_waiting:
                 return self.serial_port.read(self.serial_port.in_waiting)
+        
         return b''
 
 class SerialCommunication:
@@ -68,7 +69,7 @@ class SerialCommunication:
             self.last_send_message = command
             print(f"Sending {command_description}:")
             self.print_byte_array_as_spaced_hex(command, command_description)
-            self.ser_port.write(command)
+            self.serial_port.write(command)
 
             result = b''
             start_time = time.time()
