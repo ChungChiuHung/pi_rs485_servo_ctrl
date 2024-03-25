@@ -11,7 +11,7 @@
                 function clearStatuses(excludeAction){
                     // List all action IDs
                     let actions = ['start','stop'];
-                    action.forEach(function(action) {
+                    actions.forEach(function(action) {
                         if(action !== excludeAction) {
                             $('#'+action + '_status').text(''); // Clear the status text
                         }
