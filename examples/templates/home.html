@@ -13,7 +13,7 @@
                         url:'/action',
                         type:'POST',
                         contentType: 'application/json',
-                        data: JSON,stringify({action: actionType}),
+                        data: JSON.stringify({action: actionType}),
                         success: function(response) {
                             console.log('Sucess', response);
                             $('#'+actionType + '_status').text(response.message ||'Action Completed');
