@@ -59,11 +59,7 @@ error_code = 0
 
 @app.route('/')
 def home():
-      templateData = {
-            'START':START,
-            'STOP':STOP,
-      }
-      return render_template('home.html', **templateData)
+      return render_template('home.html')
 
 @app.route('/index')
 def index():
