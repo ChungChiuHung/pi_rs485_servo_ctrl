@@ -36,12 +36,11 @@
                 }
 
                 // Bind sendCommand function to buttons
-                $('.button').click(function(event){
-                    const action = $(this).data('action');
+                $('.button').click(function(){
+                    const action = $(this).attr('data-action');
                     sendCommand(action);
                 });
             });
-            
         </script>
     </head>
     <body>
@@ -64,15 +63,15 @@
                 </div>
                 <div class="commands">
                     <h2>Commands</h2>
-                    <div class="button-container"><button class="button" onclick="sendCommand('servoOn')">SERVO ON</button><span id="servoOn_status"></span></div>
-                    <div class="button-container"><button class="button" onclick="sendCommand('servoOff')">SERVO OFF</button><span id="servoOff_status"></span></div>
-                    <div class="button-container"><button class="button" onclick="sendCommand('getMsg')">GET STATE VALUE</button><span id="getMsg_status"></span></div>
-                    <div class="button-container"><button class="button" onclick="sendCommand('getIOOutput')">GET IO OUTPUT STATE VALUE</button><span id="getIOOutput_status"></span></div>
-                    <div class="button-container"><button class="button" onclick="sendCommand('setPoint_1')">SET POINT 1</button><span id="setPoint_1_status"></span></div>
-                    <div class="button-container"><button class="button" onclick="sendCommand('setPoint_2')">SET POINT 2</button><span id="setPoint_2_status"></span></div>
-                    <div class="button-container"><button class="button" onclick="sendCommand('Home')">HOME</button><span id="Home_status"></span></div>
-                    <div class="button-container"><button class="button" onclick="sendCommand('motionStart')">MOTION START</button><span id="motionStart_status"></span></div>
-                    <div class="button-container"><button class="button" onclick="sendCommand('motionPause')">MOTION PAUSE</button><span id="motionPause_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="servoOn">SERVO ON</button><span id="servoOn_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="servoOff">SERVO OFF</button><span id="servoOff_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="getMsg">GET STATE VALUE</button><span id="getMsg_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="getIOOutput">GET IO OUTPUT STATE VALUE</button><span id="getIOOutput_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="setPoint_1">SET POINT 1</button><span id="setPoint_1_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="setPoint_2">SET POINT 2</button><span id="setPoint_2_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="Home">HOME</button><span id="Home_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="motionStart">MOTION START</button><span id="motionStart_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="motionPause">MOTION PAUSE</button><span id="motionPause_status"></span></div>
                 </div>
             </section>
             <a href="/">Go Back to Home</a>
