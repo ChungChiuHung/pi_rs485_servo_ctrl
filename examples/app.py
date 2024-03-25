@@ -31,6 +31,8 @@ if not serial_port:
 RS485_send = "00 00 FF FF"
 RS485_read = "FF FF 00 00"
 
+START = False
+STOP = False
 SERVO_ON = False
 SERVO_OFF = False
 GET_MSG = False
@@ -57,7 +59,11 @@ error_code = 0
 
 @app.route('/')
 def home():
-      return render_template('home.html')
+      templateData = {
+            'START':START,
+            'STOP':STOP,
+      }
+      return render_template('home.html', **templateData)
 
 @app.route('/index')
 def index():
@@ -80,6 +86,7 @@ def index():
 @app.route('/action', methods=['POST'])
 def handle_action():
       global SERVO_ON, SERVO_OFF, GET_MSG, GET_IO_OUTPUT, SET_POINT_1, SET_POINT_2, SET_POINT_HOME, MOTION_START, MOTION_PAUSE
+      global START, STOP
 
       data = request.json
       action = data.get('action')
@@ -88,6 +95,15 @@ def handle_action():
       print(f"Received action: {action}")
 
       # Perform the raspi action here based on action type
+
+      if action == "start":
+            START = True
+            STOP = False
+            response['message']=f"START:{START}/STOP:{STOP} successfully."
+      elif action == "stop":
+            STOP = True
+            START = False
+            response['message']=f"START:{START}/STOP:{STOP} successfully."
 
       if action == "servoOn":
             # SET_PARAM_2 command        
