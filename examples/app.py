@@ -2,15 +2,7 @@ import os
 from flask import Flask, render_template, request, session, jsonify
 from gpio_utils import GPIOUtils
 from serial_port_config import SerialPortConfig
-
-from servo_params import ServoParams
-from base_msg_generator import BaseMsgGenerator, MessageCommander
-from response_parsing import ResponseMsgParser
-from command_code import CmdCode
-from set_servo_io_status import SetServoIOStatus
-from set_servo_io_status import BitMap
-from io_status_fetcher import IOStatusFetcher
-from serial_communication import SerialCommunication
+from servo_control import ServoCntroller
 
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'JOJO0912956011')
@@ -22,6 +14,7 @@ gpio_utils = GPIOUtils()
 # Configure the serial port
 serial_config = SerialPortConfig(baud_rate=57600, timeout=2)
 serial_port = serial_config.configure_serial_port()
+servo_ctrller = ServoCntroller(serial_port)
 
 if not serial_port:
       print("Could not configure any serial port. Exiting.")
