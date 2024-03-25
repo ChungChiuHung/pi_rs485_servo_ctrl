@@ -9,7 +9,7 @@ from set_servo_io_status import SetServoIOStatus
 from set_servo_io_status import BitMap
 from cal_cmd_response_time import CmdDelayTime
 from io_status_fetcher import IOStatusFetcher
-from serial_communication import SerialCommunication, SerialPortHandler
+from serial_communication import SerialCommunication
 
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'JOJO0912956011')
