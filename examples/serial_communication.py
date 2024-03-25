@@ -8,10 +8,9 @@ from status_bit_mapping import  BitMapOutput
 init(autoreset=True)
 
 class SerialCommunication:
-    def __init__(self, baud_rate=57600, timeout=1, command_timeout=1):
+    def __init__(self, baud_rate=57600, timeout=1):
            self.baud_rate = baud_rate
            self.timeout = timeout
-           self.command_timeout = command_timeout
            self.serial_port = None
            self.available_ports = ["/dev/ttyS0", "/dev/ttyAMA0", "/dev/serial0", "/dev/ttyUSB0"]
            self.last_send_message = b''
@@ -41,7 +40,18 @@ class SerialCommunication:
         hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
         print(f"{data_name}: {hex_string}")
 
-    def send_command_and_wait_for_response(self, command, command_description):
+    def find_start_marker(self, start_marker):
+        previous_byte = None
+        while True:
+            byte = self.serial_port.read(1)
+            if not byte:
+                return False
+            if previous_byte is not None and previous_byte + byte == start_marker:
+                return True
+            previous_byte = byte
+
+    def send_command_and_wait_for_response(self, command, command_description,
+                                           start_marker, end_marker_length=2, read_timeout=0.1):
         if not self.serial_port:
             print("Serial port is not open.")
             return None

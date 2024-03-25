@@ -6,6 +6,31 @@
         <title>Servo Control</title>
         <link rel="stylesheet" href='../static/style.css'/>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+        <script>
+            $(document).read(function(){
+                function sendCommand(actionType) {
+                    $.ajax({
+                        url:'/action',
+                        type:'POST',
+                        contentType: 'application/json',
+                        data: JSON,stringify({action: actionType}),
+                        success: function(response) {
+                            console.log('Sucess', response);
+                            $('#'+actionType + '_status').text('Error performing action');
+                        }
+                    });
+                }
+
+                // Event listeners for buttons
+                $('#startBtn').click(function(){
+                    sendCommand('start');
+                });
+
+                $('#stopBtn').click(function(){
+                    sendCommand('stop');
+                })
+            });
+        </script>
     </head>
 <body>
     <div class="navbar">
@@ -15,46 +40,13 @@
     <div class="main">
         <h1>Walking Lamp Control</h1>
         <div class="button-container">
-            <button class="button" id="start">START</button>
+            <button class="button" id="startBtn">START</button>
             <span id="start_status"></span>
         </div>
         <div class="button-container">
-            <button class="button" id="stop">STOP</button>
+            <button class="button" id="stopBtn">STOP</button>
             <span id="stop_status"></span>
         </div>
-        <script>
-            $(document).ready(function() {
-                $('#start').click(function(){
-                    $.ajax({
-                        url:'/action',
-                        type: 'POST',
-                        contentType: 'application/json',
-                        data: JSON.stringify({action_type:'motionStart'}),
-                        success: function(response){
-                            console.log('Success:', response);
-                        },
-                        error:function(error){
-                            console.log('Error',error)
-                        }
-                    });
-                });
-
-                $('#stop').click(function(){
-                    $.ajax({
-                        url:'/action',
-                        type:'POST',
-                        contentType: 'application/json',
-                        data: JSON.stringify({action_type:'motionStop'}),
-                        success: function(response){
-                            console.log('Success', response);
-                        },
-                        error: function(error) {
-                            console.log('Error', error)
-                        }
-                    });
-                });
-            });
-        </script>
     </div>
 </body>
 </html>
