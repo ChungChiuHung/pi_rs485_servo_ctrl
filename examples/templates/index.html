@@ -5,28 +5,45 @@
         <title>Servo Control</title>
         <link rel="stylesheet" href='../static/style.css'/>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+        <script>
+            $(document).ready(function(){
+                function clearStatuses(excludeAction){
+                    let actions = ['servoOn','servoOff','getMsg','getIOOutput','setPoint_1','setPoint_2','Home','motionStart','motionPause'];
+                    actions.forEach(function(action){
+                        if(action !== excludeAction){
+                            $('#'+action+'_status').text('');
+                        }
+                    });
+                }
+                
+
+                function sendCommand(action) {
+                    clearStatuses(action);
+                    $.ajax({
+                        url:'/action',
+                        type: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify({action: action}),
+                        success: function(response){
+                            console.log('Success:',response);
+                            $('#'+action + '_status').text(response.message || 'Action Completed');
+                        },
+                        error: function(error){
+                            console.error('Error:', error);
+                            $('#' + action + '_status').text('Error performing action');
+                        }
+                    });
+                }
+
+                // Bind sendCommand function to buttons
+                $('.button').click(function(event){
+                    const action = $(this).data('action');
+                    sendCommand(action);
+                })
+            }
+            
+        </script>
     </head>
-    <script>
-        function sendCommand(action) {
-            event.preventDefault();
-            fetch('/action',{
-                method: 'POST',
-                headers:{
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({action:action})
-            })
-            .then(response => response.json())
-            .then(data => {
-                console.log('Success:', data);
-                // Optionally update the UI here
-                document.getElementById(action + '_status').innerText = data.message || 'Action Completed';
-            })
-            .catch((error) => {
-                conosle.error('Error:', error);
-            });
-        }
-    </script>
     <body>
         <div class="navbar">
             <a href="/">Home</a>
@@ -62,5 +79,3 @@
         </main>
     </body>
 </html>
-
-
