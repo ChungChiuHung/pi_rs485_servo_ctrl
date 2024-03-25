@@ -4,6 +4,7 @@ from gpio_utils import GPIOUtils
 from serial_port_config import SerialPortConfig
 from servo_control import ServoCntroller
 
+#local
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'JOJO0912956011')
 
