@@ -7,8 +7,7 @@
         <link rel="stylesheet" href='../static/style.css'/>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script>
-            $(document).read(function(){
-                event.preventDefault();
+            $(document).ready(function(){
                 function sendCommand(actionType) {
                     $.ajax({
                         url:'/action',
@@ -17,17 +16,23 @@
                         data: JSON,stringify({action: actionType}),
                         success: function(response) {
                             console.log('Sucess', response);
+                            $('#'+actionType + '_status').text(response.message ||'Action Completed');
+                        },
+                        error: function(error){
+                            console.error('Error:', error);
                             $('#'+actionType + '_status').text('Error performing action');
                         }
                     });
                 }
 
                 // Event listeners for buttons
-                $('#startBtn').click(function(){
+                $('#startBtn').click(function(event){
+                    event.preventDefault();
                     sendCommand('start');
                 });
 
-                $('#stopBtn').click(function(){
+                $('#stopBtn').click(function(event){
+                    event.preventDefault();
                     sendCommand('stop');
                 })
             });
