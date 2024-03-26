@@ -11,6 +11,8 @@ class ServoCntroller:
     def __init__(self, serial_port):
         self.serial_port = serial_port
         self.cal_command_time_delay = CmdDelayTime(self.serial_port.baud_rate)
+        self.last_send_message = b''
+        self.last_received_message = b''
 
     @staticmethod
     def delay_ms(self, milliseconds):
