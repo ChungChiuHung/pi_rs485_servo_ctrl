@@ -49,9 +49,12 @@ class ServoController:
             total_timeout = command_transmission_time_ms + read_timeout  
             start_time = time.time()
 
-            while time.time()-start_time <  total_timeout :
+            while time.time()-start_time <  total_timeout:
                 if self.serial_port.in_waiting > 0:
                     response += self.serial_port.read(self.serial_port.in_waiting)
+                    if response.endswith(b'\n'):
+                        break
+                    
                 elapsed_time = time.time() -start_time
                 print(self.create_progress_bar(elapsed_time/total_timeout), end='\r')
 
