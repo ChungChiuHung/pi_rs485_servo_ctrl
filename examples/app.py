@@ -16,14 +16,13 @@ gpio_utils = GPIOUtils()
 port_manager = SerialPortManager(baud_rate=57600)
 port_manager.connect()
 if port_manager.get_serial_instance():
-        print(f"Connected port: {port_manager.get_connected_port()}")
-        print(f"Current baud rate: {port_manager.get_baud_rate()}")
-
-if not port_manager:
+      print(f"Connected port: {port_manager.get_connected_port()}")
+      print(f"Current baud rate: {port_manager.get_baud_rate()}")
+      servo_ctrller = ServoController(port_manager.get_serial_instance())
+else:
       print("Could not configure any serial port. Exiting.")
       exit()
 
-servo_ctrller = ServoController(port_manager.get_serial_instance())
 
 
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'JOJO0912956011')
