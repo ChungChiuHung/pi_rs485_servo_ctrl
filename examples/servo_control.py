@@ -11,7 +11,7 @@ from status_bit_mapping import BitMap, BitMapOutput
 class ServoController:
     def __init__(self, serial_port):
         self.serial_port = serial_port
-        self.cal_command_time_delay = CmdDelayTime(self.serial_port.baud_rate)
+        self.cal_command_time_delay = CmdDelayTime(serial_port.baud_rate)
         self._last_send_message = b''
         self._last_received_message = b''
         init() # Initialize colorama
