@@ -53,7 +53,7 @@ class ServoController:
                 if self.serial_port.in_waiting > 0:
                     response += self.serial_port.read(self.serial_port.in_waiting)
                 elapsed_time = time.time() -start_time
-                print(self.create_progress_bar(elapsed_time/self.command_timeout), end='\r')
+                print(self.create_progress_bar(elapsed_time/total_timeout), end='\r')
 
             self._last_received_message = response
 
