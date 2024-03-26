@@ -42,10 +42,9 @@ class ServoController:
         print(f"Sending {command_description}:")
         self.print_byte_array_as_spaced_hex(command, command_description)
 
+        response = b''
         try:
             self.serial_port.write(command)
-            response = b''
-
             command_transmission_time_ms = self.cal_command_time_delay.calculate_transmission_time_ms(command)
             total_timeout = command_transmission_time_ms + read_timeout  
             start_time = time.time()
