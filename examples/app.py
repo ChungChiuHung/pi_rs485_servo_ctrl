@@ -101,7 +101,7 @@ def handle_action():
       if action == "servoOn":
             # SET_PARAM_2 command        
             command_code = CmdCode.NOP
-            command_format = SerialProtocolHander()
+            command_format = SerialPortHandler()
             nop_command = command_format.construct_packet(1,command_code, b'', is_response=True)
             print(f"{command_code.name} Command: ", nop_command.hex())
 
