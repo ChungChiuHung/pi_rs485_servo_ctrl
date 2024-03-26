@@ -129,6 +129,31 @@ def handle_action():
       
       elif action == "getMsg":
 
+            # Alarm
+            command_code = CmdCode.GET_STATE_VALUE_4
+            command_format = SerialPotocolHandler()
+            get_io_alarm_state = command_format.construct_packet(1,command_code, b'\x00\x00', is_response=False)
+            print(f"{command_code.name} Command: ", get_io_alarm_state.hex())
+
+            servo_ctrller.send_command_and_wait_for_response(get_io_alarm_state, f"{command_code.name}", 0.05)
+
+            # Logic I/O Input
+            command_code = CmdCode.GET_STATE_VALUE_4
+            command_format = SerialPotocolHandler()
+            get_io_input_state = command_format.construct_packet(1,command_code, b'\x01\x20', is_response=False)
+            print(f"{command_code.name} Command: ", get_io_input_state.hex())
+
+            servo_ctrller.send_command_and_wait_for_response(get_io_input_state, f"{command_code.name}", 0.05)
+
+            # Logic I/O Output
+            command_code = CmdCode.GET_STATE_VALUE_4
+            command_format = SerialPotocolHandler()
+            get_io_output_state = command_format.construct_packet(1,command_code, b'\x01\x28', is_response=False)
+            print(f"{command_code.name} Command: ", get_io_output_state.hex())
+
+            servo_ctrller.send_command_and_wait_for_response(get_io_output_state, f"{command_code.name}", 0.05)
+
+
             response['message'] = "Get Servo IO Input Status Value."
 
       elif action == "getIOOutput":
