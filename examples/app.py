@@ -1,7 +1,7 @@
 import os
 from flask import Flask, render_template, request, session, jsonify
 from gpio_utils import GPIOUtils
-from serial_port_config import SerialPortConfig
+from serial_port_manager import SerialPortManager
 from servo_control import ServoCntroller
 
 app = Flask(__name__)
@@ -12,11 +12,16 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY', 'JOJO0912956011')
 gpio_utils = GPIOUtils()
 
 # Configure the serial port
-serial_config = SerialPortConfig(baud_rate=57600, timeout=2)
-serial_port = serial_config.configure_serial_port()
-servo_ctrller = ServoCntroller(serial_port)
+port_manager = SerialPortManager(baud_rate=57600)
+port_manager.connect()
+if port_manager.get_serial_instance():
+        print(f"Connected port: {port_manager.get_connected_port()}")
+        print(f"Current baud rate: {port_manager.get_baud_rate()}")
+port_manager.disconnect()
 
-if not serial_port:
+servo_ctrller = ServoCntroller(port_manager)
+
+if not port_manager:
       print("Could not configure any serial port. Exiting.")
       exit()
 
@@ -36,9 +41,6 @@ SET_POINT_HOME = False
 MOTION_START = False
 MOTION_PAUSE = False
 
-cmd_generator = BaseMsgGenerator()
-setter = SetServoIOStatus()
-parser = ResponseMsgParser()
 
 # Config the waiting reponse timeout
 delay_time_before_read_ms = 50
@@ -96,31 +98,18 @@ def handle_action():
 
       if action == "servoOn":
             # SET_PARAM_2 command        
-            set_param_2_command = ServoParams.SET_PARAM_2      
+      
 
             # SERVO_ON Command
-            cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
-            parameter_data = setter.set_bit_status(BitMap.SVON, 1)
-            servo_on_command = cmd_generator.generate_message(
-                  protocol_id,
-                  destination_address,
-                  dir_bit, error_code, cmd_code, parameter_data)
             
   
             response['message']="Servo turned on successfully."
 
       elif action == "servoOff":
-            cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
-            parameter_data = setter.set_bit_status(BitMap.SVON, 0)
-            servo_off_command = cmd_generator.generate_message(
-                  protocol_id,
-                  destination_address,
-                  dir_bit, error_code, cmd_code, parameter_data)
             
             response['message'] = "Servo turned off successfully."
       
       elif action == "getMsg":
-            get_state_value_command = ServoParams.GET_STATE_VALUE_4
 
             response['message'] = "Get Servo IO Input Status Value."
 
@@ -129,32 +118,21 @@ def handle_action():
             response['message'] = "Get Servo IO Output Status Value."
 
       elif action == "setPoint_1":
-            cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
-            parameter_data = setter.set_bit_status(BitMap.SEL_NO, 5)
 
             response['message'] = "Set the Postion in Point 1."
 
       elif action == "setPoint_2":
-            cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             response['message'] = "Set the Postion in Point 2."
 
       elif action == "Home":
-            cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
             response['message'] = "Set the Postion in HOME."
             
       elif action == "motionStart":
             print("START")
-            cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
-            parameter_data = setter.set_bit_status(BitMap.START1, 0)
-            
-            parameter_data = setter.set_bit_status(BitMap.START1, 1)
-            
             response['message'] = "Motion Start."
 
 
       elif action == "motionPause":
-            cmd_code = CmdCode.SET_STATE_VALUE_WITHMASK_4.value
-            parameter_data = setter.set_bit_status(BitMap.PAUSE, 1)
             response['message'] = "Motion Pause."
       else:
             response['error'] = "Action not recognized."
