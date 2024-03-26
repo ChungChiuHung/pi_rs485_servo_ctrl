@@ -102,7 +102,7 @@ def handle_action():
             # SET_PARAM_2 command        
             command_code = CmdCode.NOP
             command_format = SerialPotocolHandler()
-            nop_command = command_format.construct_packet(1,command_code, b'', is_response=True)
+            nop_command = command_format.construct_packet(1,command_code, b'', is_response=False)
             print(f"{command_code.name} Command: ", nop_command.hex())
 
             servo_ctrller.send_command_and_wait_for_response(nop_command, f"{command_code.name}", 1)
