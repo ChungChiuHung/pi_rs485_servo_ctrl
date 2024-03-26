@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Servo Control</title>
+        <link rel="stylesheet" href='../static/style.css'/>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+        <script>
+            $(document).ready(function(){
+                function clearStatuses(excludeAction){
+                    let actions = ['servoOn','servoOff','getMsg','getIOOutput','setPoint_1','setPoint_2','Home','motionStart','motionPause'];
+                    actions.forEach(function(action){
+                        if(action !== excludeAction){
+                            $('#'+action+'_status').text('');
+                        }
+                    });
+                }
+                
+
+                function sendCommand(action) {
+                    clearStatuses(action);
+                    $.ajax({
+                        url:'/action',
+                        type: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify({action: action}),
+                        success: function(response){
+                            console.log('Success:',response);
+                            $('#'+action + '_status').text(response.message || 'Action Completed');
+                        },
+                        error: function(error){
+                            console.error('Error:', error);
+                            $('#' + action + '_status').text('Error performing action');
+                        }
+                    });
+                }
+
+                // Bind sendCommand function to buttons
+                $('.button').click(function(){
+                    const action = $(this).attr('data-action');
+                    sendCommand(action);
+                });
+            });
+        </script>
+    </head>
+    <body>
+        <div class="navbar">
+            <a href="/">Home</a>
+            <a href="/index">Config</a>
+        </div>
+        <main>
+            <section class="Servo Amplifier Controller(RS485)">
+                <div class="rs485">
+                    <h1>RS485 R/W Status</h1>
+                    <div class="form-group">
+                        <label for="rs485_send">RS-485 Send:</label>
+                        <input type="text" id="rs485_send" value="{{ RS485_send }}" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label for="rs485_receive">RS-485 Receive:</label>
+                        <input type="text" id="rs485_receive" value="{{ RS485_read }}" readonly>
+                    </div>
+                </div>
+                <div class="commands">
+                    <h2>Commands</h2>
+                    <div class="button-container"><button class="button" data-action="servoOn">SERVO ON</button><span id="servoOn_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="servoOff">SERVO OFF</button><span id="servoOff_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="getMsg">GET STATE VALUE</button><span id="getMsg_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="getIOOutput">GET IO OUTPUT STATE VALUE</button><span id="getIOOutput_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="setPoint_1">SET POINT 1</button><span id="setPoint_1_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="setPoint_2">SET POINT 2</button><span id="setPoint_2_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="Home">HOME</button><span id="Home_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="motionStart">MOTION START</button><span id="motionStart_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="motionPause">MOTION PAUSE</button><span id="motionPause_status"></span></div>
+                </div>
+            </section>
+            <a href="/">Go Back to Home</a>
+        </main>
+    </body>
+</html>
