@@ -4,7 +4,7 @@ from gpio_utils import GPIOUtils
 from serial_port_manager import SerialPortManager
 from command_code import CmdCode
 from servo_serial_protocol_handler import SerialPotocolHandler
-from servo_control import ServoCntroller
+from servo_control import ServoController
 
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'JOJO0912956011')
@@ -21,7 +21,7 @@ if port_manager.get_serial_instance():
         print(f"Current baud rate: {port_manager.get_baud_rate()}")
 
 
-servo_ctrller = ServoCntroller(port_manager)
+servo_ctrller = ServoController(port_manager)
 
 if not port_manager:
       print("Could not configure any serial port. Exiting.")
