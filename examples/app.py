@@ -7,7 +7,6 @@ from servo_serial_protocol_handler import SerialPotocolHandler
 from servo_control import ServoController
 
 app = Flask(__name__)
-app.secret_key = os.getenv('FLASK_SECRET_KEY', 'JOJO0912956011')
 
 
 # Instantiate GPIOUtils for GPIO opeartions
@@ -20,12 +19,14 @@ if port_manager.get_serial_instance():
         print(f"Connected port: {port_manager.get_connected_port()}")
         print(f"Current baud rate: {port_manager.get_baud_rate()}")
 
-
-servo_ctrller = ServoController(port_manager)
-
 if not port_manager:
       print("Could not configure any serial port. Exiting.")
       exit()
+
+servo_ctrller = ServoController(port_manager.get_serial_instance())
+
+
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'JOJO0912956011')
 
 # Initailize global variables for RS485 messages
 RS485_send = "00 00 FF FF"
