@@ -3,7 +3,7 @@ from flask import Flask, render_template, request, session, jsonify
 from gpio_utils import GPIOUtils
 from serial_port_manager import SerialPortManager
 from command_code import CmdCode
-from servo_serial_protocol_handler import SerialProtocolHander
+from servo_serial_protocol_handler import SerialPortHandler
 from servo_control import ServoCntroller
 
 app = Flask(__name__)
