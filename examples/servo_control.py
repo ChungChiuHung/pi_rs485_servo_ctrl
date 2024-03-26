@@ -56,8 +56,8 @@ class ServoController:
                         print("Change Line.")
                         break
 
-                elapsed_time = time.time() -start_time
-                print(self.create_progress_bar(elapsed_time/total_timeout), end='\r')
+                #elapsed_time = time.time() -start_time
+                #print(self.create_progress_bar(elapsed_time/total_timeout), end='\r')
 
             self._last_received_message = response
 
