@@ -1,6 +1,7 @@
 import json
 import time
 from colorama import Fore, init
+from serial import SerialException
 from cal_cmd_response_time import CmdDelayTime
 from crc import CRC16CCITT
 from servo_params import ServoParams
