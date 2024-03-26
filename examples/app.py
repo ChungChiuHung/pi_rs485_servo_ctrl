@@ -105,7 +105,7 @@ def handle_action():
             nop_command = command_format.construct_packet(1,command_code, b'', is_response=True)
             print(f"{command_code.name} Command: ", nop_command.hex())
 
-            servo_ctrller.send_command_and_wait_for_response(nop_command, f"{command_code.name}")
+            # servo_ctrller.send_command_and_wait_for_response(nop_command, f"{command_code.name}")
             # SERVO_ON Command
             
   
