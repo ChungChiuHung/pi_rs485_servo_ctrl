@@ -3,7 +3,7 @@ from flask import Flask, render_template, request, session, jsonify
 from gpio_utils import GPIOUtils
 from serial_port_manager import SerialPortManager
 from command_code import CmdCode
-from servo_serial_protocol_handler import SerialPortHandler
+from servo_serial_protocol_handler import SerialPotocolHandler
 from servo_control import ServoCntroller
 
 app = Flask(__name__)
@@ -101,7 +101,7 @@ def handle_action():
       if action == "servoOn":
             # SET_PARAM_2 command        
             command_code = CmdCode.NOP
-            command_format = SerialPortHandler()
+            command_format = SerialPotocolHandler()
             nop_command = command_format.construct_packet(1,command_code, b'', is_response=True)
             print(f"{command_code.name} Command: ", nop_command.hex())
 
