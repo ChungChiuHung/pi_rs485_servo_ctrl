@@ -65,7 +65,7 @@ class ServoController:
                 print(f"\n{command_description} time out waiting for response.")
             return response
 
-        except self.serial_port.SerialException as e:
+        except SerialException as e:
             print(f"Error during communication: {e}")
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
