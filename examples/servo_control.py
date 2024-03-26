@@ -31,8 +31,7 @@ class ServoCntroller:
                 return True
             previous_byte = byte
 
-    def send_command_and_wait_for_response(self, command, command_description,
-                                           start_marker, end_marker_length=2, read_timeout=0.1):
+    def send_command_and_wait_for_response(self, command, command_description, read_timeout=0.1):
         if not self.serial_port:
             print("Serial port is not open.")
             return None
