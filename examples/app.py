@@ -100,7 +100,7 @@ def handle_action():
 
       if action == "servoOn":
             # SET_PARAM_2 command        
-            command_code = CmdCode.SET_PARM_2
+            command_code = CmdCode.SET_PARAM_2
             command_format = SerialPotocolHandler()
             set_param_2_command = command_format.construct_packet(1,command_code, b'\x00\x09\x00\x01', is_response=False)
             print(f"{command_code.name} Command: ", set_param_2_command.hex())
