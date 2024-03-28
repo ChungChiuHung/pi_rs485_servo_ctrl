@@ -200,11 +200,27 @@ def handle_action():
             
       elif action == "motionStart":
             print("START")
+            command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
+            set_home_position = command_format.construct_packet(1, command_code,b'', BitMap.START1, 0, is_response=False)
+            print(f"{command_code.name} Command:", set_home_position.hex())
+
+            servo_ctrller.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
+
+            set_home_position = command_format.construct_packet(1, command_code,b'', BitMap.START1, 1, is_response=False)
+            print(f"{command_code.name} Command:", set_home_position.hex())
+
+            servo_ctrller.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
+
+
+
             response['message'] = "Motion Start."
 
 
       elif action == "motionPause":
             response['message'] = "Motion Pause."
+
+      elif action == "motionCancel":
+            response['message']   
       else:
             response['error'] = "Action not recognized."
 
