@@ -1,6 +1,6 @@
 from crc import CRC16CCITT
 from status_bit_mapping import BitMap
-from command_code import CmdCode
+from examples.servo_command_code import CmdCode
 import json
 
 class ResponseMsgParser:

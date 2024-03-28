@@ -2,7 +2,7 @@ import os
 from flask import Flask, render_template, request, session, jsonify
 from gpio_utils import GPIOUtils
 from serial_port_manager import SerialPortManager
-from command_code import CmdCode
+from examples.servo_command_code import CmdCode
 from servo_serial_protocol_handler import SerialPotocolHandler
 from servo_control import ServoController
 
@@ -157,6 +157,14 @@ def handle_action():
             response['message'] = "Get Servo IO Input Status Value."
 
       elif action == "getIOOutput":
+
+            # Logic I/O Output
+            command_code = CmdCode.GET_STATE_VALUE_4
+            command_format = SerialPotocolHandler()
+            get_io_output_state = command_format.construct_packet(1,command_code, b'\x01\x28', is_response=False)
+            print(f"{command_code.name} Command: ", get_io_output_state.hex())
+
+            servo_ctrller.send_command_and_wait_for_response(get_io_output_state, f"{command_code.name}", 0.05)
             
             response['message'] = "Get Servo IO Output Status Value."
 

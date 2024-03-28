@@ -1,7 +1,7 @@
 import unittest
 from message_generator import MessageGenerator
 from base_msg_generator import BaseMsgGenerator
-from command_code import CmdCode
+from examples.servo_command_code import CmdCode
 from servo_params import ServoParams
 from io_status_fetcher import IOStatusFetcher, IOStatusFetcher_Test
 from cal_cmd_response_time import CmdDelayTime

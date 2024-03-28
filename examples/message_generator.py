@@ -1,4 +1,4 @@
-from command_code import CmdCode
+from examples.servo_command_code import CmdCode
 from crc import CRC16CCITT
 
 class MessageGenerator:

@@ -1,5 +1,5 @@
 from crc import CRC16CCITT
-from command_code import CmdCode
+from examples.servo_command_code import CmdCode
 from set_servo_io_status import SetServoIOStatus
 
 class BaseMsgGenerator:
