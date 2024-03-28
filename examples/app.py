@@ -185,7 +185,7 @@ def handle_action():
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
             command_format = SerialPotocolHandler()
             set_point_2 = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 2, is_response=False)
-            print(f"{command_code.name} Command:", set_point_1.hex())
+            print(f"{command_code.name} Command:", set_point_2.hex())
 
             servo_ctrller.send_command_and_wait_for_response(set_point_2, f"{command_code.name}", 0.05)
 
