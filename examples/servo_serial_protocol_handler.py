@@ -3,7 +3,7 @@ from crc import CRC16CCITT
 from servo_command_code import CmdCode
 from status_bit_mapping import BitMapOutput
 
-class SerialPotocolHandler:
+class SerialProtocolHandler:
     PROTOCOL_ID = 1 # Protocol ID is always 1: Single Master Protocol
 
     def __init__(self, destination_address_range=(1,31)):
@@ -18,30 +18,23 @@ class SerialPotocolHandler:
             raise ValueError("Destination address must be between 1 and 31.")
         
         # Constructing the header byte
-        header_first_byte = (SerialPotocolHandler.PROTOCOL_ID <<5) | data_length
+        header_first_byte = (SerialProtocolHandler.PROTOCOL_ID <<5) | data_length
         header_second_byte = destination_address
 
         return bytes([header_first_byte, header_second_byte])
     
-    def construct_packet(self, destination_address, command_code, data='b', status_name=None, value=None, is_response=False):
+    def construct_packet(self, destination_address, command_code, data=b'', status_name=None, value=None, is_response=False):
         if status_name is not None and value is not None:
             modified_data = self.set_bit_status(status_name, value)
         else:
             modified_data = data
 
-        # Prepend the command code to the modified_data
         modified_data_with_command = bytes([command_code.value]) + modified_data
-
-        # Calculate data length, adding 1 for the command/response floag byte
         data_length = len(modified_data_with_command) + 1
-
-        # Always add 1 to data length for the command/response flag byte
         header = self.construct_header(data_length, destination_address) 
         
-        # Set or clear the 7th bit of the first data byte based on message type
         command_response_flag_byte = (0x80 if is_response else 0x00)
         payload = bytes([command_response_flag_byte]) + modified_data_with_command
-
         error_detection = self.crc.calculate_crc(header + payload)
 
         return header + payload + error_detection
@@ -63,7 +56,6 @@ class SerialPotocolHandler:
             status_value |= (value << status_name.value)
             mask_value |=(1<<status_name.value)
 
-        # Convert status number, value, and mask to byte array
         status_no_bytes = status_numb.to_bytes(2, byteorder='big')
         status_bytes = status_value.to_bytes(4, byteorder='big')
         mask_bytes = mask_value.to_bytes(4, byteorder='big')
@@ -78,7 +70,7 @@ class SerialPotocolHandler:
         for status in BitMapOutput:
             if isinstance(status.value, tuple):
                 bit_range = status.value
-                mask = (1<<[bit_range[1]-bit_range[0] + 1]) -1
+                mask = (1<<(bit_range[1]-bit_range[0] + 1)) -1
                 bit_statuses[status.name] = (value >> bit_range[0]) & mask
             else:
                 bit_statuses[status.name] = bool(value & (1<< status.value))
@@ -86,6 +78,9 @@ class SerialPotocolHandler:
         return bit_statuses
 
     def response_parser(self, command_code, data):
+        if len(data) < 5:
+            raise ValueError("Data length is too short to be valid.")
+        
         header = data[0]
         destination_address = data[1]
         control_code = data[2]
@@ -97,10 +92,10 @@ class SerialPotocolHandler:
         expected_crc = self.crc.calculate_crc(data_without_crc)
 
         if received_crc != expected_crc:
-            raise json.dumps({"error": "CRC mismatch"})
+            raise ValueError("CRC mismatch")
         
         if control_code != 0x80:
-            raise json.dumps({"error": "Invalid control code for response"})
+            raise ValueError("Invalid control code for response")
         
         # Return parsed data components
         response_data = {
