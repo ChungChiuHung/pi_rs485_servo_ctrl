@@ -1,5 +1,7 @@
+import json
 from crc import CRC16CCITT
 from servo_command_code import CmdCode
+from status_bit_mapping import BitMapOutput
 
 class SerialPotocolHandler:
     PROTOCOL_ID = 1 # Protocol ID is always 1: Single Master Protocol
@@ -67,4 +69,52 @@ class SerialPotocolHandler:
         mask_bytes = mask_value.to_bytes(4, byteorder='big')
 
         return status_no_bytes + status_bytes + mask_bytes
+    
+    def parse_bit_statuses(self, parameter_data):
+        bit_statuses = {}
+        value = int.from_bytes(parameter_data, byteorder='big')
 
+        # check each bit status
+        for status in BitMapOutput:
+            if isinstance(status.value, tuple):
+                bit_range = status.value
+                mask = (1<<[bit_range[1]-bit_range[0] + 1]) -1
+                bit_statuses[status.name] = (value >> bit_range[0]) & mask
+            else:
+                bit_statuses[status.name] = bool(value & (1<< status.value))
+            
+        return bit_statuses
+
+    def response_parser(self, command_code, data):
+        header = data[0]
+        destination_address = data[1]
+        control_code = data[2]
+        command_code = data[3]
+        parameter_data = data[4:-2]
+        received_crc = data[-2:]
+
+        data_without_crc = data[:-2]
+        expected_crc = self.crc.calculate_crc(data_without_crc)
+
+        if received_crc != expected_crc:
+            raise json.dumps({"error": "CRC mismatch"})
+        
+        if control_code != 0x80:
+            raise json.dumps({"error": "Invalid control code for response"})
+        
+        # Return parsed data components
+        response_data = {
+            'header':header,
+            'destination_address': destination_address,
+            'control_code':control_code,
+            'command_code':command_code,
+            'parameter_data': list(parameter_data),
+        }
+
+        if command_code == CmdCode.GET_STATE_VALUE_4.value:
+            response_data['bit_statuses'] = self.parse_bit_statuses(parameter_data)
+
+        return json.dumps(response_data, indent=4)
+    
+
+        
