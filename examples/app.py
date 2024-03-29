@@ -2,9 +2,11 @@ import os
 from flask import Flask, render_template, request, session, jsonify
 from gpio_utils import GPIOUtils
 from serial_port_manager import SerialPortManager
-from examples.servo_command_code import CmdCode
+from servo_command_code import CmdCode
+from status_bit_mapping import BitMap
 from servo_serial_protocol_handler import SerialPotocolHandler
 from servo_control import ServoController
+
 
 app = Flask(__name__)
 
@@ -170,21 +172,59 @@ def handle_action():
 
       elif action == "setPoint_1":
 
+            command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
+            command_format = SerialPotocolHandler()
+            set_point_1 = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 1, is_response=False)
+            print(f"{command_code.name} Command:", set_point_1.hex())
+
+            servo_ctrller.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.05)
+
             response['message'] = "Set the Postion in Point 1."
 
       elif action == "setPoint_2":
+            command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
+            command_format = SerialPotocolHandler()
+            set_point_2 = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 2, is_response=False)
+            print(f"{command_code.name} Command:", set_point_2.hex())
+
+            servo_ctrller.send_command_and_wait_for_response(set_point_2, f"{command_code.name}", 0.05)
+
             response['message'] = "Set the Postion in Point 2."
 
       elif action == "Home":
+            command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
+            command_format = SerialPotocolHandler()
+            set_home_position = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 3, is_response=False)
+            print(f"{command_code.name} Command:", set_home_position.hex())
+
+            servo_ctrller.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
+
             response['message'] = "Set the Postion in HOME."
             
       elif action == "motionStart":
             print("START")
+            command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
+            command_format = SerialPotocolHandler()
+            set_home_position = command_format.construct_packet(1, command_code,b'', BitMap.START1, 0, is_response=False)
+            print(f"{command_code.name} Command:", set_home_position.hex())
+
+            servo_ctrller.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
+
+            set_home_position = command_format.construct_packet(1, command_code,b'', BitMap.START1, 1, is_response=False)
+            print(f"{command_code.name} Command:", set_home_position.hex())
+
+            servo_ctrller.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
+
+
+
             response['message'] = "Motion Start."
 
 
       elif action == "motionPause":
             response['message'] = "Motion Pause."
+
+      elif action == "motionCancel":
+            response['message']   
       else:
             response['error'] = "Action not recognized."
 

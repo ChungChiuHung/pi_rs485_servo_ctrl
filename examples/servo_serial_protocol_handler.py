@@ -42,7 +42,7 @@ class SerialPotocolHandler:
         command_response_flag_byte = (0x80 if is_response else 0x00)
         payload = bytes([command_response_flag_byte]) + modified_data_with_command
 
-        error_detection = self.crc.calculate_crc(header + modified_data)
+        error_detection = self.crc.calculate_crc(header + payload)
 
         return header + payload + error_detection
     
