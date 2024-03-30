@@ -4,7 +4,7 @@ from gpio_utils import GPIOUtils
 from serial_port_manager import SerialPortManager
 from servo_command_code import CmdCode
 from status_bit_mapping import BitMap
-from servo_serial_protocol_handler import SerialPotocolHandler
+from servo_serial_protocol_handler import SerialProtocolHandler
 from servo_control import ServoController
 
 
@@ -103,14 +103,14 @@ def handle_action():
       if action == "servoOn":
             # SET_PARAM_2 command        
             command_code = CmdCode.SET_PARAM_2
-            command_format = SerialPotocolHandler()
+            command_format = SerialProtocolHandler()
             set_param_2_command = command_format.construct_packet(1,command_code, b'\x00\x09\x00\x01', is_response=False)
             print(f"{command_code.name} Command: ", set_param_2_command.hex())
 
             servo_ctrller.send_command_and_wait_for_response(set_param_2_command, f"{command_code.name}", 0.05)
             # SERVO_ON Command
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
-            command_format = SerialPotocolHandler()
+            command_format = SerialProtocolHandler()
             servo_on_command = command_format.construct_packet(1,command_code, b'\x01\x20\x00\x00\x00\x01\x00\x00\x00\x01', is_response=False)
             print(f"{command_code.name} Command: ", servo_on_command.hex())
 
@@ -120,7 +120,7 @@ def handle_action():
 
       elif action == "servoOff":
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
-            command_format = SerialPotocolHandler()
+            command_format = SerialProtocolHandler()
             servo_off_command = command_format.construct_packet(1,command_code, b'\x01\x20\x00\x00\x00\x00\x00\x00\x00\x01', is_response=False)
             print(f"{command_code.name} Command: ", servo_off_command.hex())
 
@@ -133,7 +133,7 @@ def handle_action():
 
             # Alarm
             command_code = CmdCode.GET_STATE_VALUE_4
-            command_format = SerialPotocolHandler()
+            command_format = SerialProtocolHandler()
             get_io_alarm_state = command_format.construct_packet(1,command_code, b'\x00\x00', is_response=False)
             print(f"{command_code.name} Command: ", get_io_alarm_state.hex())
 
@@ -141,7 +141,7 @@ def handle_action():
 
             # Logic I/O Input
             command_code = CmdCode.GET_STATE_VALUE_4
-            command_format = SerialPotocolHandler()
+            command_format = SerialProtocolHandler()
             get_io_input_state = command_format.construct_packet(1,command_code, b'\x01\x20', is_response=False)
             print(f"{command_code.name} Command: ", get_io_input_state.hex())
 
@@ -149,7 +149,7 @@ def handle_action():
 
             # Logic I/O Output
             command_code = CmdCode.GET_STATE_VALUE_4
-            command_format = SerialPotocolHandler()
+            command_format = SerialProtocolHandler()
             get_io_output_state = command_format.construct_packet(1,command_code, b'\x01\x28', is_response=False)
             print(f"{command_code.name} Command: ", get_io_output_state.hex())
 
@@ -162,7 +162,7 @@ def handle_action():
 
             # Logic I/O Output
             command_code = CmdCode.GET_STATE_VALUE_4
-            command_format = SerialPotocolHandler()
+            command_format = SerialProtocolHandler()
             get_io_output_state = command_format.construct_packet(1,command_code, b'\x01\x28', is_response=False)
             print(f"{command_code.name} Command: ", get_io_output_state.hex())
 
@@ -173,8 +173,8 @@ def handle_action():
       elif action == "setPoint_1":
 
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
-            command_format = SerialPotocolHandler()
-            set_point_1 = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 1, is_response=False)
+            command_format = SerialProtocolHandler()
+            set_point_1 = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 3, is_response=False)
             print(f"{command_code.name} Command:", set_point_1.hex())
 
             servo_ctrller.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.05)
@@ -183,8 +183,8 @@ def handle_action():
 
       elif action == "setPoint_2":
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
-            command_format = SerialPotocolHandler()
-            set_point_2 = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 2, is_response=False)
+            command_format = SerialProtocolHandler()
+            set_point_2 = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 4, is_response=False)
             print(f"{command_code.name} Command:", set_point_2.hex())
 
             servo_ctrller.send_command_and_wait_for_response(set_point_2, f"{command_code.name}", 0.05)
@@ -193,8 +193,8 @@ def handle_action():
 
       elif action == "Home":
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
-            command_format = SerialPotocolHandler()
-            set_home_position = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 3, is_response=False)
+            command_format = SerialProtocolHandler()
+            set_home_position = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 1, is_response=False)
             print(f"{command_code.name} Command:", set_home_position.hex())
 
             servo_ctrller.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
@@ -204,7 +204,7 @@ def handle_action():
       elif action == "motionStart":
             print("START")
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
-            command_format = SerialPotocolHandler()
+            command_format = SerialProtocolHandler()
             set_home_position = command_format.construct_packet(1, command_code,b'', BitMap.START1, 0, is_response=False)
             print(f"{command_code.name} Command:", set_home_position.hex())
 
