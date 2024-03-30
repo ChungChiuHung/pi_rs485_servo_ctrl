@@ -27,7 +27,7 @@ else:
 
 
 
-app.secret_key = os.getenv('FLASK_SECRET_KEY', 'JOJO0912956011')
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your keys')
 
 # Initailize global variables for RS485 messages
 RS485_send = "00 00 FF FF"
