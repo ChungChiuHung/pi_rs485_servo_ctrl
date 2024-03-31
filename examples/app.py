@@ -37,6 +37,9 @@ command_format = SerialProtocolHandler()
 START, STOP = False, False
 RS485_send, RS485_read = "00 00 FF FF", "FF FF 00 00"
 
+monitoring_active = False
+monitoring_thread = None
+
 def convert_bytes_to_hex(data):
       return data.hex() if isinstance(data, bytes) else data
 
@@ -54,6 +57,12 @@ def json_response(f):
       return decorated_function
 
 # The function to be executed in a thread
+def stop_motion_sequence():
+      global monitoring_active
+      monitoring_active = False
+      if monitoring_thread:
+            monitoring_thread.join()
+
 def motion_sequence_thread():
       point =[3,4]
       while START:
@@ -62,17 +71,19 @@ def motion_sequence_thread():
                   break
 
 def start_motion_sequence():
-      global START, STOP
-      START = True
-      STOP = False
-      threading.Thread(target=motion_sequence_thread).start()
+      global START, STOP, monitoring_active, monitoring_thread
+      START, STOP = True, False
+      monitoring_active = True
+      if monitoring_thread and monitoring_thread.is_alive():
+            stop_motion_sequence()
+      monitoring_thread = threading.Thread(target=motion_sequence_thread).start()
 
 def stop_motion_sequence():
-      global STOP, START
-      STOP = True
-      START = False
-      servo_ctrller.exectue_motion_stop_sequence()
-      servo_ctrller.monitoring_active = False
+      global STOP, START, monitoring_active
+      START, STOP = False, True
+      monitoring_active = False
+      if monitoring_thread:
+            monitoring_thread.join()
 
 @app.route('/')
 def home():
@@ -96,13 +107,12 @@ def handle_action():
       # Perform the raspi action here based on action type
 
       if action == "start":
-            servo_ctrller.monitoring_active = False
-            servo_ctrller.monitoring_active = True
             start_motion_sequence()
+            response['message'] = "Motion sequence started."
       elif action == "stop":
             stop_motion_sequence()
-
-      if action == "servoOn":
+            response['message'] = "Motion sequence stopped."
+      elif action == "servoOn":
             # SET_PARAM_2 command        
             command_code = CmdCode.SET_PARAM_2
             set_param_2_command = command_format.construct_packet(1,command_code, b'\x00\x09\x00\x01', is_response=False)
