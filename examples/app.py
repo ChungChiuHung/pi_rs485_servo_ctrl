@@ -106,6 +106,9 @@ def handle_action():
       action = data.get('action')
       response = {"status":"success","action":action}
 
+      RS485_send_hex = RS485_send.hex() if isinstance(RS485_send, bytes) else RS485_send
+      RS485_read_hex = RS485_read.hex() if isinstance(RS485_read, bytes) else RS485_read
+
       print(f"Received action: {action}")
 
       # Perform the raspi action here based on action type
@@ -245,8 +248,8 @@ def handle_action():
             response['error'] = "Action not recognized."
 
       response.update({
-            "RS485_send": RS485_send,
-            "RS485_read": RS485_read,
+            "RS485_send": RS485_send_hex,
+            "RS485_read": RS485_read_hex,
             "message":f"Action {action} completed successfully."
       })
 
