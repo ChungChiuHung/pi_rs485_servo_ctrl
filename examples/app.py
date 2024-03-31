@@ -32,8 +32,6 @@ else:
 command_format = SerialProtocolHandler()
 
 # Initailize global variables for RS485 messages
-RS485_send = "00 00 FF FF"
-RS485_read = "FF FF 00 00"
 
 START = False
 STOP = False
@@ -76,6 +74,9 @@ def home():
 
 @app.route('/index')
 def index():
+      RS485_send = "00 00 FF FF"
+      RS485_read = "FF FF 00 00"
+      
       templateData = {
         'title': 'Servo Control Panel',
         'RS485_read': RS485_send,
