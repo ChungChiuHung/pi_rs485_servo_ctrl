@@ -16,6 +16,7 @@ class ServoController:
         self.command_format = SerialProtocolHandler()
         self._last_send_message = b''
         self._last_received_message = b''
+        self.monitoring_active = True
         init() # Initialize colorama
 
     def delay_ms(self, milliseconds):
@@ -127,7 +128,7 @@ class ServoController:
 
     def monitor_end_status(self):
         print("Monioring 'MEND' status...")
-        while True:
+        while self.monitoring_active:
             response = self.send_servo_command(CmdCode.GET_STATE_VALUE_4, b'\x01\x28')
             if response:
                 parsed_response = self.command_format.response_parser(CmdCode.GET_STATE_VALUE_4, response)
@@ -158,4 +159,6 @@ class ServoController:
             # Immediately after setting start motion to 1, monitor "MEND" status
             self.monitor_end_status()
 
+    def stop_monitoring(self):
+        self.monitoring_active = False
         

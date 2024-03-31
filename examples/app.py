@@ -94,16 +94,16 @@ def handle_action():
       # Perform the raspi action here based on action type
 
       if action == "start":
+            servo_ctrller.monitoring_active = True
             start_motion_sequence()
       elif action == "stop":
+            servo_ctrller.monitoring_active = False
             stop_motion_sequence()
 
       if action == "servoOn":
             # SET_PARAM_2 command        
             command_code = CmdCode.SET_PARAM_2
             set_param_2_command = command_format.construct_packet(1,command_code, b'\x00\x09\x00\x01', is_response=False)
-            print(f"{command_code.name} Command: ", set_param_2_command.hex())
-
             servo_ctrller.send_command_and_wait_for_response(set_param_2_command, f"{command_code.name}", 0.05)
             RS485_send = servo_ctrller.last_send_message
             RS485_read = servo_ctrller.last_received_message
@@ -111,8 +111,6 @@ def handle_action():
             # SERVO_ON Command
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
             servo_on_command = command_format.construct_packet(1,command_code, b'\x01\x20\x00\x00\x00\x01\x00\x00\x00\x01', is_response=False)
-            print(f"{command_code.name} Command: ", servo_on_command.hex())
-
             servo_ctrller.send_command_and_wait_for_response(servo_on_command, f"{command_code.name}", 0.05)
   
             response['message']="Servo turned on successfully."
@@ -120,8 +118,6 @@ def handle_action():
       elif action == "servoOff":
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
             servo_off_command = command_format.construct_packet(1,command_code, b'\x01\x20\x00\x00\x00\x00\x00\x00\x00\x01', is_response=False)
-            print(f"{command_code.name} Command: ", servo_off_command.hex())
-
             servo_ctrller.send_command_and_wait_for_response(servo_off_command, f"{command_code.name}", 0.05)
             RS485_send = servo_ctrller.last_send_message
             RS485_read = servo_ctrller.last_received_message
@@ -133,8 +129,6 @@ def handle_action():
             # Alarm
             command_code = CmdCode.GET_STATE_VALUE_4
             get_io_alarm_state = command_format.construct_packet(1,command_code, b'\x00\x00', is_response=False)
-            print(f"{command_code.name} Command: ", get_io_alarm_state.hex())
-
             servo_ctrller.send_command_and_wait_for_response(get_io_alarm_state, f"{command_code.name}", 0.05)
             RS485_send = servo_ctrller.last_send_message
             RS485_read = servo_ctrller.last_received_message
@@ -142,8 +136,6 @@ def handle_action():
             # Logic I/O Input
             command_code = CmdCode.GET_STATE_VALUE_4
             get_io_input_state = command_format.construct_packet(1,command_code, b'\x01\x20', is_response=False)
-            print(f"{command_code.name} Command: ", get_io_input_state.hex())
-
             servo_ctrller.send_command_and_wait_for_response(get_io_input_state, f"{command_code.name}", 0.05)
             RS485_send = servo_ctrller.last_send_message
             RS485_read = servo_ctrller.last_received_message
@@ -151,8 +143,6 @@ def handle_action():
             # Logic I/O Output
             command_code = CmdCode.GET_STATE_VALUE_4
             get_io_output_state = command_format.construct_packet(1,command_code, b'\x01\x28', is_response=False)
-            print(f"{command_code.name} Command: ", get_io_output_state.hex())
-
             servo_ctrller.send_command_and_wait_for_response(get_io_output_state, f"{command_code.name}", 0.05)
             RS485_send = servo_ctrller.last_send_message
             RS485_read = servo_ctrller.last_received_message
@@ -164,8 +154,6 @@ def handle_action():
             # Logic I/O Output
             command_code = CmdCode.GET_STATE_VALUE_4
             get_io_output_state = command_format.construct_packet(1,command_code, b'\x01\x28', is_response=False)
-            print(f"{command_code.name} Command: ", get_io_output_state.hex())
-
             servo_ctrller.send_command_and_wait_for_response(get_io_output_state, f"{command_code.name}", 0.05)
             RS485_send = servo_ctrller.last_send_message
             RS485_read = servo_ctrller.last_received_message
@@ -176,8 +164,6 @@ def handle_action():
 
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
             set_point_1 = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 3, is_response=False)
-            print(f"{command_code.name} Command:", set_point_1.hex())
-
             servo_ctrller.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.05)
             RS485_send = servo_ctrller.last_send_message
             RS485_read = servo_ctrller.last_received_message
@@ -187,8 +173,6 @@ def handle_action():
       elif action == "setPoint_2":
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
             set_point_2 = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 4, is_response=False)
-            print(f"{command_code.name} Command:", set_point_2.hex())
-
             servo_ctrller.send_command_and_wait_for_response(set_point_2, f"{command_code.name}", 0.05)
             RS485_send = servo_ctrller.last_send_message
             RS485_read = servo_ctrller.last_received_message
@@ -198,8 +182,6 @@ def handle_action():
       elif action == "Home":
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
             set_home_position = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 1, is_response=False)
-            print(f"{command_code.name} Command:", set_home_position.hex())
-
             servo_ctrller.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
             RS485_send = servo_ctrller.last_send_message
             RS485_read = servo_ctrller.last_received_message
@@ -210,15 +192,11 @@ def handle_action():
             print("START")
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
             set_home_position = command_format.construct_packet(1, command_code,b'', BitMap.START1, 0, is_response=False)
-            print(f"{command_code.name} Command:", set_home_position.hex())
-
             servo_ctrller.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
             RS485_send = servo_ctrller.last_send_message
             RS485_read = servo_ctrller.last_received_message
 
             set_home_position = command_format.construct_packet(1, command_code,b'', BitMap.START1, 1, is_response=False)
-            print(f"{command_code.name} Command:", set_home_position.hex())
-
             servo_ctrller.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
             RS485_send = servo_ctrller.last_send_message
             RS485_read = servo_ctrller.last_received_message
