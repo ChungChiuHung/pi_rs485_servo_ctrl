@@ -1,7 +1,13 @@
 import os
+import sys
 from flask import Flask, render_template, request, jsonify, Response
 from functools import wraps
 import traceback
+from pathlib import Path
+
+project_dir = Path(__file__).resolve().parent.parent
+sys.path.append(str(project_dir))
+
 from servo_communication.gpio_utils import GPIOUtils
 from servo_communication.serial_port_manager import SerialPortManager
 from servo_communication.servo_command_code import CmdCode
