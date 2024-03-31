@@ -2,6 +2,8 @@ import os
 import json
 import threading
 from flask import Flask, render_template, request, jsonify
+from functools import wraps
+import traceback
 from gpio_utils import GPIOUtils
 from serial_port_manager import SerialPortManager
 from servo_command_code import CmdCode
@@ -47,6 +49,17 @@ MOTION_PAUSE = False
 
 RS485_send = "00 00 FF FF"
 RS485_read = "FF FF 00 00"
+
+def json_response(f):
+      @wraps(f)
+      def decorated_function(*args, **kwargs):
+            try:
+                  response = f(*args, **kwargs)
+                  return jsonify(response)
+            except Exception as e:
+                  traceback.print_exc()
+                  return jsonify({"error": "An error occurred", "details":str(e)}),500
+      return decorated_function
 
 # The function to be executed in a thread
 def motion_sequence_thread(servo_controller):
