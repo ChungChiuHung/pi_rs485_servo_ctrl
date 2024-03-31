@@ -118,7 +118,7 @@ def handle_action():
             # SET_PARAM_2 command        
             command_code = CmdCode.SET_PARAM_2
             set_param_2_command = command_format.construct_packet(1,command_code, b'\x00\x09\x00\x01', is_response=False)
-            RS485_send = set_param_2_command
+            RS485_send = set_param_2_command.hex()
             print(f"{command_code.name} Command: ", set_param_2_command.hex())
 
             servo_ctrller.send_command_and_wait_for_response(set_param_2_command, f"{command_code.name}", 0.05)
