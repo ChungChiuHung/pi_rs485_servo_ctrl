@@ -142,7 +142,7 @@ class ServoController:
             
             self.delay_ms(100)
 
-    def execute_motion_sequence(self, points):
+    def execute_motion_start_sequence(self, points):
         # SET_PARM_2 command
         self.send_servo_command(CmdCode.SET_PARAM_2, b'\x00\x09\x00\x01')
         # SERVO ON
