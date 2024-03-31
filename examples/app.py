@@ -45,6 +45,9 @@ SET_POINT_HOME = False
 MOTION_START = False
 MOTION_PAUSE = False
 
+RS485_send = "00 00 FF FF"
+RS485_read = "FF FF 00 00"
+
 # The function to be executed in a thread
 def motion_sequence_thread(servo_controller):
       global START, STOP
@@ -74,13 +77,10 @@ def home():
 
 @app.route('/index')
 def index():
-      RS485_send = "00 00 FF FF"
-      RS485_read = "FF FF 00 00"
-
       templateData = {
         'title': 'Servo Control Panel',
-        'RS485_read': RS485_send,
-        'RS485_send': RS485_read,
+        'RS485_read': RS485_read,
+        'RS485_send': RS485_send,
       }
       return render_template('index.html', **templateData) 
 
