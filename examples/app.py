@@ -1,7 +1,7 @@
 import os
 import json
 import threading
-from flask import Flask, render_template, request, session, jsonify
+from flask import Flask, render_template, request, jsonify
 from gpio_utils import GPIOUtils
 from serial_port_manager import SerialPortManager
 from servo_command_code import CmdCode
