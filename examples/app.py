@@ -11,6 +11,7 @@ from servo_control import ServoController
 
 
 app = Flask(__name__)
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your keys')
 
 
 # Instantiate GPIOUtils for GPIO opeartions
@@ -30,8 +31,6 @@ else:
 # Servo Command Handler
 command_format = SerialProtocolHandler()
 
-app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your keys')
-
 # Initailize global variables for RS485 messages
 RS485_send = "00 00 FF FF"
 RS485_read = "FF FF 00 00"
@@ -47,16 +46,6 @@ SET_POINT_2 = False
 SET_POINT_HOME = False
 MOTION_START = False
 MOTION_PAUSE = False
-            
-# Config the waiting reponse timeout
-delay_time_before_read_ms = 50
-timeout = 1 # Timeout in second
-      
-pause_toggle_bit = True
-protocol_id=1
-destination_address = 1
-dir_bit = 0
-error_code = 0
 
 # The function to be executed in a thread
 def motion_sequence_thread(servo_controller):
@@ -91,21 +80,11 @@ def index():
         'title': 'Servo Control Panel',
         'RS485_read': RS485_send,
         'RS485_send': RS485_read,
-        'SERVO_ON' : SERVO_ON,
-        'SERVO_OFF' : SERVO_OFF,
-        'GET_MSG' : GET_MSG,
-        'GET_IO_OUTPUT' : GET_IO_OUTPUT,
-        'SET_POINT_1' : SET_POINT_1,
-        'SET_POINT_2' : SET_POINT_2,
-        'SET_POINT_HOME' : SET_POINT_HOME,
-        'MOTION_START' : MOTION_START,
-        'MOTION_PAUSE' : MOTION_PAUSE,
       }
       return render_template('index.html', **templateData) 
 
 @app.route('/action', methods=['POST'])
 def handle_action():
-      global SERVO_ON, SERVO_OFF, GET_MSG, GET_IO_OUTPUT, SET_POINT_1, SET_POINT_2, SET_POINT_HOME, MOTION_START, MOTION_PAUSE
       global START, STOP
 
       data = request.json
