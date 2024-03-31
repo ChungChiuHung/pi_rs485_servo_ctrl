@@ -2,12 +2,12 @@ import os
 from flask import Flask, render_template, request, jsonify, Response
 from functools import wraps
 import traceback
-from gpio_utils import GPIOUtils
-from serial_port_manager import SerialPortManager
-from servo_command_code import CmdCode
-from status_bit_mapping import BitMap
-from servo_serial_protocol_handler import SerialProtocolHandler
-from servo_control import ServoController
+from servo_communication.gpio_utils import GPIOUtils
+from servo_communication.serial_port_manager import SerialPortManager
+from servo_communication.servo_command_code import CmdCode
+from servo_communication.status_bit_mapping import BitMap
+from servo_communication.servo_serial_protocol_handler import SerialProtocolHandler
+from servo_communication.servo_control import ServoController
 
 
 app = Flask(__name__)
