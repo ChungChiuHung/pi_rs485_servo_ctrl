@@ -54,7 +54,7 @@ def json_response(f):
       return decorated_function
 
 # The function to be executed in a thread
-def motion_sequence_thread(servo_controller):
+def motion_sequence_thread():
       point =[3,4]
       while START:
             servo_ctrller.execute_motion_sequence(point)
