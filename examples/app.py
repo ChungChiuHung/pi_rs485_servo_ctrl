@@ -76,7 +76,7 @@ def home():
 def index():
       RS485_send = "00 00 FF FF"
       RS485_read = "FF FF 00 00"
-      
+
       templateData = {
         'title': 'Servo Control Panel',
         'RS485_read': RS485_send,
@@ -229,6 +229,12 @@ def handle_action():
             response['message']   
       else:
             response['error'] = "Action not recognized."
+
+      response.update{
+            "RS485_send": RS485_send,
+            "RS485_read": RS485_read,
+            "message":f"Action {action} completed successfully."
+      }
 
       return jsonify(response)
 
