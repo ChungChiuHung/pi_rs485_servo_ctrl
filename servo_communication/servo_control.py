@@ -1,7 +1,6 @@
 import json
 import time
 import threading
-from colorama import Fore, init
 from serial import SerialException
 from cal_cmd_response_time import CmdDelayTime
 from servo_params import ServoParams
@@ -18,7 +17,6 @@ class ServoController:
         self._last_received_message = b''
         self.monitoring_active = False
         self.motion_thread = None
-        init() # Initialize colorama
 
     def delay_ms(self, milliseconds):
       time.sleep(milliseconds / 1000.0)
