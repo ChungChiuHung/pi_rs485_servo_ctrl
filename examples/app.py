@@ -35,20 +35,8 @@ command_format = SerialProtocolHandler()
 
 # Initailize global variables for RS485 messages
 
-START = False
-STOP = False
-SERVO_ON = False
-SERVO_OFF = False
-GET_MSG = False
-GET_IO_OUTPUT = False
-SET_POINT_1 = False
-SET_POINT_2 = False
-SET_POINT_HOME = False
-MOTION_START = False
-MOTION_PAUSE = False
-
-RS485_send = "00 00 FF FF"
-RS485_read = "FF FF 00 00"
+START, STOP = False, False
+RS485_send, RS485_read = "00 00 FF FF", "FF FF 00 00"
 
 def json_response(f):
       @wraps(f)
@@ -105,9 +93,6 @@ def handle_action():
       data = request.json
       action = data.get('action')
       response = {"status":"success","action":action}
-
-      RS485_send_hex = RS485_send.hex() if isinstance(RS485_send, bytes) else RS485_send
-      RS485_read_hex = RS485_read.hex() if isinstance(RS485_read, bytes) else RS485_read
 
       print(f"Received action: {action}")
 
@@ -247,11 +232,13 @@ def handle_action():
       else:
             response['error'] = "Action not recognized."
 
-      response.update({
-            "RS485_send": RS485_send_hex,
-            "RS485_read": RS485_read_hex,
+      response = {
+            "status": "success",
+            "action": action,
+            "RS485_send": RS485_send,
+            "RS485_read": RS485_read,
             "message":f"Action {action} completed successfully."
-      })
+      }
 
       return jsonify(response)
 
