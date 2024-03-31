@@ -56,29 +56,6 @@ def json_response(f):
                   return jsonify({"error": "An error occurred", "details":str(e)}),500
       return decorated_function
 
-def start_motion_sequence():
-      global START, STOP, monitoring_active, monitoring_thread
-      START, STOP = True, False
-      monitoring_active = True
-      if monitoring_thread and monitoring_thread.is_alive():
-            stop_motion_sequence()
-      monitoring_thread = threading.Thread(target=motion_sequence_thread).start()
-
-def stop_motion_sequence():
-      global STOP, START, monitoring_active
-      START, STOP = False, True
-      monitoring_active = False
-      if monitoring_thread:
-            monitoring_thread.join()
-
-def motion_sequence_thread():
-      global monitoring_active
-      while monitoring_active:
-            servo_ctrller.execute_motion_sequence([3,4])
-            if not monitoring_active:
-                  break
-
-
 @app.route('/')
 def home():
       return render_template('home.html')
@@ -101,10 +78,11 @@ def handle_action():
       # Perform the raspi action here based on action type
 
       if action == "start":
-            start_motion_sequence()
+            points=[3,4]
+            servo_ctrller.start_motion_sequence(points)
             response['message'] = "Motion sequence started."
       elif action == "stop":
-            stop_motion_sequence()
+            servo_ctrller.stop_motion_sequence()
             response['message'] = "Motion sequence stopped."
       elif action == "servoOn":
             # SET_PARAM_2 command        

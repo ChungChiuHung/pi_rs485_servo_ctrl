@@ -1,5 +1,6 @@
 import json
 import time
+import threading
 from colorama import Fore, init
 from serial import SerialException
 from cal_cmd_response_time import CmdDelayTime
@@ -16,7 +17,8 @@ class ServoController:
         self.command_format = SerialProtocolHandler()
         self._last_send_message = b''
         self._last_received_message = b''
-        self.monitoring_active = True
+        self.monitoring_active = False
+        self.motion_thread = None
         init() # Initialize colorama
 
     def delay_ms(self, milliseconds):
@@ -143,13 +145,14 @@ class ServoController:
             self.delay_ms(100)
 
     def execute_motion_start_sequence(self, points):
+        print("Executing motion start sequence...")
         # SET_PARM_2 command
         self.send_servo_command(CmdCode.SET_PARAM_2, b'\x00\x09\x00\x01')
         # SERVO ON
         self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, b'\x01\x20\x00\x00\x00\x01\x00\x00\x00\x01')
 
         for point in points:
-            print(f"Selecting point {point}")
+            print(f"POINT {point}")
             self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.SEL_NO, value=point)
 
             print("START")
@@ -158,7 +161,8 @@ class ServoController:
             # Immediately after setting start motion to 1, monitor "MEND" status
             self.monitor_end_status()
 
-    def exectue_motion_stop_sequence(self):
+    def execute_motion_stop_sequence(self):
+        print("Executing motion stop sequence...")
         print(f"Selecting Home POS")
         self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.SEL_NO, value=1)
         print("Homing...")
@@ -170,4 +174,26 @@ class ServoController:
 
     def stop_monitoring(self):
         self.monitoring_active = False
-        
+
+    def execute_motion_sequence_thread(self, points):
+        while self.monitoring_active:
+            self.execute_motion_start_sequence(points)
+            time.sleep(0.1)
+
+    def start_motion_sequence(self, points):
+        self.monitoring_active = True
+        if self.motion_thread is not None and self.motion_thread.is_alive():
+            self.stop_motion_sequence()
+
+        self.motion_thread = threading.Thread(target=self.execute_motion_sequence_thread, args=(points,))
+        self.motion_thread.start()
+
+    def stop_motion_sequence(self):
+        self.monitoring_active = False
+        if self.motion_thread:
+            self.motion_thread.join()
+
+        self.execute_motion_stop_sequence()
+
+    
+
