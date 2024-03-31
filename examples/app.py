@@ -1,4 +1,6 @@
 import os
+import json
+import threading
 from flask import Flask, render_template, request, session, jsonify
 from gpio_utils import GPIOUtils
 from serial_port_manager import SerialPortManager
@@ -25,7 +27,8 @@ else:
       print("Could not configure any serial port. Exiting.")
       exit()
 
-
+# Servo Command Handler
+command_format = SerialProtocolHandler()
 
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your keys')
 
@@ -44,8 +47,7 @@ SET_POINT_2 = False
 SET_POINT_HOME = False
 MOTION_START = False
 MOTION_PAUSE = False
-
-
+            
 # Config the waiting reponse timeout
 delay_time_before_read_ms = 50
 timeout = 1 # Timeout in second
@@ -55,6 +57,28 @@ protocol_id=1
 destination_address = 1
 dir_bit = 0
 error_code = 0
+
+# The function to be executed in a thread
+def motion_sequence_thread(servo_controller):
+      global START, STOP
+      while START:
+            servo_ctrller.execute_motion_sequence()
+            if STOP:
+                  break
+
+def start_motion_sequence():
+      global START, STOP
+      START = True
+      STOP = False
+      thread = threading.Thread(target=motion_sequence_thread, args=(servo_ctrller,))
+      thread.start()
+
+def stop_motion_sequence():
+      global STOP, START
+      STOP = True
+      START = False
+
+      return f"START:{START}/STOP:{STOP} successfully."
 
 @app.route('/')
 def home():
@@ -94,23 +118,28 @@ def handle_action():
       if action == "start":
             START = True
             STOP = False
+            response_message = start_motion_sequence()
+            print(response_message)
+
             response['message']=f"START:{START}/STOP:{STOP} successfully."
+
       elif action == "stop":
             STOP = True
             START = False
+            response_message = stop_motion_sequence()
+            print(response_message)
+
             response['message']=f"START:{START}/STOP:{STOP} successfully."
 
       if action == "servoOn":
             # SET_PARAM_2 command        
             command_code = CmdCode.SET_PARAM_2
-            command_format = SerialProtocolHandler()
             set_param_2_command = command_format.construct_packet(1,command_code, b'\x00\x09\x00\x01', is_response=False)
             print(f"{command_code.name} Command: ", set_param_2_command.hex())
 
             servo_ctrller.send_command_and_wait_for_response(set_param_2_command, f"{command_code.name}", 0.05)
             # SERVO_ON Command
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
-            command_format = SerialProtocolHandler()
             servo_on_command = command_format.construct_packet(1,command_code, b'\x01\x20\x00\x00\x00\x01\x00\x00\x00\x01', is_response=False)
             print(f"{command_code.name} Command: ", servo_on_command.hex())
 
@@ -120,7 +149,6 @@ def handle_action():
 
       elif action == "servoOff":
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
-            command_format = SerialProtocolHandler()
             servo_off_command = command_format.construct_packet(1,command_code, b'\x01\x20\x00\x00\x00\x00\x00\x00\x00\x01', is_response=False)
             print(f"{command_code.name} Command: ", servo_off_command.hex())
 
@@ -133,7 +161,6 @@ def handle_action():
 
             # Alarm
             command_code = CmdCode.GET_STATE_VALUE_4
-            command_format = SerialProtocolHandler()
             get_io_alarm_state = command_format.construct_packet(1,command_code, b'\x00\x00', is_response=False)
             print(f"{command_code.name} Command: ", get_io_alarm_state.hex())
 
@@ -141,7 +168,6 @@ def handle_action():
 
             # Logic I/O Input
             command_code = CmdCode.GET_STATE_VALUE_4
-            command_format = SerialProtocolHandler()
             get_io_input_state = command_format.construct_packet(1,command_code, b'\x01\x20', is_response=False)
             print(f"{command_code.name} Command: ", get_io_input_state.hex())
 
@@ -149,7 +175,6 @@ def handle_action():
 
             # Logic I/O Output
             command_code = CmdCode.GET_STATE_VALUE_4
-            command_format = SerialProtocolHandler()
             get_io_output_state = command_format.construct_packet(1,command_code, b'\x01\x28', is_response=False)
             print(f"{command_code.name} Command: ", get_io_output_state.hex())
 
@@ -162,7 +187,6 @@ def handle_action():
 
             # Logic I/O Output
             command_code = CmdCode.GET_STATE_VALUE_4
-            command_format = SerialProtocolHandler()
             get_io_output_state = command_format.construct_packet(1,command_code, b'\x01\x28', is_response=False)
             print(f"{command_code.name} Command: ", get_io_output_state.hex())
 
@@ -173,7 +197,6 @@ def handle_action():
       elif action == "setPoint_1":
 
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
-            command_format = SerialProtocolHandler()
             set_point_1 = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 3, is_response=False)
             print(f"{command_code.name} Command:", set_point_1.hex())
 
@@ -183,7 +206,6 @@ def handle_action():
 
       elif action == "setPoint_2":
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
-            command_format = SerialProtocolHandler()
             set_point_2 = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 4, is_response=False)
             print(f"{command_code.name} Command:", set_point_2.hex())
 
@@ -193,7 +215,6 @@ def handle_action():
 
       elif action == "Home":
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
-            command_format = SerialProtocolHandler()
             set_home_position = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 1, is_response=False)
             print(f"{command_code.name} Command:", set_home_position.hex())
 
@@ -204,7 +225,6 @@ def handle_action():
       elif action == "motionStart":
             print("START")
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
-            command_format = SerialProtocolHandler()
             set_home_position = command_format.construct_packet(1, command_code,b'', BitMap.START1, 0, is_response=False)
             print(f"{command_code.name} Command:", set_home_position.hex())
 

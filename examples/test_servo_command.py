@@ -73,7 +73,7 @@ def generate_random_bit_statuses():
     ]
     return statuses
 
-# Generate Response From Logic IO Output
+# Generate a Response From Logic IO Output
 def generate_bytes():
     header = [0x26, 0x01, 0x80, 0x11]
     data = 0x00000000  # Starting point for data bytes

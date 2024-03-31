@@ -5,13 +5,15 @@ from serial import SerialException
 from cal_cmd_response_time import CmdDelayTime
 from crc import CRC16CCITT
 from servo_params import ServoParams
-from set_servo_io_status import SetServoIOStatus
 from status_bit_mapping import BitMap, BitMapOutput
+from servo_command_code import CmdCode
+from servo_serial_protocol_handler import SerialProtocolHandler
 
 class ServoController:
     def __init__(self, serial_port):
         self.serial_port = serial_port
         self.cal_command_time_delay = CmdDelayTime(self.serial_port.baudrate)
+        self.command_format = SerialProtocolHandler()
         self._last_send_message = b''
         self._last_received_message = b''
         init() # Initialize colorama
@@ -33,14 +35,15 @@ class ServoController:
                 return True
             previous_byte = byte
 
-    def send_command_and_wait_for_response(self, command, command_description, read_timeout=0.1):
+    def send_command_and_wait_for_response(self, command, description, read_timeout=0.1):
         if not self.serial_port:
             print("Serial port is not open.")
             return None
         
+        print(f"Sending {description}: {command.hex()}")
         self._last_send_message = command
-        print(f"Sending {command_description}:")
-        self.print_byte_array_as_spaced_hex(command, command_description)
+        start_time = time.time()
+        # self.print_byte_array_as_spaced_hex(command, description)
 
         response = b''
         try:
@@ -53,16 +56,15 @@ class ServoController:
                 if self.serial_port.in_waiting > 0:
                     response += self.serial_port.read(self.serial_port.in_waiting)
 
-                elapsed_time = time.time() -start_time
-                print(self.create_progress_bar(elapsed_time/total_timeout), end='\r')
+                #elapsed_time = time.time() -start_time
+                #print(self.create_progress_bar(elapsed_time/total_timeout), end='\r')
 
             self._last_received_message = response
 
             if response:
-                print(f"\n{command_description} response received")
-                self.print_byte_array_as_spaced_hex(response, "Response")
+                print(f"\n{description} response received: {response.hex()}")
             else:
-                print(f"\n{command_description} time out waiting for response.")
+                print(f"\nTimeout waiting for {description} response.")
             return response
 
         except SerialException as e:
@@ -85,7 +87,7 @@ class ServoController:
     @property
     def last_received_message(self):
         return ' '.join(f"{byte:02X}" for byte in self._last_received_message)
-    #IOStatusFetcher:  
+
     def parse_logic_io(self, logic_io_bytes):
         io_status= {}
         value = int.from_bytes(logic_io_bytes, byteorder='big')
@@ -113,4 +115,47 @@ class ServoController:
         response_recieved = True
 
         return (json.dumps({"error" : "No response or invalid response length"}), response_recieved)
-   
+
+
+    def send_servo_command(self, command_code, data=b'', bitmap=None, value=None, response_delay=0.05):
+        if bitmap is not None and value is not None:
+            command_packet = self.command_format.construct_packet(1, command_code, data, bitmap, value, is_response=False)
+        else:
+            command_packet = self.command_format.construct_packet(1, command_code, data, is_response=False)
+        print(f"{command_code.name} Command: ", command_packet.hex())
+        self.send_command_and_wait_for_response(command_packet, f"{command_code.name}", response_delay)
+
+    def monitor_end_status(self):
+        print("Monioring 'MEND' status...")
+        while True:
+            response = self.send_servo_command(CmdCode.GET_STATE_VALUE_4, b'\x01\x28')
+            if response:
+                parsed_response = self.command_format.response_parser(CmdCode.GET_STATE_VALUE_4, response)
+                data = json.loads(parsed_response)
+                if not data['bit_statuses']['MEND']:
+                    print("MEND is false, continuing...")
+                else:
+                    print("MEND is true, breaking the loop.")
+                    break
+            else:
+                print("Failed to receive a valid response. Retrying...")
+            
+            self.delay_ms(100)
+
+    def execute_motion_sequence(self, points):
+        # SET_PARM_2 command
+        self.send_servo_command(CmdCode.SET_PARAM_2, b'\x00\x09\x00\x01')
+        # SERVO ON
+        self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, b'\x01\x20\x00\x00\x00\x01\x00\x00\x00\x01')
+
+        for point in points:
+            print(f"Selecting point {point}")
+            self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.SEL_NO, value=point)
+
+            print("START")
+            self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
+            self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=1)
+            # Immediately after setting start motion to 1, monitor "MEND" status
+            self.monitor_end_status()
+
+        
