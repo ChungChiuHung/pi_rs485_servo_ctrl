@@ -1,7 +1,7 @@
 import os
 import json
 import threading
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response
 from functools import wraps
 import traceback
 from gpio_utils import GPIOUtils
@@ -42,8 +42,10 @@ def json_response(f):
       @wraps(f)
       def decorated_function(*args, **kwargs):
             try:
-                  response = f(*args, **kwargs)
-                  return jsonify(response)
+                  result = f(*args, **kwargs)
+                  if isinstance(result, Response):
+                        return result
+                  return jsonify(Response)
             except Exception as e:
                   traceback.print_exc()
                   return jsonify({"error": "An error occurred", "details":str(e)}),500
