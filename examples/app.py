@@ -1,5 +1,4 @@
 import os
-import json
 import threading
 from flask import Flask, render_template, request, jsonify, Response
 from functools import wraps
@@ -38,6 +37,9 @@ command_format = SerialProtocolHandler()
 START, STOP = False, False
 RS485_send, RS485_read = "00 00 FF FF", "FF FF 00 00"
 
+def convert_bytes_to_hex(data):
+      return data.hex() if isinstance(data, bytes) else data
+
 def json_response(f):
       @wraps(f)
       def decorated_function(*args, **kwargs):
@@ -53,7 +55,6 @@ def json_response(f):
 
 # The function to be executed in a thread
 def motion_sequence_thread(servo_controller):
-      global START, STOP
       point =[3,4]
       while START:
             servo_ctrller.execute_motion_sequence(point)
@@ -64,15 +65,12 @@ def start_motion_sequence():
       global START, STOP
       START = True
       STOP = False
-      thread = threading.Thread(target=motion_sequence_thread, args=(servo_ctrller,))
-      thread.start()
+      threading.Thread(target=motion_sequence_thread).start()
 
 def stop_motion_sequence():
       global STOP, START
       STOP = True
       START = False
-
-      return f"START:{START}/STOP:{STOP} successfully."
 
 @app.route('/')
 def home():
@@ -80,12 +78,7 @@ def home():
 
 @app.route('/index')
 def index():
-      templateData = {
-        'title': 'Servo Control Panel',
-        'RS485_read': RS485_read,
-        'RS485_send': RS485_send,
-      }
-      return render_template('index.html', **templateData) 
+      return render_template('index.html', title='Servo Control Panel', RS485_read=RS485_read, RS485_send=RS485_send)
 
 @app.route('/action', methods=['POST'])
 @json_response
@@ -101,20 +94,9 @@ def handle_action():
       # Perform the raspi action here based on action type
 
       if action == "start":
-            START = True
-            STOP = False
-            response_message = start_motion_sequence()
-            print(response_message)
-
-            response['message']=f"START:{START}/STOP:{STOP} successfully."
-
+            start_motion_sequence()
       elif action == "stop":
-            STOP = True
-            START = False
-            response_message = stop_motion_sequence()
-            print(response_message)
-
-            response['message']=f"START:{START}/STOP:{STOP} successfully."
+            stop_motion_sequence()
 
       if action == "servoOn":
             # SET_PARAM_2 command        
@@ -141,7 +123,8 @@ def handle_action():
             print(f"{command_code.name} Command: ", servo_off_command.hex())
 
             servo_ctrller.send_command_and_wait_for_response(servo_off_command, f"{command_code.name}", 0.05)
-
+            RS485_send = servo_ctrller.last_send_message
+            RS485_read = servo_ctrller.last_received_message
             
             response['message'] = "Servo turned off successfully."
       
@@ -153,6 +136,8 @@ def handle_action():
             print(f"{command_code.name} Command: ", get_io_alarm_state.hex())
 
             servo_ctrller.send_command_and_wait_for_response(get_io_alarm_state, f"{command_code.name}", 0.05)
+            RS485_send = servo_ctrller.last_send_message
+            RS485_read = servo_ctrller.last_received_message
 
             # Logic I/O Input
             command_code = CmdCode.GET_STATE_VALUE_4
@@ -160,6 +145,8 @@ def handle_action():
             print(f"{command_code.name} Command: ", get_io_input_state.hex())
 
             servo_ctrller.send_command_and_wait_for_response(get_io_input_state, f"{command_code.name}", 0.05)
+            RS485_send = servo_ctrller.last_send_message
+            RS485_read = servo_ctrller.last_received_message
 
             # Logic I/O Output
             command_code = CmdCode.GET_STATE_VALUE_4
@@ -167,7 +154,8 @@ def handle_action():
             print(f"{command_code.name} Command: ", get_io_output_state.hex())
 
             servo_ctrller.send_command_and_wait_for_response(get_io_output_state, f"{command_code.name}", 0.05)
-
+            RS485_send = servo_ctrller.last_send_message
+            RS485_read = servo_ctrller.last_received_message
 
             response['message'] = "Get Servo IO Input Status Value."
 
@@ -179,7 +167,9 @@ def handle_action():
             print(f"{command_code.name} Command: ", get_io_output_state.hex())
 
             servo_ctrller.send_command_and_wait_for_response(get_io_output_state, f"{command_code.name}", 0.05)
-            
+            RS485_send = servo_ctrller.last_send_message
+            RS485_read = servo_ctrller.last_received_message
+
             response['message'] = "Get Servo IO Output Status Value."
 
       elif action == "setPoint_1":
@@ -189,6 +179,8 @@ def handle_action():
             print(f"{command_code.name} Command:", set_point_1.hex())
 
             servo_ctrller.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.05)
+            RS485_send = servo_ctrller.last_send_message
+            RS485_read = servo_ctrller.last_received_message
 
             response['message'] = "Set the Postion in Point 1."
 
@@ -198,6 +190,8 @@ def handle_action():
             print(f"{command_code.name} Command:", set_point_2.hex())
 
             servo_ctrller.send_command_and_wait_for_response(set_point_2, f"{command_code.name}", 0.05)
+            RS485_send = servo_ctrller.last_send_message
+            RS485_read = servo_ctrller.last_received_message
 
             response['message'] = "Set the Postion in Point 2."
 
@@ -207,6 +201,8 @@ def handle_action():
             print(f"{command_code.name} Command:", set_home_position.hex())
 
             servo_ctrller.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
+            RS485_send = servo_ctrller.last_send_message
+            RS485_read = servo_ctrller.last_received_message
 
             response['message'] = "Set the Postion in HOME."
             
@@ -217,34 +213,52 @@ def handle_action():
             print(f"{command_code.name} Command:", set_home_position.hex())
 
             servo_ctrller.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
+            RS485_send = servo_ctrller.last_send_message
+            RS485_read = servo_ctrller.last_received_message
 
             set_home_position = command_format.construct_packet(1, command_code,b'', BitMap.START1, 1, is_response=False)
             print(f"{command_code.name} Command:", set_home_position.hex())
 
             servo_ctrller.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
-
-
+            RS485_send = servo_ctrller.last_send_message
+            RS485_read = servo_ctrller.last_received_message
 
             response['message'] = "Motion Start."
 
 
       elif action == "motionPause":
+
+            command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
+            set_motion_pause = command_format.construct_packet(1, command_code, b'', BitMap.PAUSE, 1)
+            servo_ctrller.send_command_and_wait_for_response(set_motion_pause, f"{command_code.name}", 0.05)
+            set_motion_pause = command_format.construct_packet(1, command_code, b'', BitMap.PAUSE, 0)
+            servo_ctrller.send_command_and_wait_for_response(set_motion_pause, f"{command_code.name}", 0.05)
+            RS485_send = servo_ctrller.last_send_message
+            RS485_read = servo_ctrller.last_received_message
             response['message'] = "Motion Pause."
 
       elif action == "motionCancel":
-            response['message']   
+            command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
+            set_motion_pause = command_format.construct_packet(1, command_code, b'', BitMap.CANCEL, 1)
+            servo_ctrller.send_command_and_wait_for_response(set_motion_pause, f"{command_code.name}", 0.05)
+            set_motion_pause = command_format.construct_packet(1, command_code, b'', BitMap.CANCEL, 0)
+            servo_ctrller.send_command_and_wait_for_response(set_motion_pause, f"{command_code.name}", 0.05)
+            RS485_send = servo_ctrller.last_send_message
+            RS485_read = servo_ctrller.last_received_message
+            response['message'] = "Motion Cancel"
       else:
             response['error'] = "Action not recognized."
 
-      response = {
+      RS485_send = convert_bytes_to_hex(RS485_send)
+      RS485_read = convert_bytes_to_hex(RS485_read)
+
+      return jsonify({
             "status": "success",
             "action": action,
             "RS485_send": RS485_send,
             "RS485_read": RS485_read,
-            "message":f"Action {action} completed successfully."
-      }
-
-      return jsonify(response)
+            "message":f"Action {action} completed successfully."  
+      })
 
 if __name__ == "__main__":
    gpio_utils.initialize_gpio()
