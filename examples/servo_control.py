@@ -158,6 +158,16 @@ class ServoController:
             # Immediately after setting start motion to 1, monitor "MEND" status
             self.monitor_end_status()
 
+    def exectue_motion_stop_sequence(self):
+        print(f"Selecting Home POS")
+        self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.SEL_NO, value=1)
+        print("Homing...")
+        self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
+        self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=1)
+        # Immediately after setting start motion to 1, monitor "MEND" status
+        self.monitor_end_status()
+        self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, b'\x01\x20\x00\x00\x00\x00\x00\x00\x00\x01')
+
     def stop_monitoring(self):
         self.monitoring_active = False
         
