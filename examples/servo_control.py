@@ -123,7 +123,6 @@ class ServoController:
             command_packet = self.command_format.construct_packet(1, command_code, data, bitmap, value, is_response=False)
         else:
             command_packet = self.command_format.construct_packet(1, command_code, data, is_response=False)
-        print(f"{command_code.name} Command: ", command_packet.hex())
         self.send_command_and_wait_for_response(command_packet, f"{command_code.name}", response_delay)
 
     def monitor_end_status(self):
