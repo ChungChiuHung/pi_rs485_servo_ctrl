@@ -72,6 +72,7 @@ def stop_motion_sequence():
       STOP = True
       START = False
       servo_ctrller.exectue_motion_stop_sequence()
+      servo_ctrller.monitoring_active = False
 
 @app.route('/')
 def home():
@@ -98,7 +99,6 @@ def handle_action():
             servo_ctrller.monitoring_active = True
             start_motion_sequence()
       elif action == "stop":
-            servo_ctrller.monitoring_active = False
             stop_motion_sequence()
 
       if action == "servoOn":
