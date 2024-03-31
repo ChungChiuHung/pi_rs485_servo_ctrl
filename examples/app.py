@@ -98,6 +98,7 @@ def index():
       return render_template('index.html', **templateData) 
 
 @app.route('/action', methods=['POST'])
+@json_response
 def handle_action():
       global START, STOP, RS485_send, RS485_read
 
