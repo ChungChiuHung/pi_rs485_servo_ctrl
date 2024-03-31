@@ -27,6 +27,9 @@
                         success: function(response){
                             console.log('Success:',response);
                             $('#'+action + '_status').text(response.message || 'Action Completed');
+                            // Update RS485 status values in the UI
+                            $('#rs485_send').val(response.RS485_send);
+                            $('#RS485_receive').val(response.RS485_read);
                         },
                         error: function(error){
                             console.error('Error:', error);

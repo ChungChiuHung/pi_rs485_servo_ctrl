@@ -230,11 +230,11 @@ def handle_action():
       else:
             response['error'] = "Action not recognized."
 
-      response.update{
+      response.update({
             "RS485_send": RS485_send,
             "RS485_read": RS485_read,
             "message":f"Action {action} completed successfully."
-      }
+      })
 
       return jsonify(response)
 
