@@ -57,12 +57,6 @@ def json_response(f):
       return decorated_function
 
 # The function to be executed in a thread
-def stop_motion_sequence():
-      global monitoring_active
-      monitoring_active = False
-      if monitoring_thread:
-            monitoring_thread.join()
-
 def motion_sequence_thread():
       point =[3,4]
       while START:
