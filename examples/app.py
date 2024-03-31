@@ -96,6 +96,7 @@ def handle_action():
       # Perform the raspi action here based on action type
 
       if action == "start":
+            servo_ctrller.monitoring_active = False
             servo_ctrller.monitoring_active = True
             start_motion_sequence()
       elif action == "stop":
