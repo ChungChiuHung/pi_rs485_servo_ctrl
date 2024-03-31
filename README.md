@@ -51,3 +51,43 @@ Raspberry Pi 3B + [RS485 CAN HAT](https://www.waveshare.com/wiki/RS485_CAN_HAT)
   ```
   ![image](https://github.com/ChungChiuHung/rpiWebServer_RS485_ServoCtrl/assets/52248840/149436ad-a2ca-4dd2-9fa6-c44bf60b2702)
 
+  ## Running a Python Script at Startup on Raspberry Pi
+  1. Create a systemd Service File
+     ```
+     sudo nano /etc/systemd/system/myscript.service
+     ```
+     ```
+     [Unit]
+      Description=My Python Script Service
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=simple
+      ExecStart=/usr/bin/python3 /path/to/your/script.py
+
+      [Install]
+      WantedBy=multi-user.target
+     ```
+  2. Enable and Start Your Service
+     - Reload systemd to recognize your new service:
+     ```
+     sudo systemctl daemon-reload
+     ```
+     - Enable the service to start it automaticllay at boot:
+     ```
+     sudo systemctl enable myscript.service
+     ```
+     - Start the service right away to test it:
+     ```
+     sudo systemctl start myscript.service
+     ```
+     - Check the service's status to ensure it's active:
+     ```
+     sudo systemctl status myscript.service
+     ```
+  4. Debugging
+     Check the logs
+     ```
+     journalctl -u myscript.service
+     ```
