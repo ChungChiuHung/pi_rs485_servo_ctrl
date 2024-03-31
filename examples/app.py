@@ -61,8 +61,9 @@ error_code = 0
 # The function to be executed in a thread
 def motion_sequence_thread(servo_controller):
       global START, STOP
+      point =[3,4]
       while START:
-            servo_ctrller.execute_motion_sequence()
+            servo_ctrller.execute_motion_sequence(point)
             if STOP:
                   break
 
