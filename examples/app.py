@@ -56,14 +56,6 @@ def json_response(f):
                   return jsonify({"error": "An error occurred", "details":str(e)}),500
       return decorated_function
 
-# The function to be executed in a thread
-def motion_sequence_thread():
-      point =[3,4]
-      while START:
-            servo_ctrller.execute_motion_sequence(point)
-            if STOP:
-                  break
-
 def start_motion_sequence():
       global START, STOP, monitoring_active, monitoring_thread
       START, STOP = True, False
@@ -78,6 +70,14 @@ def stop_motion_sequence():
       monitoring_active = False
       if monitoring_thread:
             monitoring_thread.join()
+
+def motion_sequence_thread():
+      global monitoring_active
+      while monitoring_active:
+            servo_ctrller.execute_motion_sequence([3,4])
+            if not monitoring_active:
+                  break
+
 
 @app.route('/')
 def home():
