@@ -8,7 +8,7 @@
         <script>
             $(document).ready(function(){
                 function clearStatuses(excludeAction){
-                    let actions = ['servoOn','servoOff','getMsg','getIOOutput','setPoint_1','setPoint_2','Home','motionStart','motionPause'];
+                    let actions = ['servoOn','servoOff','getMsg','getIOOutput','setPoint_1','setPoint_2','Home','motionStart','motionPause','motionCancel'];
                     actions.forEach(function(action){
                         if(action !== excludeAction){
                             $('#'+action+'_status').text('');
@@ -75,6 +75,7 @@
                     <div class="button-container"><button class="button" data-action="Home">HOME</button><span id="Home_status"></span></div>
                     <div class="button-container"><button class="button" data-action="motionStart">MOTION START</button><span id="motionStart_status"></span></div>
                     <div class="button-container"><button class="button" data-action="motionPause">MOTION PAUSE</button><span id="motionPause_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="motionCancel">MOTION CANCEL</button><span id="motionCancel_status"></span></div>
                 </div>
             </section>
             <a href="/">Go Back to Home</a>
