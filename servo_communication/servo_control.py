@@ -128,7 +128,7 @@ class ServoController:
             get_io_output_state = self.command_format.construct_packet(1,command_code, b'\x01\x28', is_response=False)
             response = self.send_command_and_wait_for_response(get_io_output_state, f"{command_code.name}", 0.1)
 
-            command_delay_time_ms = self.cal_command_time_delay(get_io_output_state)
+            command_delay_time_ms = self.cal_command_time_delay.calculate_transmission_time_ms(get_io_output_state)
             total_delay_time_ms = command_delay_time_ms + 100
             self.delay_ms(total_delay_time_ms)
 
