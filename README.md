@@ -91,3 +91,28 @@ Raspberry Pi 3B + [RS485 CAN HAT](https://www.waveshare.com/wiki/RS485_CAN_HAT)
      ```
      journalctl -u myscript.service
      ```
+  ## To Disable the Automatic Startup of the Python script
+  1. Disable the Service
+     ```
+     sudo systemctl disable myscript.service
+     ```
+  3. Stop the Service
+     ```
+     sudo systemctl stop myscript.service
+     ```
+  5. Check the Service Status
+     ```
+     sudo systemctl status myscript.service
+     ```
+  7. Removing the Service File
+     ```
+     sudo rm /etc/systemd/system/myscript.service
+     ```
+  9. Reload the 'systemd'
+     ```
+     sudo systemctl daemon-reload
+     ```
+  11. Clear any error states after removed a Service file
+      ```
+      sudo systemctl reset-failed
+      ```
