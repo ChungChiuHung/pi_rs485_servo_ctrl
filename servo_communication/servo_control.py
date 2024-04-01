@@ -147,7 +147,6 @@ class ServoController:
         command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
 
         for point in points:
-            self.delay_ms(5)
             set_point_1 = self.command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, point, is_response=False)
             self.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.05)
             motion_start = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 1, is_response=False)
@@ -170,6 +169,7 @@ class ServoController:
     def execute_motion_sequence_thread(self, points):
         while self.monitoring_active:
             self.execute_motion_start_sequence(points)
+            time.sleep(5)
 
     def start_motion_sequence(self, points):
         self.monitoring_active = True
