@@ -119,7 +119,7 @@ class ServoController:
         self.send_command_and_wait_for_response(command_packet, f"{command_code.name}", response_delay)
 
     def monitor_end_status(self):
-        print("Monioring 'MEND' status...")
+        # print("Monioring 'MEND' status...")
         while self.monitoring_active:
             #response = self.send_servo_command(CmdCode.GET_STATE_VALUE_4, b'\x01\x28')
             command_code = CmdCode.GET_STATE_VALUE_4
@@ -148,8 +148,8 @@ class ServoController:
         for point in points:
             # print(f"POINT {point}")
             self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.SEL_NO, value=point)
-            # self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
-            print("START")
+            self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
+            # print("START")
             self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=1)
             # Immediately after setting start motion to 1, monitor "MEND" status
             self.monitor_end_status()
@@ -161,7 +161,7 @@ class ServoController:
         set_point_1 = self.construct_packet(1, command_code,b'', BitMap.SEL_NO, 1, is_response=False)
         self.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.05)
         #print("Homing...")
-        # self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
+        self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
         self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=1)
         # Immediately after setting start motion to 1, monitor "MEND" status
         self.monitor_end_status()
@@ -170,7 +170,7 @@ class ServoController:
     def execute_motion_sequence_thread(self, points):
         while self.monitoring_active:
             self.execute_motion_start_sequence(points)
-            time.sleep(0.1)
+            # time.sleep(0.05)
 
     def start_motion_sequence(self, points):
         self.monitoring_active = True
