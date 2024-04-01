@@ -124,7 +124,7 @@ class ServoController:
             #response = self.send_servo_command(CmdCode.GET_STATE_VALUE_4, b'\x01\x28')
             command_code = CmdCode.GET_STATE_VALUE_4
             get_io_output_state = self.command_format.construct_packet(1,command_code, b'\x01\x28', is_response=False)
-            response = self.send_command_and_wait_for_response(get_io_output_state, f"{command_code.name}", 0.05)
+            response = self.send_command_and_wait_for_response(get_io_output_state, f"{command_code.name}", 0)
 
             if response:
                 parsed_response = self.command_format.response_parser(CmdCode.GET_STATE_VALUE_4, response)
