@@ -133,7 +133,6 @@ class ServoController:
             #self.delay_ms(total_delay_time_ms)
 
             if response:
-                self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
                 parsed_response = self.command_format.response_parser(CmdCode.GET_STATE_VALUE_4, response)
                 data = json.loads(parsed_response)
                 if not data['bit_statuses']['MEND']:
