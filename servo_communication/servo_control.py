@@ -150,17 +150,14 @@ class ServoController:
             self.monitor_end_status()
 
     def execute_motion_stop_sequence(self):
-        #print("Executing motion stop sequence...")
-        #print(f"Selecting Home POS")
         command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
         set_point_1 = self.command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 1, is_response=False)
         self.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.05)
-        #print("Homing...")
-        self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
-        self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=1)
-        # Immediately after setting start motion to 1, monitor "MEND" status
-        self.monitor_end_status()
-        # self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, b'\x01\x20\x00\x00\x00\x00\x00\x00\x00\x01')
+        command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
+        set_home_position = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 0, is_response=False)
+        self.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
+        set_home_position = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 1, is_response=False)
+        self.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
 
     def execute_motion_sequence_thread(self, points):
         while self.monitoring_active:
