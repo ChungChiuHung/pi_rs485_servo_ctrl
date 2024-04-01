@@ -140,11 +140,6 @@ class ServoController:
 
     def execute_motion_start_sequence(self, points):
         # print("Executing motion start sequence...")
-        # SET_PARM_2 command
-        self.send_servo_command(CmdCode.SET_PARAM_2, b'\x00\x09\x00\x01')
-        # SERVO ON
-        self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, b'\x01\x20\x00\x00\x00\x01\x00\x00\x00\x01')
-
         for point in points:
             # print(f"POINT {point}")
             self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.SEL_NO, value=point)

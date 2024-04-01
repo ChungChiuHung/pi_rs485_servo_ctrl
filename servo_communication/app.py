@@ -78,6 +78,10 @@ def handle_action():
 
       if action == "start":
             points=[3,4]
+            # SET_PARM_2 command
+            servo_ctrller.send_servo_command(CmdCode.SET_PARAM_2, b'\x00\x09\x00\x01')
+            # SERVO ON
+            servo_ctrller.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, b'\x01\x20\x00\x00\x00\x01\x00\x00\x00\x01')
             servo_ctrller.start_motion_sequence(points)
             response['message'] = "Motion sequence started."
       elif action == "stop":
