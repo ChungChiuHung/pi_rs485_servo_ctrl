@@ -40,7 +40,7 @@ class ServoController:
             print("Serial port is not open.")
             return None
         
-        print(f"Sending {description}: {command.hex()}")
+        # print(f"Sending {description}: {command.hex()}")
         self._last_send_message = command
         start_time = time.time()
         # self.print_byte_array_as_spaced_hex(command, description)
@@ -62,7 +62,8 @@ class ServoController:
             self._last_received_message = response
 
             if response:
-                print(f"\n{description} response received: {response.hex()}")
+                #print(f"\n{description} response received: {response.hex()}")
+                pass
             else:
                 print(f"\nTimeout waiting for {description} response.")
             return response
