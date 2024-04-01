@@ -127,6 +127,7 @@ class ServoController:
             response = self.send_command_and_wait_for_response(get_io_output_state, f"{command_code.name}", 0)
 
             if response:
+                self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
                 parsed_response = self.command_format.response_parser(CmdCode.GET_STATE_VALUE_4, response)
                 data = json.loads(parsed_response)
                 if not data['bit_statuses']['MEND']:
@@ -138,28 +139,29 @@ class ServoController:
                 print("Failed to receive a valid response. Retrying...")
 
     def execute_motion_start_sequence(self, points):
-        print("Executing motion start sequence...")
+        # print("Executing motion start sequence...")
         # SET_PARM_2 command
         self.send_servo_command(CmdCode.SET_PARAM_2, b'\x00\x09\x00\x01')
         # SERVO ON
         self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, b'\x01\x20\x00\x00\x00\x01\x00\x00\x00\x01')
 
         for point in points:
-            print(f"POINT {point}")
+            # print(f"POINT {point}")
             self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.SEL_NO, value=point)
-
+            # self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
             print("START")
-            self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
             self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=1)
             # Immediately after setting start motion to 1, monitor "MEND" status
             self.monitor_end_status()
 
     def execute_motion_stop_sequence(self):
-        print("Executing motion stop sequence...")
-        print(f"Selecting Home POS")
-        self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.SEL_NO, value=1)
-        print("Homing...")
-        self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
+        #print("Executing motion stop sequence...")
+        #print(f"Selecting Home POS")
+        command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
+        set_point_1 = self.construct_packet(1, command_code,b'', BitMap.SEL_NO, 1, is_response=False)
+        self.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.05)
+        #print("Homing...")
+        # self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
         self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=1)
         # Immediately after setting start motion to 1, monitor "MEND" status
         self.monitor_end_status()
