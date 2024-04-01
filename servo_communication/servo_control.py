@@ -147,14 +147,14 @@ class ServoController:
         command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
 
         for point in points:
+            self.delay_ms(5)
             set_point_1 = self.command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, point, is_response=False)
-            self.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.03)
-            set_home_position = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 0, is_response=False)
-            self.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.03)
-            set_home_position = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 1, is_response=False)
-            self.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.03)
+            self.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.05)
+            motion_start = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 1, is_response=False)
+            self.send_command_and_wait_for_response(motion_start, f"{command_code.name}", 0.05)
+            motion_stop = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 0, is_response=False)
+            self.send_command_and_wait_for_response(motion_stop, f"{command_code.name}", 0.05)
             # Immediately after setting start motion to 1, monitor "MEND" status
-            time.sleep(5)
         self.monitor_end_status()
 
     def execute_motion_stop_sequence(self):
