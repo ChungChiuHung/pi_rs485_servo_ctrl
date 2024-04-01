@@ -126,7 +126,7 @@ class ServoController:
             # Logic I/O Output
             command_code = CmdCode.GET_STATE_VALUE_4
             get_io_output_state = self.command_format.construct_packet(1,command_code, b'\x01\x28', is_response=False)
-            response = self.send_command_and_wait_for_response(get_io_output_state, f"{command_code.name}", 1)
+            response = self.send_command_and_wait_for_response(get_io_output_state, f"{command_code.name}", 0.5)
 
             #command_delay_time_ms = self.cal_command_time_delay.calculate_transmission_time_ms(get_io_output_state)
             #total_delay_time_ms = command_delay_time_ms + 100
@@ -148,12 +148,12 @@ class ServoController:
         for point in points:
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
             set_point_1 = self.command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, point, is_response=False)
-            self.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.1)
+            self.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.05)
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
             set_home_position = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 0, is_response=False)
-            self.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.1)
+            self.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
             set_home_position = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 1, is_response=False)
-            self.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.1)
+            self.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
             # Immediately after setting start motion to 1, monitor "MEND" status
             self.monitor_end_status()
 
