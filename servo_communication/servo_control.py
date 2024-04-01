@@ -154,6 +154,7 @@ class ServoController:
             set_home_position = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 1, is_response=False)
             self.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.03)
             # Immediately after setting start motion to 1, monitor "MEND" status
+            self.delay_ms(2000)
         self.monitor_end_status()
 
     def execute_motion_stop_sequence(self):
