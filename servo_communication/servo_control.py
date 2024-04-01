@@ -73,12 +73,6 @@ class ServoController:
             print(f"An unexpected error occurred: {e}")
         
         return response
-     
-    @staticmethod
-    def create_progress_bar(progress, bar_length=30):
-        filled_length = int(round(bar_length * progress))
-        bar = Fore.GREEN + '█' * filled_length + Fore.RED + '█' * (bar_length - filled_length)
-        return bar
     
     @property
     def last_send_message(self):
@@ -127,7 +121,11 @@ class ServoController:
     def monitor_end_status(self):
         print("Monioring 'MEND' status...")
         while self.monitoring_active:
-            response = self.send_servo_command(CmdCode.GET_STATE_VALUE_4, b'\x01\x28')
+            #response = self.send_servo_command(CmdCode.GET_STATE_VALUE_4, b'\x01\x28')
+            command_code = CmdCode.GET_STATE_VALUE_4
+            get_io_output_state = self.command_format.construct_packet(1,command_code, b'\x01\x28', is_response=False)
+            response = self.send_command_and_wait_for_response(get_io_output_state, f"{command_code.name}", 0.05)
+
             if response:
                 parsed_response = self.command_format.response_parser(CmdCode.GET_STATE_VALUE_4, response)
                 data = json.loads(parsed_response)
@@ -138,8 +136,6 @@ class ServoController:
                     break
             else:
                 print("Failed to receive a valid response. Retrying...")
-            
-            self.delay_ms(100)
 
     def execute_motion_start_sequence(self, points):
         print("Executing motion start sequence...")
