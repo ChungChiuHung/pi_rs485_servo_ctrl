@@ -78,10 +78,18 @@ def handle_action():
 
       if action == "start":
             points=[3,4]
-            # SET_PARM_2 command
-            servo_ctrller.send_servo_command(CmdCode.SET_PARAM_2, b'\x00\x09\x00\x01')
-            # SERVO ON
-            servo_ctrller.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, b'\x01\x20\x00\x00\x00\x01\x00\x00\x00\x01')
+            # SET_PARAM_2 command        
+            command_code = CmdCode.SET_PARAM_2
+            set_param_2_command = command_format.construct_packet(1,command_code, b'\x00\x09\x00\x01', is_response=False)
+            servo_ctrller.send_command_and_wait_for_response(set_param_2_command, f"{command_code.name}", 0.05)
+            RS485_send = servo_ctrller.last_send_message
+            RS485_read = servo_ctrller.last_received_message
+
+            # SERVO_ON Command
+            command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
+            servo_on_command = command_format.construct_packet(1,command_code, b'\x01\x20\x00\x00\x00\x01\x00\x00\x00\x01', is_response=False)
+            servo_ctrller.send_command_and_wait_for_response(servo_on_command, f"{command_code.name}", 0.05)
+            
             servo_ctrller.start_motion_sequence(points)
             response['message'] = "Motion sequence started."
       elif action == "stop":
