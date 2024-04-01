@@ -158,7 +158,7 @@ class ServoController:
         #print("Executing motion stop sequence...")
         #print(f"Selecting Home POS")
         command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
-        set_point_1 = self.construct_packet(1, command_code,b'', BitMap.SEL_NO, 1, is_response=False)
+        set_point_1 = self.command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 1, is_response=False)
         self.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.05)
         #print("Homing...")
         self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
