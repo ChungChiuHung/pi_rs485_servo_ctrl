@@ -118,7 +118,7 @@ class ServoController:
         else:
             command_packet = self.command_format.construct_packet(1, command_code, data, is_response=False)
         self.send_command_and_wait_for_response(command_packet, f"{command_code.name}", response_delay)
-        self.delay_ms(50)
+        self.delay_ms(100)
 
     def monitor_end_status(self):
         # print("Monioring 'MEND' status...")
