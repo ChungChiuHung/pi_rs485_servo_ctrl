@@ -50,7 +50,24 @@ Raspberry Pi 3B + [RS485 CAN HAT](https://www.waveshare.com/wiki/RS485_CAN_HAT)
   dmesg | grep -i '\(can\|spi\)'
   ```
   ![image](https://github.com/ChungChiuHung/rpiWebServer_RS485_ServoCtrl/assets/52248840/149436ad-a2ca-4dd2-9fa6-c44bf60b2702)
-
+  ## Auto-Configuration of a Startup Script with [PM2](https://pm2.keymetrics.io/docs/usage/startup/)
+  1. Generate Startup Script
+  ```
+  pm2 startup
+  ```
+  2. Copy/Paste the Generated Command (PM2 will output a command based on your system's configuration)
+  ```
+  sudo su -c "env PATH=$PATH:/home/unitech/.nvm/versions/node/v14.3/bin pm2 startup <distribution> -u <user> --hp <home-path>
+  ```
+  3. Start Your Python Script
+  ```
+  pm2 start your_secript.py
+  ```
+  4. Save the Current PM2 List
+  ```
+  pm2 save
+  ```
+  
   ## Running a Python Script at Startup on Raspberry Pi
   1. Create a systemd Service File
      ```
