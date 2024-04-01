@@ -170,7 +170,7 @@ class ServoController:
     def execute_motion_sequence_thread(self, points):
         while self.monitoring_active:
             self.execute_motion_start_sequence(points)
-            self.delay_ms(100)
+            #self.delay_ms(100)
 
     def start_motion_sequence(self, points):
         self.monitoring_active = True
