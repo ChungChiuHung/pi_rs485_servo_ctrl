@@ -111,7 +111,7 @@ class ServoController:
         return (json.dumps({"error" : "No response or invalid response length"}), response_recieved)
 
 
-    def send_servo_command(self, command_code, data=b'', bitmap=None, value=None, response_delay=0.05):
+    def send_servo_command(self, command_code, data=b'', bitmap=None, value=None, response_delay=0):
         if bitmap is not None and value is not None:
             command_packet = self.command_format.construct_packet(1, command_code, data, bitmap, value, is_response=False)
         else:
