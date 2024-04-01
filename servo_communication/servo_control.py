@@ -126,7 +126,7 @@ class ServoController:
             # Logic I/O Output
             command_code = CmdCode.GET_STATE_VALUE_4
             get_io_output_state = self.command_format.construct_packet(1,command_code, b'\x01\x28', is_response=False)
-            response = self.send_command_and_wait_for_response(get_io_output_state, f"{command_code.name}", 0.05)
+            response = self.send_command_and_wait_for_response(get_io_output_state, f"{command_code.name}", 0.1)
 
             if response:
                 self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
