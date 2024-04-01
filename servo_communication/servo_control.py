@@ -118,6 +118,7 @@ class ServoController:
         else:
             command_packet = self.command_format.construct_packet(1, command_code, data, is_response=False)
         self.send_command_and_wait_for_response(command_packet, f"{command_code.name}", response_delay)
+        self.delay_ms(50)
 
     def monitor_end_status(self):
         # print("Monioring 'MEND' status...")
@@ -163,7 +164,7 @@ class ServoController:
     def execute_motion_sequence_thread(self, points):
         while self.monitoring_active:
             self.execute_motion_start_sequence(points)
-            # time.sleep(0.05)
+            self.delay_ms(100)
 
     def start_motion_sequence(self, points):
         self.monitoring_active = True
