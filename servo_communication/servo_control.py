@@ -123,10 +123,10 @@ class ServoController:
     def monitor_end_status(self):
         # print("Monioring 'MEND' status...")
         while self.monitoring_active:
-            #response = self.send_servo_command(CmdCode.GET_STATE_VALUE_4, b'\x01\x28')
+            # Logic I/O Output
             command_code = CmdCode.GET_STATE_VALUE_4
             get_io_output_state = self.command_format.construct_packet(1,command_code, b'\x01\x28', is_response=False)
-            response = self.send_command_and_wait_for_response(get_io_output_state, f"{command_code.name}", 0)
+            response = self.send_command_and_wait_for_response(get_io_output_state, f"{command_code.name}", 0.05)
 
             if response:
                 self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
@@ -139,15 +139,19 @@ class ServoController:
                     break
             else:
                 print("Failed to receive a valid response. Retrying...")
+            self.delay_ms(100)
 
     def execute_motion_start_sequence(self, points):
         # print("Executing motion start sequence...")
         for point in points:
-            # print(f"POINT {point}")
-            self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.SEL_NO, value=point)
-            self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
-            # print("START")
-            self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=1)
+            command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
+            set_point_1 = self.command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, point, is_response=False)
+            self.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.05)
+            command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
+            set_home_position = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 0, is_response=False)
+            self.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
+            set_home_position = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 1, is_response=False)
+            self.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
             # Immediately after setting start motion to 1, monitor "MEND" status
             self.monitor_end_status()
 

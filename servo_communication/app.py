@@ -150,7 +150,7 @@ def handle_action():
       elif action == "setPoint_1":
 
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
-            set_point_1 = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 3, is_response=False)
+            set_point_1 = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 5, is_response=False)
             servo_ctrller.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.05)
             RS485_send = servo_ctrller.last_send_message
             RS485_read = servo_ctrller.last_received_message
@@ -159,7 +159,7 @@ def handle_action():
 
       elif action == "setPoint_2":
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
-            set_point_2 = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 4, is_response=False)
+            set_point_2 = command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 6, is_response=False)
             servo_ctrller.send_command_and_wait_for_response(set_point_2, f"{command_code.name}", 0.05)
             RS485_send = servo_ctrller.last_send_message
             RS485_read = servo_ctrller.last_received_message
