@@ -146,12 +146,12 @@ class ServoController:
         for point in points:
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
             set_point_1 = self.command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, point, is_response=False)
-            self.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.05)
+            self.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.1)
             command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
             set_home_position = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 0, is_response=False)
-            self.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
+            self.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.1)
             set_home_position = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 1, is_response=False)
-            self.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
+            self.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.1)
             # Immediately after setting start motion to 1, monitor "MEND" status
             self.monitor_end_status()
 
