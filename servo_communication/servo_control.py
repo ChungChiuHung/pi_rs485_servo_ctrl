@@ -49,7 +49,7 @@ class ServoController:
         try:
             self.serial_port.write(command)
             command_transmission_time_ms = self.cal_command_time_delay.calculate_transmission_time_ms(command)
-            total_timeout = command_transmission_time_ms + read_timeout  
+            total_timeout = command_transmission_time_ms/1000 + read_timeout  
             start_time = time.time()
 
             while time.time()-start_time <  total_timeout:
