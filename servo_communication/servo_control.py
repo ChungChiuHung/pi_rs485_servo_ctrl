@@ -165,9 +165,6 @@ class ServoController:
         self.monitor_end_status()
         # self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, b'\x01\x20\x00\x00\x00\x00\x00\x00\x00\x01')
 
-    def stop_monitoring(self):
-        self.monitoring_active = False
-
     def execute_motion_sequence_thread(self, points):
         while self.monitoring_active:
             self.execute_motion_start_sequence(points)
