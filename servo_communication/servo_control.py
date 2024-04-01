@@ -128,6 +128,10 @@ class ServoController:
             get_io_output_state = self.command_format.construct_packet(1,command_code, b'\x01\x28', is_response=False)
             response = self.send_command_and_wait_for_response(get_io_output_state, f"{command_code.name}", 0.1)
 
+            command_delay_time_ms = self.cal_command_time_delay(get_io_output_state)
+            total_delay_time_ms = command_delay_time_ms + 100
+            self.delay_ms(total_delay_time_ms)
+
             if response:
                 self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
                 parsed_response = self.command_format.response_parser(CmdCode.GET_STATE_VALUE_4, response)
@@ -139,7 +143,6 @@ class ServoController:
                     break
             else:
                 print("Failed to receive a valid response. Retrying...")
-            self.delay_ms(100)
 
     def execute_motion_start_sequence(self, points):
         # print("Executing motion start sequence...")
