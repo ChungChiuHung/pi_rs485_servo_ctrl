@@ -50,7 +50,36 @@ Raspberry Pi 3B + [RS485 CAN HAT](https://www.waveshare.com/wiki/RS485_CAN_HAT)
   dmesg | grep -i '\(can\|spi\)'
   ```
   ![image](https://github.com/ChungChiuHung/rpiWebServer_RS485_ServoCtrl/assets/52248840/149436ad-a2ca-4dd2-9fa6-c44bf60b2702)
+  ## Auto-Configuration of a Startup Script with [PM2](https://pm2.keymetrics.io/docs/usage/startup/)
+  1. Generate Startup Script
+  ```
+  pm2 startup
+  ```
+  2. Copy/Paste the Generated Command (PM2 will output a command based on your system's configuration)
+  ```
+  sudo su -c "env PATH=$PATH:/home/unitech/.nvm/versions/node/v14.3/bin pm2 startup <distribution> -u <user> --hp <home-path>
+  ```
+  3. Start Your Python Script
+  ```
+  pm2 start your_secript.py
+  ```
+  4. Save the Current PM2 List
+  ```
+  pm2 save
+  ```
+  
+  ## Running a Python Script at Startup on Raspberry Pi
+  1. Create a systemd Service File
+     ```
+     sudo nano /etc/systemd/system/myscript.service
+     ```
+     ```
+     [Unit]
+      Description=My Python Script Service
+      After=network-online.target
+      Wants=network-online.target
 
+<<<<<<< HEAD
   
   ## Config the static IP for Raspberry Pi
   - Retrieve the currently defined router information
@@ -86,3 +115,59 @@ Raspberry Pi 3B + [RS485 CAN HAT](https://www.waveshare.com/wiki/RS485_CAN_HAT)
   
 
 
+=======
+      [Service]
+      Type=simple
+      ExecStart=/usr/bin/python3 /path/to/your/script.py
+
+      [Install]
+      WantedBy=multi-user.target
+     ```
+  2. Enable and Start Your Service
+     - Reload systemd to recognize your new service:
+     ```
+     sudo systemctl daemon-reload
+     ```
+     - Enable the service to start it automaticllay at boot:
+     ```
+     sudo systemctl enable myscript.service
+     ```
+     - Start the service right away to test it:
+     ```
+     sudo systemctl start myscript.service
+     ```
+     - Check the service's status to ensure it's active:
+     ```
+     sudo systemctl status myscript.service
+     ```
+  4. Debugging
+     Check the logs
+     ```
+     journalctl -u myscript.service
+     ```
+  ## To Disable the Automatic Startup of the Python script
+  1. Disable the Service
+     ```
+     sudo systemctl disable myscript.service
+     ```
+  3. Stop the Service
+     ```
+     sudo systemctl stop myscript.service
+     ```
+  5. Check the Service Status
+     ```
+     sudo systemctl status myscript.service
+     ```
+  7. Removing the Service File
+     ```
+     sudo rm /etc/systemd/system/myscript.service
+     ```
+  9. Reload the 'systemd'
+     ```
+     sudo systemctl daemon-reload
+     ```
+  11. Clear any error states after removed a Service file
+      ```
+      sudo systemctl reset-failed
+      ```
+>>>>>>> f8dbff616437e0f3fc963b3bfcaefb8a442925d0
