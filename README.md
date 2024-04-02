@@ -51,3 +51,38 @@ Raspberry Pi 3B + [RS485 CAN HAT](https://www.waveshare.com/wiki/RS485_CAN_HAT)
   ```
   ![image](https://github.com/ChungChiuHung/rpiWebServer_RS485_ServoCtrl/assets/52248840/149436ad-a2ca-4dd2-9fa6-c44bf60b2702)
 
+  
+  ## Config the static IP for Raspberry Pi
+  - Retrieve the currently defined router information
+  ```
+  ip r | grep default
+  ```
+  Make a note of the first IP:
+  - Retrieve the current DNS server
+  ```
+  sudo nano /etc/resolv.conf
+  ```
+  Make a note of the IP next to "nameserver"
+  - Modify the "dhcpcd.conf"
+  ```
+  sudo nano /etc/dhcpcd.conf
+  ```
+  -Set the static for your "eth0" or "wlan0"
+  Replace <NETWORK> <STATICIP> <ROUTERIP> <DNSIP>
+  ```
+  interface <NETWORK>
+  static ip_address=<STATICIP>/24
+  static routers=<ROUTERIP>
+  static domain_name_servers=<DNSIP>
+  ```
+  -Reboot Raspberry Pi
+  ```
+  sudo reboot
+  ```
+  ## Test the static IP
+  ```
+  hostname -I
+  ```
+  
+
+
