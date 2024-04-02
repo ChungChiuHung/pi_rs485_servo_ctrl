@@ -145,13 +145,13 @@ class ServoController:
     def execute_motion_start_sequence(self, points):
         # print("Executing motion start sequence...")
         command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
+        motion_start = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 1, is_response=False)
+        motion_stop = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 0, is_response=False)
 
         for point in points:
-            set_point_1 = self.command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, point, is_response=False)
-            self.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.05)
-            motion_start = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 1, is_response=False)
+            set_point = self.command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, point, is_response=False)
+            self.send_command_and_wait_for_response(set_point, f"{command_code.name}", 0.05)
             self.send_command_and_wait_for_response(motion_start, f"{command_code.name}", 0.05)
-            motion_stop = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 0, is_response=False)
             self.send_command_and_wait_for_response(motion_stop, f"{command_code.name}", 0.05)
             # Immediately after setting start motion to 1, monitor "MEND" status
         self.monitor_end_status()
@@ -159,12 +159,11 @@ class ServoController:
     def execute_motion_stop_sequence(self):
         command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
         set_point_1 = self.command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 1, is_response=False)
+        motion_start_cmd = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 0, is_response=False)
+        motion_stop_cmd = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 1, is_response=False)
         self.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.05)
-        command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
-        set_home_position = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 0, is_response=False)
-        self.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
-        set_home_position = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 1, is_response=False)
-        self.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
+        self.send_command_and_wait_for_response(motion_start_cmd, f"{command_code.name}", 0.05)      
+        self.send_command_and_wait_for_response(motion_stop_cmd, f"{command_code.name}", 0.05)
 
     def execute_motion_sequence_thread(self, points):
         while self.monitoring_active:
@@ -183,7 +182,6 @@ class ServoController:
         self.monitoring_active = False
         if self.motion_thread:
             self.motion_thread.join()
-
         self.execute_motion_stop_sequence()
 
     
