@@ -79,8 +79,6 @@ Raspberry Pi 3B + [RS485 CAN HAT](https://www.waveshare.com/wiki/RS485_CAN_HAT)
       After=network-online.target
       Wants=network-online.target
 
-<<<<<<< HEAD
-  
   ## Config the static IP for Raspberry Pi
   - Retrieve the currently defined router information
   ```
@@ -112,17 +110,13 @@ Raspberry Pi 3B + [RS485 CAN HAT](https://www.waveshare.com/wiki/RS485_CAN_HAT)
   ```
   hostname -I
   ```
-  
-
-
-=======
-      [Service]
-      Type=simple
-      ExecStart=/usr/bin/python3 /path/to/your/script.py
-
-      [Install]
-      WantedBy=multi-user.target
-     ```
+  ```
+  [Service]
+  Type=simple
+  ExecStart=/usr/bin/python3 /path/to/your/script.py
+  [Install]
+  WantedBy=multi-user.target
+  ```
   2. Enable and Start Your Service
      - Reload systemd to recognize your new service:
      ```
@@ -170,4 +164,3 @@ Raspberry Pi 3B + [RS485 CAN HAT](https://www.waveshare.com/wiki/RS485_CAN_HAT)
       ```
       sudo systemctl reset-failed
       ```
->>>>>>> f8dbff616437e0f3fc963b3bfcaefb8a442925d0
