@@ -40,7 +40,7 @@ class ServoController:
             print("Serial port is not open.")
             return None
         
-        print(f"Sending {description}: {command.hex()}")
+        # print(f"Sending {description}: {command.hex()}")
         self._last_send_message = command
         start_time = time.time()
         # self.print_byte_array_as_spaced_hex(command, description)
@@ -49,7 +49,7 @@ class ServoController:
         try:
             self.serial_port.write(command)
             command_transmission_time_ms = self.cal_command_time_delay.calculate_transmission_time_ms(command)
-            total_timeout = command_transmission_time_ms + read_timeout  
+            total_timeout = command_transmission_time_ms/1000 + read_timeout  
             start_time = time.time()
 
             while time.time()-start_time <  total_timeout:
@@ -62,7 +62,8 @@ class ServoController:
             self._last_received_message = response
 
             if response:
-                print(f"\n{description} response received: {response.hex()}")
+                #print(f"\n{description} response received: {response.hex()}")
+                pass
             else:
                 print(f"\nTimeout waiting for {description} response.")
             return response
@@ -73,12 +74,6 @@ class ServoController:
             print(f"An unexpected error occurred: {e}")
         
         return response
-     
-    @staticmethod
-    def create_progress_bar(progress, bar_length=30):
-        filled_length = int(round(bar_length * progress))
-        bar = Fore.GREEN + '█' * filled_length + Fore.RED + '█' * (bar_length - filled_length)
-        return bar
     
     @property
     def last_send_message(self):
@@ -117,7 +112,7 @@ class ServoController:
         return (json.dumps({"error" : "No response or invalid response length"}), response_recieved)
 
 
-    def send_servo_command(self, command_code, data=b'', bitmap=None, value=None, response_delay=0.05):
+    def send_servo_command(self, command_code, data=b'', bitmap=None, value=None, response_delay=0):
         if bitmap is not None and value is not None:
             command_packet = self.command_format.construct_packet(1, command_code, data, bitmap, value, is_response=False)
         else:
@@ -125,9 +120,17 @@ class ServoController:
         self.send_command_and_wait_for_response(command_packet, f"{command_code.name}", response_delay)
 
     def monitor_end_status(self):
-        print("Monioring 'MEND' status...")
+        # print("Monioring 'MEND' status...")
         while self.monitoring_active:
-            response = self.send_servo_command(CmdCode.GET_STATE_VALUE_4, b'\x01\x28')
+            # Logic I/O Output
+            command_code = CmdCode.GET_STATE_VALUE_4
+            get_io_output_state = self.command_format.construct_packet(1,command_code, b'\x01\x28', is_response=False)
+            response = self.send_command_and_wait_for_response(get_io_output_state, f"{command_code.name}", 0.5)
+
+            #command_delay_time_ms = self.cal_command_time_delay.calculate_transmission_time_ms(get_io_output_state)
+            #total_delay_time_ms = command_delay_time_ms + 100
+            #self.delay_ms(total_delay_time_ms)
+
             if response:
                 parsed_response = self.command_format.response_parser(CmdCode.GET_STATE_VALUE_4, response)
                 data = json.loads(parsed_response)
@@ -138,44 +141,35 @@ class ServoController:
                     break
             else:
                 print("Failed to receive a valid response. Retrying...")
-            
-            self.delay_ms(100)
 
     def execute_motion_start_sequence(self, points):
-        print("Executing motion start sequence...")
-        # SET_PARM_2 command
-        self.send_servo_command(CmdCode.SET_PARAM_2, b'\x00\x09\x00\x01')
-        # SERVO ON
-        self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, b'\x01\x20\x00\x00\x00\x01\x00\x00\x00\x01')
+        # print("Executing motion start sequence...")
+        command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
 
         for point in points:
-            print(f"POINT {point}")
-            self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.SEL_NO, value=point)
-
-            print("START")
-            self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
-            self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=1)
+            set_point_1 = self.command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, point, is_response=False)
+            self.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.05)
+            motion_start = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 1, is_response=False)
+            self.send_command_and_wait_for_response(motion_start, f"{command_code.name}", 0.05)
+            motion_stop = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 0, is_response=False)
+            self.send_command_and_wait_for_response(motion_stop, f"{command_code.name}", 0.05)
             # Immediately after setting start motion to 1, monitor "MEND" status
-            self.monitor_end_status()
+        self.monitor_end_status()
 
     def execute_motion_stop_sequence(self):
-        print("Executing motion stop sequence...")
-        print(f"Selecting Home POS")
-        self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.SEL_NO, value=1)
-        print("Homing...")
-        self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=0)
-        self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, bitmap=BitMap.START1, value=1)
-        # Immediately after setting start motion to 1, monitor "MEND" status
-        self.monitor_end_status()
-        self.send_servo_command(CmdCode.SET_STATE_VALUE_WITHMASK_4, b'\x01\x20\x00\x00\x00\x00\x00\x00\x00\x01')
-
-    def stop_monitoring(self):
-        self.monitoring_active = False
+        command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
+        set_point_1 = self.command_format.construct_packet(1, command_code,b'', BitMap.SEL_NO, 1, is_response=False)
+        self.send_command_and_wait_for_response(set_point_1, f"{command_code.name}", 0.05)
+        command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
+        set_home_position = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 0, is_response=False)
+        self.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
+        set_home_position = self.command_format.construct_packet(1, command_code,b'', BitMap.START1, 1, is_response=False)
+        self.send_command_and_wait_for_response(set_home_position, f"{command_code.name}", 0.05)
 
     def execute_motion_sequence_thread(self, points):
         while self.monitoring_active:
             self.execute_motion_start_sequence(points)
-            time.sleep(0.1)
+            time.sleep(40)
 
     def start_motion_sequence(self, points):
         self.monitoring_active = True
