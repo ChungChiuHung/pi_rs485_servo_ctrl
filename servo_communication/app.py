@@ -77,6 +77,16 @@ def handle_action():
       # Perform the raspi action here based on action type
 
       if action == "start":
+            # Trun On the Servo
+            # SET_PARAM_2 command        
+            command_code = CmdCode.SET_PARAM_2
+            set_param_2_command = command_format.construct_packet(1,command_code, b'\x00\x09\x00\x01', is_response=False)
+            servo_ctrller.send_command_and_wait_for_response(set_param_2_command, f"{command_code.name}", 0.05)
+            # SERVO_ON Command
+            command_code = CmdCode.SET_STATE_VALUE_WITHMASK_4
+            servo_on_command = command_format.construct_packet(1,command_code, b'\x01\x20\x00\x00\x00\x01\x00\x00\x00\x01', is_response=False)
+            servo_ctrller.send_command_and_wait_for_response(servo_on_command, f"{command_code.name}", 0.05)
+            # Start motion sequence
             points=[3,4]
             servo_ctrller.start_motion_sequence(points)
             response['message'] = "Motion sequence started."
