@@ -5,7 +5,7 @@ Raspberry Pi 3B + [RS485 CAN HAT](https://www.waveshare.com/wiki/RS485_CAN_HAT)
 [PDF from waveshare.com](https://www.waveshare.com/w/upload/2/29/RS485-CAN-HAT-user-manuakl-en.pdf)
 
 - [AC Servo Motor Type 1 Info.](https://amethyst-myrtle-52e.notion.site/Servo-Motor-Driver-2f7c21ac9d024b00933ec2252861ffcf)
-- AC Servo Motor Type 2 Info.[zh[1]](https://www.seec.com.tw/Content/Goods/PdfViwer.aspx?SiteID=10&MmmID=655575436061077370&Msid=2022102818050639313&fd=GoodsDownload_Files&pname=SDE%E4%BC%BA%E6%9C%8D%E9%A9%85%E5%8B%95%E5%99%A8%E8%AA%AA%E6%98%8E%E6%9B%B8_V1.07.pdf) [zh[2]](https://www.seec.com.tw/Content/Goods/PdfViwer.aspx?SiteID=10&MmmID=655575436061077370&Msid=2020082410220029759&fd=GoodsDownload_Files&pname=%E5%A3%AB%E6%9E%97%E9%9B%BB%E6%A9%9FSDE%E7%B0%A1%E6%98%93%E8%AA%AA%E6%98%8E%E6%9B%B8(%E4%B8%AD%E8%8B%B1)LE106D04204.pdf) [en[3]](https://www.manualslib.com/products/Shihlin-Electric-Sde-040a2-10446073.html)
+- AC Servo Motor Type 2 Info. [zh[1]](https://www.seec.com.tw/Content/Goods/PdfViwer.aspx?SiteID=10&MmmID=655575436061077370&Msid=2022102818050639313&fd=GoodsDownload_Files&pname=SDE%E4%BC%BA%E6%9C%8D%E9%A9%85%E5%8B%95%E5%99%A8%E8%AA%AA%E6%98%8E%E6%9B%B8_V1.07.pdf) [zh[2]](https://www.seec.com.tw/Content/Goods/PdfViwer.aspx?SiteID=10&MmmID=655575436061077370&Msid=2020082410220029759&fd=GoodsDownload_Files&pname=%E5%A3%AB%E6%9E%97%E9%9B%BB%E6%A9%9FSDE%E7%B0%A1%E6%98%93%E8%AA%AA%E6%98%8E%E6%9B%B8(%E4%B8%AD%E8%8B%B1)LE106D04204.pdf) [en[3]](https://www.manualslib.com/products/Shihlin-Electric-Sde-040a2-10446073.html)
 
 # Reference
 - [RS485 CAN HAT_ch](https://www.waveshare.net/wiki/RS485_CAN_HAT#.E5.89.8D.E7.BD.AE.E5.B7.A5.E4.BD.9C_2)
