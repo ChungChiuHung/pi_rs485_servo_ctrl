@@ -4,7 +4,7 @@ from serial.serialutil import SerialException
 import serial.tools.list_ports # For dynamically listing available ports
 
 class SerialPortManager:
-    def __init__(self,port=None, baud_rate=57600, timeout=1):
+    def __init__(self,port=None, baud_rate=115200, timeout=1):
         self.port = port
         self.baud_rate = baud_rate
         self.timeout = timeout
@@ -22,7 +22,7 @@ class SerialPortManager:
         """
         Attempts to open a serial connection on a list of possible ports.
         """
-        for port in self.available_ports:
+        for port in self.available_port:
             try:
                 self.serial_instance = serial.Serial(port, self.baud_rate, timeout=self.timeout)
                 self.serial_instance.bytesize = serial.EIGHTBITS
