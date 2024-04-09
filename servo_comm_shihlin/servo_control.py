@@ -6,7 +6,7 @@ from cal_cmd_response_time import CmdDelayTime
 from servo_params import ServoParams
 from servo_comm_shihlin.status_bit_map import BitMap, BitMapOutput
 from servo_comm_shihlin.modbus_command_code import CmdCode
-from servo_comm_shihlin.modbus_protocol_handler import SerialProtocolHandler
+from servo_comm_shihlin.modbus_rtu_client import SerialProtocolHandler
 
 class ServoController:
     def __init__(self, serial_port):

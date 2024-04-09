@@ -4,9 +4,9 @@ from functools import wraps
 import traceback
 from gpio_utils import GPIOUtils
 from serial_port_manager import SerialPortManager
-from servo_comm_shihlin.modbus_command_code import CmdCode
-from servo_comm_shihlin.status_bit_map import BitMap
-from servo_comm_shihlin.modbus_protocol_handler import SerialProtocolHandler
+from modbus_command_code import CmdCode
+from status_bit_map import BitMapOutput
+from modbus_rtu_client import ModbusRTUClient
 from servo_control import ServoController
 
 

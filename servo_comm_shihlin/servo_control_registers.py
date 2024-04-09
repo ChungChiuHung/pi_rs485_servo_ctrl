@@ -1,6 +1,6 @@
 from enum import Enum, auto
 
-class ServoStatus(Enum):
+class ServoControlRegistry(Enum):
     MOTOR_FEEDBACK_PULSE = (0x0000, "Motor feedback pulse [pulse]", 2)
     COMMAND_PULSES = (0x0002, "Command pulses [rev]", 2)
     ACCUMULATIVE_PULSES_ERROR = (0x0004, "Accumulative pulses error [pulse]", 2)

@@ -1,0 +1,3 @@
+from servo_comm_shihlin.servo_control_registers import ServoControlRegistry
+
+print(ServoControlRegistry.MOTOR_FEEDBACK_PULSE.info)
