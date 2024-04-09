@@ -11,12 +11,12 @@ class ModbusUtils:
     
     def calculate_crc(self, data_bytes):
         crc = self.init_val
-        for byte in data_bytes:
-            crc ^= byte << 8
+        for pos in data_bytes:
+            crc ^= pos
             for _ in range(8):
-                if crc & 0x8000:
-                    crc = (crc << 1) ^ self.poly
+                if (crc & 1) != 0:
+                    crc >>= 1
+                    crc ^= 0xA001
                 else:
-                    crc <<= 1
-            crc &= 0xFFFF
-        return crc.to_bytes(2, 'big')
+                    crc >>= 1
+        return crc.to_bytes(2, byteorder='little')
