@@ -30,7 +30,7 @@ def test_build_write_message():
 
 def test_build_write_message_2():
     mock_serial_maanger = MockSerialPortManager()
-    modbus_client = ModbusRTUClient(device_name=1, serial_port_manager=mock_serial_maanger)
+    modbus_client = ModbusRTUClient(device_number=1, serial_port_manager=mock_serial_maanger)
     test_cases = [
         (ServoControlRegistry.SEL_DI_CONTROL_SOURCE, struct.pack('>H', 0xFFFF)),  # All bits set
         (ServoControlRegistry.DI_PIN_CONTROL, struct.pack('>H', 0x0001)),  # First bit set
