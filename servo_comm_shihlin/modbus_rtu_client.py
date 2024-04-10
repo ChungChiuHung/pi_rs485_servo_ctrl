@@ -37,46 +37,51 @@ class ModbusRTUClient:
         return full_message
     
     def send(self, message):
-        if not self.serial_port_manager.get_serial_instance():
-            print("Serial instance not available. Attempting to reconnect...")
-            self.serial_port_manager.connect()
-            if not self.serial_port_manager.get_serial_instance():
-                print("Failed to establish serial connection.")
-                return
-        try:
-            self.serial_port_manager.get_serial_instance().write(message)
-            print("Message sent:", message.hex())
-        except serial.SerialException as e:
-            print(f"Failed to send message due to serial error: {e}")
-        except Exception as e:
-            print(f"Unexpected error occurred while sending message: {e}")
+        if self.ensure_connection():
+            try:
+                self.serial_port_manager.get_serial_instance().write(message)
+                print("Message sent:", message.hex())
+            except serial.SerialException as e:
+                print(f"Failed to send message due to serial error: {e}")
+            except Exception as e:
+                print(f"Unexpected error occurred: {e}")
     
     def receive(self, expected_length = None):
+        if self.ensure_connection():
+            try:
+                response = bytearray()
+                while expected_length and len(response) < expected_length:
+                    bytes_to_read = self.serial_port_manager.get_serial_instance().inWaiting()
+                    response.extend(self.serial_port_manager.get_serial_instance().read(bytes_to_read or 1))
+                if not expected_length:
+                    response = self.serial_port_manager.get_serial_instance().read.all()
+
+                if response:
+                    print("Response received:", response.hex())
+                    return response
+                else:
+                    print("No response received.")
+            except serial.SerialException as e:
+                print(f"Failed to receive message due to serial error: {e}")
+            except Exception as e:
+                print(f"Unexpected error occurred while receiving message: {e}")
+                return None
+        
+    def ensure_connection(self):
         if not self.serial_port_manager.get_serial_instance():
-            print("Serial instance not avaiable. Attempting to reconnect...")
+            print("Serial instance not available. Attempting to reconncect...")
             self.serial_port_manager.connect()
             if not self.serial_port_manager.get_serial_instance():
                 print("Failed to establish serial connection.")
-                return None
-        try:
-            response = bytearray()
-            if expected_length:
-                while len(response) < expected_length:
-                    bytes_to_read = self.serial_port_manager.get_serial_instance().inWaiting()
-                    if bytes_to_read:
-                        response.extend(self.serial_port_manager.get_serial_instance().read(bytes_to_read))
-            else:
-                response = self.serial_port_manager.get_serial_instance().read.all()
+                return False
+        return True
+        
+    def set_di_control_source(self, control_bits):
+        data = struct.pack('>H', control_bits)
+        message = self.build_write_message(ServoControlRegistry.SEL_DI_CONTROL_SOURCE, data)
+        self.send(message)
 
-            if not response:
-                print("No response received.")
-                return None
-            
-            print("Response received:", response.hex())
-            return response
-
-        except serial.SerialException as e:
-            print(f"Failed to receive message due to serial error: {e}")
-        except Exception as e:
-            print(f"Unexpected error occurred while receiving message: {e}")
-            return None
+    def set_di_state(self, state_bits):
+        data = struct.pack('>H', state_bits)
+        message = self.build_write_message(ServoControlRegistry.DI_PIN_CONTROL, data)
+        self.send(message)

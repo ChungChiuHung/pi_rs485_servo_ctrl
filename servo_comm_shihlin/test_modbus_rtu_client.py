@@ -28,7 +28,6 @@ def test_build_write_message():
     write_message = modbus_client.build_write_message(ServoControlRegistry.MOTOR_SPEED, sample_data)
     print("Write Message: ", write_message.hex())
 
-
 if __name__ == "__main__":
     test_build_read_message()
     test_build_write_message()
