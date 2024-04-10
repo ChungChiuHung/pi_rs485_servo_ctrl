@@ -98,7 +98,7 @@ class ModbusRTUClient:
             raise ValueError("Acceleration/deceleration time out of range. (0~20000 ms).")
         self.send(self.build_write_message(ServoControlRegistry.POS_SET_ACC, struct.pack('>H', time_ms)))
 
-    def set_jos_speed(self, speed_rpm):
+    def set_jog_speed(self, speed_rpm):
         if not 0 <= speed_rpm <= 3000:
             raise ValueError("JOG speed out of range (0~3000 rpm)")
         self.send(self.build_write_message(ServoControlRegistry.JOG_SPEED, struct.pack('>H', speed_rpm)))
@@ -118,3 +118,18 @@ class ModbusRTUClient:
 
     def exit_positioning_mode(self):
         self.send(self.build_write_message(ServoControlRegistry.DO_OUTPUT, struct.pack('>H', 0x0000)))
+
+    def positioning(self, acc_dec_time, jog_speed, command_pulses, direction):
+        servo_status = self.receive_servo_status()
+        if servo_status != 0x0001:
+            print("Servo is not ON or there is an alarm.")
+            return False
+        self.set_positioning_test_mode()
+        self.set_acc_dec_time(acc_dec_time)
+        self.set_jog_speed(jog_speed)
+        self.set_command_pulses(command_pulses)
+        self.start_poistioning_opeartion(direction)
+        self.exit_positioning_mode
+
+        print("Positioning commad sequence completed successfully.")
+        return True
