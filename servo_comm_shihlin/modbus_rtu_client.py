@@ -85,3 +85,36 @@ class ModbusRTUClient:
         data = struct.pack('>H', state_bits)
         message = self.build_write_message(ServoControlRegistry.DI_PIN_CONTROL, data)
         self.send(message)
+
+    def receive_servo_status(self):
+        # Placeholder for method to read servo status
+        return 0x0001
+    
+    def set_positioning_test_mode(self):
+        self.send(self.build_write_message(ServoControlRegistry.DO_OUTPUT, struct.pack('>H', 0x0004)))
+
+    def set_acc_dec_time(self, time_ms):
+        if not 0 <= time_ms <=20000:
+            raise ValueError("Acceleration/deceleration time out of range. (0~20000 ms).")
+        self.send(self.build_write_message(ServoControlRegistry.POS_SET_ACC, struct.pack('>H', time_ms)))
+
+    def set_jos_speed(self, speed_rpm):
+        if not 0 <= speed_rpm <= 3000:
+            raise ValueError("JOG speed out of range (0~3000 rpm)")
+        self.send(self.build_write_message(ServoControlRegistry.JOG_SPEED, struct.pack('>H', speed_rpm)))
+
+    def set_command_pulses(self, pulses):
+        if not 0 <= pulses < 2**31:
+            raise ValueError("Commnad pulses out of range (0 to 2^31 -1).")
+        high = (pulses >> 16) & 0xFFFF
+        low = pulses & 0xFFFF
+        self.send(self.build_write_message(ServoControlRegistry.POS_PULSES_CMD_1, struct.pack('>H', low)))
+        self.send(self.build_write_message(ServoControlRegistry.POS_PULSES_CMD_2, struct.pack('>H', high)))
+    
+    def start_poistioning_opeartion(self, direction):
+        if direction not in [0, 1, 2]:
+            raise ValueError("Invalid direction code (must be 0, 1, or 2).")
+        self.send(self.build_write_message(ServoControlRegistry.POS_EXE_MODE, struct.pack('>H', direction)))
+
+    def exit_positioning_mode(self):
+        self.send(self.build_write_message(ServoControlRegistry.DO_OUTPUT, struct.pack('>H', 0x0000)))
