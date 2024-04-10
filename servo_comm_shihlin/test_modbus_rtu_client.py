@@ -1,5 +1,5 @@
 import struct
-from unittest import MagicMock, patch
+from unittest.mock import MagicMock, patch
 from modbus_rtu_client import ModbusRTUClient
 from modbus_command_code import CmdCode
 from servo_control_registers import ServoControlRegistry
