@@ -84,11 +84,16 @@ class ServoController:
             self.motion_thread.join()
 
     def execute_motion_sequence(self, commands):
-        for command in commands:
-            self.send_servo_command(command['code'], command.get('data', b''))
-            if not self.monitoring_active:
-                break
-        print("Motion sequence completed or stopped.")
+        try:
+            for command in commands:
+                if not self.monitoring_active:
+                    print("Monitoring stopped, exiting motion sequence.")
+                    break
+                self.send_servo_command(command['code'], command.get('data', b''))
+        except Exception as e:
+                print(f"An error occurred during motion sequence execution: {e}")
+        finally:
+                print("Motion sequence completed or stopped.")
 
 
     
