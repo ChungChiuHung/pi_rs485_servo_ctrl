@@ -1,11 +1,8 @@
-import json
 import time
 import struct
 import threading
 from serial import SerialException
-from modbus_utils import ModbusUtils
 from status_bit_map import BitMapOutput
-from modbus_command_code import CmdCode, ExceptionCode
 from modbus_rtu_client import ModbusRTUClient
 
 class ServoController:
