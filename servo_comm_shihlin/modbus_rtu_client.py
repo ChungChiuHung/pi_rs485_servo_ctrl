@@ -111,7 +111,7 @@ class ModbusRTUClient:
         self.send(self.build_write_message(ServoControlRegistry.POS_PULSES_CMD_1, struct.pack('>H', low)))
         self.send(self.build_write_message(ServoControlRegistry.POS_PULSES_CMD_2, struct.pack('>H', high)))
     
-    def start_poistioning_opeartion(self, direction):
+    def start_positioning_opeartion(self, direction):
         if direction not in [0, 1, 2]:
             raise ValueError("Invalid direction code (must be 0, 1, or 2).")
         self.send(self.build_write_message(ServoControlRegistry.POS_EXE_MODE, struct.pack('>H', direction)))

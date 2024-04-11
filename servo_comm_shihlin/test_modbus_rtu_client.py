@@ -48,7 +48,7 @@ class TestModbusRTUClient(unittest.TestCase):
     @patch('modbus_rtu_client.ModbusRTUClient.set_acc_dec_time')
     @patch('modbus_rtu_client.ModbusRTUClient.set_jog_speed')
     @patch('modbus_rtu_client.ModbusRTUClient.set_command_pulses')
-    @patch('modbus_rtu_client.ModbusRTUClient.start_positioning_operation')
+    @patch('modbus_rtu_client.ModbusRTUClient.start_positioning_opearation')
     @patch('modbus_rtu_client.ModbusRTUClient.exit_positioning_mode')
 
     def test_positioning(self, mock_exit, mock_start, mock_set_pulses, mock_set_speed, mock_set_acc, mock_set_test_mode):
