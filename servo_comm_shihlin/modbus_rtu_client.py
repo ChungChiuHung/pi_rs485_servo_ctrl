@@ -129,7 +129,7 @@ class ModbusRTUClient:
         self.set_jog_speed(jog_speed)
         self.set_command_pulses(command_pulses)
         self.start_positioning_operation(direction)
-        self.exit_positioning_mode
+        self.exit_positioning_mode()
 
         print("Positioning commad sequence completed successfully.")
         return True
