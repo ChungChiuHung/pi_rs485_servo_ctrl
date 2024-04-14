@@ -18,6 +18,7 @@ class ModbusASCIIClient:
 
     def build_write_message(self, servo_control_registry, data):
         address = servo_control_registry.value
+        print(f"Address : {struct.pack('>H',address)}")
         data = struct.pack('>H', address) + data
         return self._build_message(CmdCode.WRITE_DATA.value, data)
 
