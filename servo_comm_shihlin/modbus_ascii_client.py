@@ -11,8 +11,9 @@ class ModbusASCIIClient:
         self.serial_port_manager = serial_port_manager
         self.lrc = ModbusUtils()
 
-    def build_read_message(self, servo_control_registry, word_length):
-        address = servo_control_registry
+    def build_read_message(self, servo_control_registry):
+        address = servo_control_registry.value
+        word_length = servo_control_registry.data_length
         data = struct.pack('>HH', address, word_length)
         return self._build_message(CmdCode.READ_DATA.value, data)
 
