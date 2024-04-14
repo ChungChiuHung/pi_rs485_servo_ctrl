@@ -106,26 +106,28 @@ class ServoController:
 
         print(f"Write Value: {hex(value)}")
         print(f"Address for PD01: {hex(pd01_address)}")
+            
+        data = struct.pack('>H', value)
 
-        #for reg in ServoController:
-        #    if reg.address == pd01_address:
-        #        pd01_register = reg
-        #        break
-        #    else:
-        #        raise ValueError("PD01 register not found in ServoControlRegistry.")
-        #    
-        data = struct.pack('>I', value)
-#
-        message = self.modbus_client.build_write_message( ServoControlRegistry.calculate_dynamic_address("PD", 1), data)
-#
+        pd01_registry = None
+        for reg in ServoControlRegistry:
+            if reg.address == pd01_address:
+                pd01_registry = reg
+                break
+        
+        if pd01_registry is None:
+            raise ValueError("PD01 register not found in ServoControlRegistry.")
+
+        message = self.modbus_client.build_write_message(pd01_registry, data)
+
         print(message.hex())
-#
-        #response = self.send_command_and_wait_for_response(message, "Set PD01 Value")
 
-        #if response:
-        #    print("Reposne received for PD01 setting:", response.hex())
-        #else:
-        #    print("No response or error occurred while setting PD01.")
+        response = self.send_command_and_wait_for_response(message, "Set PD01 Value")
+
+        if response:
+            print("Reposne received for PD01 setting:", response.hex())
+        else:
+            print("No response or error occurred while setting PD01.")
 
 
     
