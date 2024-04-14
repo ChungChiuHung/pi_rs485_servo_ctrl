@@ -102,19 +102,21 @@ class ServoController:
 
         pd01_address = ServoControlRegistry.calculate_dynamic_address("PD", 1)
 
-        for reg in ServoController:
-            if reg.address == pd01_address:
-                pd01_register = reg
-                break
-            else:
-                raise ValueError("PD01 register not found in ServoControlRegistry.")
-            
-        data = struct.pack('>I', value)
+        print(f"Address for PA01: {hex(pd01_address)}")
 
-        message = self.modbus_client.build_write_message(pd01_register, data)
-
-        print(message.hex())
-
+        #for reg in ServoController:
+        #    if reg.address == pd01_address:
+        #        pd01_register = reg
+        #        break
+        #    else:
+        #        raise ValueError("PD01 register not found in ServoControlRegistry.")
+        #    
+        #data = struct.pack('>I', value)
+#
+        #message = self.modbus_client.build_write_message(pd01_register, data)
+#
+        #print(message.hex())
+#
         #response = self.send_command_and_wait_for_response(message, "Set PD01 Value")
 
         #if response:
