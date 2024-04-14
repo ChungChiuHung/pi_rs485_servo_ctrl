@@ -102,7 +102,8 @@ class ServoController:
 
         pd01_address = ServoControlRegistry.calculate_dynamic_address("PD", 1)
 
-        print(f"Address for PA01: {hex(pd01_address)}")
+        print(f"Write Value: {hex(value)}")
+        print(f"Address for PD01: {hex(pd01_address)}")
 
         #for reg in ServoController:
         #    if reg.address == pd01_address:
