@@ -17,11 +17,9 @@ def test_modbus_ascii_client():
     
     try:
         address =struct.pack('>H', ServoControlRegistry.DI_PIN_CONTROL.value)
-
-        
         print(f"Address of {ServoControlRegistry.DI_PIN_CONTROL.name}: {address.hex()}")
         data = 0x0001
-        message = modbus_client.build_write_message(address, data)
+        message = modbus_client.build_write_message(ServoControlRegistry.DI_PIN_CONTROL, data)
         print(f"Build Write Message: {message}")
 
     except Exception as e:
