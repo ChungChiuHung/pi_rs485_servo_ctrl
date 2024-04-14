@@ -98,7 +98,7 @@ class ServoController:
         print("Motion sequence completed or stopped.")
 
     def set_pd01_value(self, x, y, z, u):
-        value = (u<<3) | (z<<2) | (y<<1) | x
+        value = (x<<24) | (y<<16) | (z << 8) | u
 
         pd01_address = ServoControlRegistry.calculate_dynamic_address("PD", 1)
 
