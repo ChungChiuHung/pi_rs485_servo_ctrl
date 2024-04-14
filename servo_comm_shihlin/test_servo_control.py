@@ -8,8 +8,4 @@ if __name__ =="__main__":
     serial_manager = SerialPortManager()
     controller = ServoController(serial_manager)
 
-    try:
-        controller.set_pd01_value(x=1,y=0,z=1,u=1)
-    except Exception as e:
-        print(f"An error occurred: {e}")
     
