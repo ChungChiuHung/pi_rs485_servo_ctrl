@@ -109,16 +109,18 @@ class ServoController:
             
         data = struct.pack('>H', value)
 
-        message = self.modbus_client.build_write_message(pd01_address, data)
+        print(data)
 
-        print(message.hex())
-
-        response = self.send_command_and_wait_for_response(message, "Set PD01 Value")
-
-        if response:
-            print("Reposne received for PD01 setting:", response.hex())
-        else:
-            print("No response or error occurred while setting PD01.")
+        #message = self.modbus_client.build_write_message(pd01_address, data)
+#
+        #print(message.hex())
+#
+        #response = self.send_command_and_wait_for_response(message, "Set PD01 Value")
+#
+        #if response:
+        #    print("Reposne received for PD01 setting:", response.hex())
+        #else:
+        #    print("No response or error occurred while setting PD01.")
 
 
     
