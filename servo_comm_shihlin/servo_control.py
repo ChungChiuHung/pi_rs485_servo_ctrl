@@ -109,16 +109,7 @@ class ServoController:
             
         data = struct.pack('>H', value)
 
-        pd01_registry = None
-        for reg in ServoControlRegistry:
-            if reg.address == pd01_address:
-                pd01_registry = reg
-                break
-        
-        if pd01_registry is None:
-            raise ValueError("PD01 register not found in ServoControlRegistry.")
-
-        message = self.modbus_client.build_write_message(pd01_registry, data)
+        message = self.modbus_client.build_write_message(pd01_address, data)
 
         print(message.hex())
 
