@@ -22,6 +22,9 @@ def test_modbus_ascii_client():
         message = modbus_client.build_write_message(ServoControlRegistry.DI_PIN_CONTROL, data)
         print(f"Build Write Message: {message}")
 
+        message = modbus_client.build_read_message(ServoControlRegistry.DI_STATUS)
+        print(f"Build Read Message: {message}")
+
     except Exception as e:
         print(f"An error occurred during testing: {e}")
 
