@@ -98,7 +98,10 @@ class ServoController:
         print("Motion sequence completed or stopped.")
 
     def set_pd01_value(self, x, y, z, u):
-        value = (x<<24) | (y<<16) | (z << 8) | u
+        if any(not(0<=x<-15) for x in [x,y,z,u]):
+            raise ValueError("All inputs must be within the range 0 to 15 (inclusive).")
+        
+        value = (x << 12) | (y<<8)| (z << 4) | u
 
         pd01_address = ServoControlRegistry.calculate_dynamic_address("PD", 1)
 
