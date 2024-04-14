@@ -116,7 +116,7 @@ class ServoController:
         #    
         data = struct.pack('>I', value)
 #
-        message = self.modbus_client.build_write_message( ServoControlRegistry.DYNAMIC_PARAM_INFO("PD", 1), data)
+        message = self.modbus_client.build_write_message( ServoControlRegistry.calculate_dynamic_address("PD", 1), data)
 #
         print(message.hex())
 #
