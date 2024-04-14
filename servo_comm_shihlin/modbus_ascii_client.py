@@ -1,5 +1,6 @@
 import struct
 import serial
+import time
 from modbus_utils import ModbusUtils
 from modbus_command_code import CmdCode
 from servo_control_registers import ServoControlRegistry
@@ -32,6 +33,10 @@ class ModbusASCIIClient:
         full_message = f'{message_without_lrc}{lrc:02X}\r\n'
         return full_message.encode('utf-8')
 
+    def send_and_receive(self, message, expected_length = None, timeout = 0.1):
+        self.send(message)
+        return self.receive(expected_length, timeout)
+
     def send(self, message):
         if self.ensure_connection():
             try:
@@ -42,18 +47,23 @@ class ModbusASCIIClient:
             except Exception as e:
                 print(f"Unexpected error occurred: {e}")
 
-    def receive(self, expected_length=None):
+    def receive(self, expected_length=None, timeout=0.1):
         if self.ensure_connection():
             try:
                 response = bytearray()
-                timeout_counter = 10
-                while expected_length and len(response) < expected_length and timeout_counter:
+                start_time = time.time()
+
+                while True:
+                    if expected_length and len(response) >= expected_length:
+                        break
+                    if not expected_length and time.time() - start_time > timeout:
+                        if not self.serial_port_manager.get_serial_instance().in_waiting:
+                            break
+
                     bytes_to_read = self.serial_port_manager.get_serial_instance().in_waiting
-                    response.extend(self.serial_port_manager.get_serial_instance().read(bytes_to_read or 1))
-                    timeout_counter -= 1
-                
-                if not expected_length:
-                    response = self.serial_port_manager.get_serial_instance().read_all()
+                    if bytes_to_read:
+                        response.extend(self.serial_port_manager.get_serial_instance().read(bytes_to_read or 1))
+                        start_time = time.time()
 
                 if response:
                     print("Response received:", response.decode())
