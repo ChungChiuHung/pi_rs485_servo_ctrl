@@ -89,7 +89,7 @@ class ServoController:
                     data = command['data']
                 else:
                     data = b''
-                print(f"The command: {command['data']}")
+                print(f"The command: {command}")
                 self.send_servo_command(command['code'], command.get('data', b''))
             except Exception as e:
                 print(f"An error occurred: {e}")
