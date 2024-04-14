@@ -1,6 +1,7 @@
 from serial_port_manager import SerialPortManager
 from modbus_ascii_client import ModbusASCIIClient
 from servo_control_registers import ServoControlRegistry
+import struct
 
 def test_modbus_ascii_client():
     print("Initializing SerialPortManager...")
@@ -15,8 +16,9 @@ def test_modbus_ascii_client():
         return
     
     try:
-        address = ServoControlRegistry.DI_PIN_CONTROL.value
+        address =struct.pack('>H', ServoControlRegistry.DI_PIN_CONTROL.value)
 
+        
         print(f"Address of {ServoControlRegistry.DI_PIN_CONTROL.name}: {address.hex()}")
         #data = 0x0001
         #message = modbus_client.build_write_message(address, data)
