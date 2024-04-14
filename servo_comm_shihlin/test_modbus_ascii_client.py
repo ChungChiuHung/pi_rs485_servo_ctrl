@@ -22,7 +22,7 @@ def test_modbus_ascii_client():
         message = modbus_client.build_write_message(ServoControlRegistry.DI_PIN_CONTROL, data)
         print(f"Build Write Message: {message}")
 
-        message = modbus_client.build_read_message(ServoControlRegistry.DI_STATUS)
+        message = modbus_client.build_read_message(ServoControlRegistry.DI_STATUS, 2)
         print(f"Build Read Message: {message}")
 
         modbus_client.send_and_receive(message)
