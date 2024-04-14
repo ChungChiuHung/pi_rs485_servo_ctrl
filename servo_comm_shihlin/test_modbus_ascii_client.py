@@ -20,9 +20,9 @@ def test_modbus_ascii_client():
 
         
         print(f"Address of {ServoControlRegistry.DI_PIN_CONTROL.name}: {address.hex()}")
-        #data = 0x0001
-        #message = modbus_client.build_write_message(address, data)
-        #print(f"Build Write Message: {message.hex()}")
+        data = 0x0001
+        message = modbus_client.build_write_message(address, data)
+        print(f"Build Write Message: {message}")
 
     except Exception as e:
         print(f"An error occurred during testing: {e}")
