@@ -114,11 +114,11 @@ class ServoController:
         #    else:
         #        raise ValueError("PD01 register not found in ServoControlRegistry.")
         #    
-        #data = struct.pack('>I', value)
+        data = struct.pack('>I', value)
 #
-        #message = self.modbus_client.build_write_message(pd01_register, data)
+        message = self.modbus_client.build_write_message( ServoControlRegistry.DYNAMIC_PARAM_INFO("PD", 1), data)
 #
-        #print(message.hex())
+        print(message.hex())
 #
         #response = self.send_command_and_wait_for_response(message, "Set PD01 Value")
 
