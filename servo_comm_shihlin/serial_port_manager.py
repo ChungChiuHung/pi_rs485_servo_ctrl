@@ -4,16 +4,16 @@ from serial.serialutil import SerialException
 import serial.tools.list_ports # For dynamically listing available ports
 
 class SerialPortManager:
-    def __init__(self,port=None, baud_rate=115200, timeout=1):
+    def __init__(self,port=None, baud_rate=9600, timeout=1, bytesize=serial.SEVENBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_TWO):
         self.port = port
         self.baud_rate = baud_rate
         self.timeout = timeout
+        self.bytesize = bytesize
+        self.parity = parity
+        self.stopbits = stopbits
         self.serial_instance = None
-        # Dynamically list available serial ports
         self.available_port = self.list_available_ports()
-        # List of potential serial ports
-        # self.available_ports = ["/dev/ttyS0", "/dev/ttyAMA0", "/dev/serial0", "/dev/ttyUSB0"]
-
+        
     def list_available_ports(self):
         ports = [port.device for port in serial.tools.list_ports.comports()]
         return ports if ports else ["/dev/ttyS0", "/dev/ttyAMA0", "/dev/serial0", "/dev/ttyUSB0"]
@@ -22,28 +22,37 @@ class SerialPortManager:
         """
         Attempts to open a serial connection on a list of possible ports.
         """
-        for port in self.available_port:
+        if self.port:
             try:
-                self.serial_instance = serial.Serial(port, self.baud_rate, timeout=self.timeout)
-                self.serial_instance.bytesize = serial.EIGHTBITS
-                self.serial_instance.parity = serial.PARITY_NONE
-                self.serial_instance.stopbits = serial.STOPBITS_ONE
-                self.port = port
-                
-                print(f"Connected to {port} at {self.baud_rate} baud.")
+                self.serial_instance = serial.Serial(self.port, self.baud_rate, timeout=self.timeout,
+                                                     bytesize = self.bytesize, parity=self.parity, stopbits=self.stopbits)
+                print(f"Connected to {self.port} at {self.baud_rate} baud.")
                 return
             except (SerialException, OSError) as e:
-                print(f"Failed to open serial port {port}: {e}")
+                print(f"Failed to open serial port {self.port}: {e}")
+
+        print("Trying available ports...")
+        for port in self.list_available_ports():
+            try:
+                self.serial_instance = serial.Serial(port, self.baud_rate, timeout=self.timeout,
+                                                     bytesize=self.bytesize, parity=self.parity, stopbits=self.stopbits )
+                self.port = port
+                print(f"Connected to {port} at {self.baud_rate} baud.")
+                return True
+            except (SerialException, OSError) as e:
+                print(f"Failed to connect on {port}: {e}")
 
         print("Failed to open any serial port.")
+        return False
 
     def get_serial_instance(self):
         if self.serial_instance and self.serial_instance.is_open:
             return self.serial_instance
-
-        print("Serial port is not open. Attempting to reconnect...")
-        self.connect()
-        return self.serial_instance if self.serial_instance and self.serial_instance.is_open else None
+        else:
+            print("Serial port is not open. Attempting to reconnect...")
+            if self.connect():
+                return self.serial_instance
+            return None
         
     def disconnect(self):
         if self.serial_instance and self.serial_instance.is_open:
@@ -53,11 +62,11 @@ class SerialPortManager:
     def send_and_receive(self, message, read_timeout=0.5):
         serial_conn = self.get_serial_instance()
         if serial_conn:
-            serial_conn.write(message)
+            serial_conn.write(message.encode('utf-8')) # Ensure message is in bytes
             print(f"Send: {message}")
-            time.sleep(read_timeout)
+            time.sleep(read_timeout) # Wait to receive the  full message
             response = serial_conn.read_all()
-            print(f"Received: {response}")
+            print(f"Received: {response.decode('utf-8')}")
             return response
         else:
             print("No activate serail connection.")
@@ -67,4 +76,4 @@ class SerialPortManager:
         return self.baud_rate
 
     def get_connected_port(self):
-        return self.port if self.serial_instance and self.serial_instance.is_open else None    
+        return self.port if self.serial_instance and self.serial_instance.is_open else "Not connected"

@@ -13,12 +13,8 @@ from servo_control import ServoController
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your keys')
 
-
-# Instantiate GPIOUtils for GPIO opeartions
-gpio_utils = GPIOUtils()
-
 # Configure the serial port
-port_manager = SerialPortManager(baud_rate=57600)
+port_manager = SerialPortManager(baud_rate=9600)
 port_manager.connect()
 if port_manager.get_serial_instance():
       print(f"Connected port: {port_manager.get_connected_port()}")

@@ -1,4 +1,5 @@
 from servo_control_registers import ServoControlRegistry
+from modbus_rtu_client import ModbusRTUClient
 
 # Access a register's details
 print(ServoControlRegistry.MOTOR_FEEDBACK_PULSE)
@@ -17,5 +18,8 @@ try:
     print(f"Address for PE30: {hex(pe_address)}")
     pf_address = ServoControlRegistry.calculate_dynamic_address("PF", 82)
     print(f"Address for PF82: {hex(pf_address)}")
+
+    
+
 except ValueError as error:
     print(error)
