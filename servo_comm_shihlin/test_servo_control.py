@@ -8,4 +8,7 @@ if __name__ =="__main__":
     serial_manager = SerialPortManager()
     controller = ServoController(serial_manager)
 
+    controller.set_pd01_value(x=1, y=0, z=1, u=1)
+    
+
     
