@@ -1,5 +1,6 @@
 from serial_port_manager import SerialPortManager
 from modbus_ascii_client import ModbusASCIIClient
+from servo_control_registers import ServoControlRegistry
 
 def test_modbus_ascii_client():
     print("Initializing SerialPortManager...")
@@ -14,32 +15,16 @@ def test_modbus_ascii_client():
         return
     
     try:
-        print("Setting DI Control Source...")
-        modbus_client.set_di_control_source(0x00FF)
-        response = modbus_client.receive()
-        if response:
-            print("DI Control Source set successfully.")
-
-        
-        # Testing DI state setting
-        print("Setting DI state ...")
-        modbus_client.set_di_state(0x00AA)
-        response = modbus_client.receive()
-        if response:
-            print("DI State set successfully.")
-
-        # Positioning sequence
-        print("Executing positioning sequence...")
-        success = modbus_client.positioning(acc_dec_time = 5000, jog_speed=1000, command_pulses = 100000, direction=1)
-        if success:
-            print("Positioning sequence completed successfully.")
+        address = ServoControlRegistry.DI_PIN_CONTROL.value
+        data = 0x0001
+        message = modbus_client.build_write_message(address, data)
+        print(f"Build Write Message: {message.hex()}")
     
     except Exception as e:
         print(f"An error occurred during testing: {e}")
 
     finally:
         print("Cleaning up ...")
-        modbus_client.exit_positioning_mode()
         serial_manager.disconnect()
         print("Test complteted and port disconnected.")
 
