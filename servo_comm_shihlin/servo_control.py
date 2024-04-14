@@ -4,6 +4,7 @@ import threading
 from serial import SerialException
 from status_bit_map import BitMapOutput
 from modbus_rtu_client import ModbusRTUClient
+from servo_control_registers import ServoControlRegistry
 
 class ServoController:
     def __init__(self, serial_port):
@@ -95,6 +96,29 @@ class ServoController:
                 print(f"An error occurred: {e}")
                 break
         print("Motion sequence completed or stopped.")
+
+    def set_pd01_value(self, x, y, z, u):
+        value = (u<<3) | (z<<2) | (y<<1) | x
+
+        pd01_address = ServoControlRegistry.calculate_dynamic_address("PD", 1)
+
+        for reg in ServoController:
+            if reg.address == pd01_address:
+                pd01_register = reg
+                break
+            else:
+                raise ValueError("PD01 register not found in ServoControlRegistry.")
+            
+        data = struct.pack('>I', value)
+
+        message = self.modbus_client.build_write_message(pd01_register, data)
+
+        response = self.send_command_and_wait_for_response(message, "Set PD01 Value")
+
+        if response:
+            print("Reposne received for PD01 setting:", response.hex())
+        else:
+            print("No response or error occurred while setting PD01.")
 
 
     

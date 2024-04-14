@@ -8,9 +8,8 @@ if __name__ =="__main__":
     serial_manager = SerialPortManager()
     controller = ServoController(serial_manager)
 
-    commands = [
-        {'code': CmdCode.WRITE_DATA, 'data': struct.pack('>H', 0x1234)},
-        {'code': CmdCode.WRITE_MULTI_DATA, 'data': struct.pack('>H', 0x5678)}
-    ]
-    controller.start_motion_sequence(commands)
+    try:
+        controller.set_pd01_value(x=1,y=0,z=1,u=1)
+    except Exception as e:
+        print(f"An error occurred: {e}")
     
