@@ -12,12 +12,12 @@ class ModbusASCIIClient:
         self.lrc = ModbusUtils()
 
     def build_read_message(self, servo_control_registry, word_length):
-        address = servo_control_registry.value[0]
+        address = servo_control_registry.value
         data = struct.pack('>HH', address, word_length)
         return self._build_message(CmdCode.READ_DATA.value, data)
 
     def build_write_message(self, servo_control_registry, data):
-        address = servo_control_registry.value[0]
+        address = servo_control_registry.value
         data = struct.pack('>HH', address) + data
         return self._build_message(CmdCode.WRITE_DATA.value, data)
 

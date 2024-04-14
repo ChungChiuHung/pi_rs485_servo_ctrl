@@ -22,7 +22,7 @@ class ModbusRTUClient:
     def _build_message(self, command_code: CmdCode, servo_control_registry: ServoControlRegistry, word_length= None, data = None):
         adr = struct.pack('B', self.device_number)
         cmd = struct.pack('B', command_code.value)
-        start_address = struct.pack('>H', servo_control_registry.value[0])
+        start_address = struct.pack('>H', servo_control_registry.value)
 
         if command_code in [CmdCode.WRITE_DATA, CmdCode.WRITE_MULTI_DATA] and data is not None:
             data_section = data

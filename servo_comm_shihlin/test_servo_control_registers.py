@@ -1,5 +1,5 @@
+import struct
 from servo_control_registers import ServoControlRegistry
-from modbus_rtu_client import ModbusRTUClient
 
 # Access a register's details
 print(ServoControlRegistry.MOTOR_FEEDBACK_PULSE)
@@ -19,7 +19,18 @@ try:
     pf_address = ServoControlRegistry.calculate_dynamic_address("PF", 82)
     print(f"Address for PF82: {hex(pf_address)}")
 
-    
+    address = ServoControlRegistry.ACCUMULATIVE_PULSES_ERROR.value
+
+    data = struct.pack('>H', address)
+
+    data_len = ServoControlRegistry.ACCUMULATIVE_PULSES_ERROR.data_length
+    data_description = ServoControlRegistry.ACCUMULATIVE_PULSES_ERROR.description
+
+    print(f"Address for {ServoControlRegistry.ACCUMULATIVE_PULSES_ERROR.name}: {data}, {data_len}, {data_description}")
+
+    data_2 = struct.pack('>HH', 0x1111, 0x2222)
+
+    print(f"Addres for 4 bytes: {data_2.hex()}")
 
 except ValueError as error:
     print(error)
