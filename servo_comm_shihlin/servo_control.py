@@ -3,13 +3,13 @@ import struct
 import threading
 from serial import SerialException
 from status_bit_map import BitMapOutput
-from modbus_rtu_client import ModbusRTUClient
+from modbus_ascii_client import ModbusASCIIClient
 from servo_control_registers import ServoControlRegistry
 
 class ServoController:
     def __init__(self, serial_port):
         self.serial_port = serial_port
-        self.modbus_client = ModbusRTUClient(device_number=1, serial_port_manager= serial_port)
+        self.modbus_client = ModbusASCIIClient(device_number=1, serial_port_manager= serial_port)
         self.monitoring_active = False
         self.motion_thread = None
 

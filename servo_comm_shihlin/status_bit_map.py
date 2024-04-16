@@ -64,3 +64,4 @@ class BitMapOutput(Enum):
     POS4 = 0x14
     POS5 = 0x15
     POS6 = 0x16
+

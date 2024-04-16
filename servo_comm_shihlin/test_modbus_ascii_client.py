@@ -1,7 +1,13 @@
 from serial_port_manager import SerialPortManager
 from modbus_ascii_client import ModbusASCIIClient
 from servo_control_registers import ServoControlRegistry
+from servo_p_register import PA, PC, PD,PE
 import struct
+
+PA.init_registers()
+PC.init_registers()
+PD.init_registers()
+PE.init_registers()
 
 def test_modbus_ascii_client():
     print("Initializing SerialPortManager...")
@@ -26,6 +32,12 @@ def test_modbus_ascii_client():
         print(f"Build Read Message: {message}")
 
         modbus_client.send_and_receive(message)
+
+        address = struct.pack('>H', PA.STY.address)
+        print(f"Address of PA{PA.STY.no} {PA.STY.name}: {PA.STY.address}")
+        data = 0x0000
+        message = modbus_client.build_write_message(PA.STY.address, data)
+        print(f"Build Write Message: {message}")
 
     except Exception as e:
         print(f"An error occurred during testing: {e}")
