@@ -25,10 +25,10 @@ def test_modbus_ascii_client():
         address =struct.pack('>H', ServoControlRegistry.DI_PIN_CONTROL.value)
         print(f"Address of {ServoControlRegistry.DI_PIN_CONTROL.name}: {address.hex()}")
         data = 0x0001
-        message = modbus_client.build_write_message(ServoControlRegistry.DI_PIN_CONTROL, data)
+        message = modbus_client.build_write_message(ServoControlRegistry.DI_PIN_CONTROL.value, data)
         print(f"Build Write Message: {message}")
 
-        message = modbus_client.build_read_message(ServoControlRegistry.DI_STATUS, 2)
+        message = modbus_client.build_read_message(ServoControlRegistry.DI_STATUS.value, 2)
         print(f"Build Read Message: {message}")
 
         modbus_client.send_and_receive(message)
