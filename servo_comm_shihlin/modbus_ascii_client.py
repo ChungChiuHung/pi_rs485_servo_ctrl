@@ -66,7 +66,7 @@ class ModbusASCIIClient:
 
                 if response:
                     print("Response received:", response)
-                    print("Parsing Response", self.parse_read_response(response.decode()))
+                    print("Parsing Response", self.parse_read_response(response))
                     return response
                 else:
                     print("No response received.")
@@ -85,7 +85,7 @@ class ModbusASCIIClient:
         return True
     
     def parse_read_response(self, response):
-        if isinstance(response, bytes):
+        if isinstance(response, (bytes, bytearray)):
             response = response.decode('ascii')
         
         if response[0] != ':':
