@@ -78,8 +78,8 @@ class ServoController:
         config_value = ServoUtility.config_hex_with(0, 0xF, 0xF, 0xF)
         message = self.modbus_client.build_write_message(PD.SDI.address, config_value)
         print(f"Build Write Message: {message}")
-        #response = self.modbus_client.send_and_receive(message)
-        #print(f"Respnose Message: {response}")
+        response = self.modbus_client.send_and_receive(message)
+        print(f"Respnose Message: {response}")
 
 
 
