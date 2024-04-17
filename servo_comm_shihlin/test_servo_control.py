@@ -11,6 +11,11 @@ if __name__ =="__main__":
     controller.enable_di_control()
     time.sleep(0.05)
     print("\n")
+
+    controller.write_PD_01()
+    time.sleep(0.05)
+    print("\n")
+
     controller.read_PD_01()
     time.sleep(0.05)
     print("\n")
