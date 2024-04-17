@@ -85,6 +85,9 @@ class ModbusASCIIClient:
         return True
     
     def parse_read_response(self, response):
+        if isinstance(response, bytes):
+            response = response.decode('ascii')
+        
         if response[0] != ':':
             raise ValueError("Invalid response: Does not start with ':'")
         
