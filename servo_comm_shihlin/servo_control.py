@@ -95,6 +95,20 @@ class ServoController:
         response = self.modbus_client.send_and_receive(message)
         print(f"Response Message: {response}")
 
+    def read_PD_08(self):
+        print(f"Address of PD{PD.DI7.no} {PD.DI7.name}: {PD.DI7.address}")
+        message = self.modbus_client.build_read_message(PD.DI7.address, 2)
+        print(f"Build Read Command: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        print(f"Response Message: {response}")
+
+    def write_PD_08(self):
+        print(f"Address of PD{PD.DI7.no} {PD.DI7.name}: {PD.DI7.address}")
+        message = self.modbus_client.build_write_message(PD.DI7.address, 0x0000)
+        print(f"Build Write Command: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        print(f"Response Message: {response}")
+
 
     def read_servo_state(self):
         print(f"Addres of 0x0200, 1 word")
