@@ -75,7 +75,7 @@ class ServoController:
         
     def enable_di_control(self):
         print(f"Address of PD{PD.SDI.no} {PD.SDI.name}: {PD.SDI.address}")
-        config_value = ServoUtility.config_hex_with(0, 0xF, 0xF, 0xF)
+        config_value = ServoUtility.config_hex_with(1, 0xF, 0xF, 0xF)
         message = self.modbus_client.build_write_message(PD.SDI.address, config_value)
         print(f"Build Write Message: {message}")
         response = self.modbus_client.send_and_receive(message)
