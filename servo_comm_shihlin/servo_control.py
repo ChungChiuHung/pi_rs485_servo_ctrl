@@ -89,13 +89,6 @@ class ServoController:
         response = self.modbus_client.send_and_receive(message)
         print(f"Respnose Message: {response}")
 
-        if response['Data Content'] is not 0x1010:
-            print(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
-            message = self.modbus_client.build_read_message(PA.STY.address, 0x1010)
-            print(f"Build Read Message: {message}")
-            response = self.modbus_client.send_and_receive(message)
-            print(f"Respnose Message: {response}")
-
     # Digital input on/off control source option
     def write_PD_16(self):
         print(f"Address of PD{PD.SDI.no} {PD.SDI.name}: {hex(PD.SDI.address)}")
