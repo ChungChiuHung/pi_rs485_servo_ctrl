@@ -100,6 +100,10 @@ class ModbusASCIIClient:
         cmd = response[2:4]
         data_count = int(response[4:6], 16)
 
+        print(adr)
+        print(cmd)
+        print(data_count)
+
         expected_length = 6 + data_count * 4 + 2
         if len(response) != expected_length:
             raise ValueError(f"Invalid response: Length mismatch, expected {expected_length}, got {len(response)}")
