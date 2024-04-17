@@ -66,7 +66,7 @@ class ModbusASCIIClient:
 
                 if response:
                     print("Response received:", response)
-                    print("Parsing ReadIO Response: ", self.parse_response(response))
+                    print("Parsing Response: ", self.parse_response(response))
                     return response
                 else:
                     print("No response received.")
@@ -95,6 +95,8 @@ class ModbusASCIIClient:
 
         adr = response[0:2]
         cmd = response[2:4]
+
+        print(f"Command Code: {cmd}")
 
         if cmd == CmdCode.READ_DATA.value:
             data_count = response[4:6]
