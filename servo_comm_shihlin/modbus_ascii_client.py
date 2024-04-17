@@ -122,7 +122,7 @@ class ModbusASCIIClient:
             }
             return parsed_response
         
-        elif cmd == CmdCode.WRITE_DATA.value:
+        elif cmd_value == CmdCode.WRITE_DATA.value:
             start_address = response[4:8]  # 2 bytes for start address, 4 hex digits
             data_content = response[8:12]  # 2 bytes for data count or data content, 4 hex digits
 
@@ -140,7 +140,7 @@ class ModbusASCIIClient:
             }
             return parsed_response
             
-        elif cmd == CmdCode.WRITE_MULTI_DATA.value:
+        elif cmd_value == CmdCode.WRITE_MULTI_DATA.value:
             start_address = response[4:8]  # 2 bytes for start address, 4 hex digits
             data_count = response[8:12]  # 2 bytes for data count or data content, 4 hex digits
 
