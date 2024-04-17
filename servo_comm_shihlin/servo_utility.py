@@ -76,3 +76,11 @@ class ServoUtility:
         di1_function = (di_function_word >> 8) & 0xFF
         di2_function = di_function_word & 0xFF
         return di1_function, di2_function
+    
+    @staticmethod
+    def config_hex_with(x, y, z, u):
+        if any(not(0 <= a < 16) for a in [x,y,z,u]):
+            raise ValueError("All inputs must be within the range 0 to 15 (inclusive).") 
+        value = (x << 12) | (y << 8)| (z << 4) | u
+
+        print(f"Config value: {hex(value)}")

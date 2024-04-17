@@ -2,7 +2,14 @@ import time
 import struct
 from serial import SerialException
 from modbus_ascii_client import ModbusASCIIClient
+from servo_utility import ServoUtility
 from servo_control_registers import ServoControlRegistry
+from servo_p_register import PA, PC, PD, PE
+
+PA.init_registers()
+PC.init_registers()
+PD.init_registers()
+PE.init_registers()
 
 class ServoController:
     def __init__(self, serial_port):
@@ -66,13 +73,15 @@ class ServoController:
     def execute_motion_sequence(self, commands):
         print(f"execute_motion {commands}")
         
+    def enable_di_control(self):
+        address = struct.pack('>H', PD.SDI.address)
+        print(f"Address of PA{PA.STY.no} {PA.STY.name}: {PA.STY.address}")
+        config_value = ServoUtility.config_hex_with(0, 0xF, 0xF, 0xF)
+        message = self.modbus_client.build_write_message(address, config_value)
+        print(f"Build Write Message: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        print(f"Respnose Message: {response}")
 
-    def enable_control_DI(self, x, y, z, u):
-        if any(not(0 <= a <15) for a in [x,y,z,u]):
-            raise ValueError("All inputs must be within the range 0 to 15 (inclusive).") 
-        value = (x << 12) | (y << 8)| (z << 4) | u
-
-        print(f"Config value: {hex(value)}")
 
 
     
