@@ -98,7 +98,14 @@ class ServoController:
     def read_control_mode(self):
         print(f"Addres of 0x0201, 1 word")
         message = self.modbus_client.build_read_message(0x0201, 1)
-        print(f"Build Read Message: {message}")
+        print(f"Build Read Command: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        print(f"Response Message: {response}")
+
+    def read_alarm_msg(self):
+        print(f"Address of 0x0100, 1 word")
+        message = self.modbus_client.build_read_message(0x0100, 11)
+        print(f"Build Read Command: {message}")
         response = self.modbus_client.send_and_receive(message)
         print(f"Response Message: {response}")
 
