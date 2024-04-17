@@ -97,8 +97,6 @@ class ModbusASCIIClient:
         cmd = response[2:4]
 
         cmd_value = int(cmd, 16)
-        print(cmd_value)
-        print(cmd_value == CmdCode.READ_DATA.value)
 
         if cmd_value == CmdCode.READ_DATA.value:
             data_count = response[4:6]
@@ -124,7 +122,7 @@ class ModbusASCIIClient:
             }
             return parsed_response
         
-        elif cmd == CmdCode.WRITE_DATA:
+        elif cmd == CmdCode.WRITE_DATA.value:
             start_address = response[4:8]  # 2 bytes for start address, 4 hex digits
             data_count = response[8:12]  # 2 bytes for data count or data content, 4 hex digits
 
