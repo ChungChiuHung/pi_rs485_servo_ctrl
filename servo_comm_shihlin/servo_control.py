@@ -83,7 +83,7 @@ class ServoController:
 
     def read_PD_01(self):
         print(f"Address of PD{PD.DIA1.no} {PD.DIA1.name}: {PD.DIA1.address}")
-        message = self.modbus_client.build_read_message(PD.DIA1.address)
+        message = self.modbus_client.build_read_message(PD.DIA1.address, 2)
         print(f"Build Read Message: {message}")
         response = self.modbus_client.send_and_receive(message)
         print(f"Response Message: {response}")
