@@ -93,9 +93,6 @@ class ModbusASCIIClient:
         
         response = response[1:].split('\r\n')[0]
 
-        #if len(response) < 11 # Minimal Length with at least on data element
-        #    raise ValueError("Invalid response: Too short")
-        
         adr = response[0:2]
         cmd = response[2:4]
         data_count = int(response[4:6], 16)
@@ -104,14 +101,14 @@ class ModbusASCIIClient:
         print(cmd)
         print(data_count)
 
-        expected_length = 6 + data_count * 4 + 2
+        expected_length = 6 + data_count + 2
         if len(response) != expected_length:
             raise ValueError(f"Invalid response: Length mismatch, expected {expected_length}, got {len(response)}")
 
         data_hex = response[6:-2]
         lrc = response[-2:]
 
-        data = [int(data_hex[i:i+4], 16) for i in range(0, len(data_hex), 4)]
+        data = [int(data_hex[i:i+2], 16) for i in range(0, len(data_hex), 2)]
 
         calculated_lrc = self.lrc.calclulate_lrc(response[:-2])
         if f"{calculated_lrc:02X}" != lrc.upper():
