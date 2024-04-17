@@ -65,8 +65,8 @@ class ModbusASCIIClient:
                         start_time = time.time()
 
                 if response:
-                    print("Response received:", response.decode())
-                    print("Parsing Response", self.parse_read_response(response))
+                    print("Response received:", response)
+                    print("Parsing Response", self.parse_read_response(response.decode()))
                     return response
                 else:
                     print("No response received.")
