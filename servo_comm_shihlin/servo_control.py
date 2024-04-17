@@ -109,6 +109,13 @@ class ServoController:
         response = self.modbus_client.send_and_receive(message)
         print(f"Response Message: {response}")
 
+    def read_servo_state(self):
+        print(f"Address of 0x0900, 1 word")
+        message = self.modbus_client.build_read_message(0x0900, 1)
+        print(f"Build Read Command: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        print(f"Response Message: {response}")
+
 
 
     
