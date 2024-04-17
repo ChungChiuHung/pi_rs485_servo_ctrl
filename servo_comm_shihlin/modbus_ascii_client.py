@@ -86,41 +86,37 @@ class ModbusASCIIClient:
     
     def parse_read_response(self, response):
         if isinstance(response, (bytes, bytearray)):
-            response = response.decode('ascii')
+            response = response.decode('utf-8')
         
-        if response[0] != ':':
+        if response[0] != ':' or response[-2:] != '\r\n':
             raise ValueError("Invalid response: Does not start with ':'")
         
-        response = response[1:].split('\r\n')[0]
+        response = response[1:-2]
 
         adr = response[0:2]
         cmd = response[2:4]
-        data_count = int(response[4:6], 16)
+        data_count = response[4:6]
+        data_length = int(data_count, 16)
 
-        print(adr)
-        print(cmd)
-        print(data_count)
+        data_start_idx = 6
+        data_end_idx = 6 + data_length * 2
+        data = response[data_start_idx:data_end_idx]
 
-        expected_length = 6 + data_count + 2
-        if len(response) != expected_length:
-            raise ValueError(f"Invalid response: Length mismatch, expected {expected_length}, got {len(response)}")
-
-        data_hex = response[6:-2]
-        lrc = response[-2:]
-
-        data = [int(data_hex[i:i+2], 16) for i in range(0, len(data_hex), 2)]
-
-        calculated_lrc = self.lrc.calclulate_lrc(response[:-2])
-        if f"{calculated_lrc:02X}" != lrc.upper():
-            raise ValueError("Invalid response: LRC mismatch")
+        data_addresses = [data[i:i+4] for i in range(0, len(data), 4)]
         
-        return {
-            'Device_number': adr,
-            'Command': cmd,
-            'Data Count': data_count,
-            'Data': data,
-            'LRC':lrc
+        lrc = response[data_end_idx:data_end_idx+2]
+
+        parsed_response ={
+            "STX": ':',
+            "ADR":adr,
+            "CMD":cmd,
+            "Data Count":data_count,
+            "Data":data_addresses,
+            "LRC":lrc,
+            "End1": '\r',
+            "End0": '\n'
         }
+        return parsed_response
     
     def set_di_control_source(self, control_bits):
         data = struct.pack('>H', control_bits)
