@@ -8,19 +8,19 @@ if __name__ =="__main__":
     serial_manager = SerialPortManager()
     controller = ServoController(serial_manager)
 
+    controller.read_PA01_Ctrl_Mode()
+    time.sleep(0.05)
+    print("\n")
+
+    #controller.write_PA01_Ctrl_Mode()
+    #time.sleep(0.05)
+    #print("\n")
+
+    controller.read_PA01_Ctrl_Mode()
+    time.sleep(0.05)
+    print("\n")
+
     controller.enable_di_control()
-    time.sleep(0.05)
-    print("\n")
-
-    controller.read_PA01_Ctrl_Mode()
-    time.sleep(0.05)
-    print("\n")
-
-    controller.write_PA01_Ctrl_Mode()
-    time.sleep(0.05)
-    print("\n")
-
-    controller.read_PA01_Ctrl_Mode()
     time.sleep(0.05)
     print("\n")
 

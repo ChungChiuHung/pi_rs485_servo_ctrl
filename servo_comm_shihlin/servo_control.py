@@ -80,20 +80,37 @@ class ServoController:
         response = self.modbus_client.send_and_receive(message)
         print(f"Respnose Message: {response}")
 
+        print(f"Response['Data Content']= {response['Data Content']}")
+
     def write_PA01_Ctrl_Mode(self):
         print(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
-        message = self.modbus_client.build_read_message(PA.STY.address, 0x1000)
+        message = self.modbus_client.build_read_message(PA.STY.address, 2)
         print(f"Build Read Message: {message}")
         response = self.modbus_client.send_and_receive(message)
         print(f"Respnose Message: {response}")
 
-    def enable_di_control(self):
-        print(f"Address of PD{PD.SDI.no} {PD.SDI.name}: {PD.SDI.address}")
+        if response['Data Content'] is not 0x1010:
+            print(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
+            message = self.modbus_client.build_read_message(PA.STY.address, 0x1010)
+            print(f"Build Read Message: {message}")
+            response = self.modbus_client.send_and_receive(message)
+            print(f"Respnose Message: {response}")
+
+    # Digital input on/off control source option
+    def write_PD_16(self):
+        print(f"Address of PD{PD.SDI.no} {PD.SDI.name}: {hex(PD.SDI.address)}")
         config_value = ServoUtility.config_hex_with(0, 0xF, 0xF, 0xF)
         message = self.modbus_client.build_write_message(PD.SDI.address, config_value)
         print(f"Build Write Message: {message}")
         response = self.modbus_client.send_and_receive(message)
         print(f"Respnose Message: {response}")
+
+    # Communication control DI on/off
+    def write_PD_25(self):
+        print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
+        config_value = ServoUtility.config_hex_with(1, 1, 1, 1)
+        message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
+
 
     def read_PD_01(self):
         print(f"Address of PD{PD.DIA1.no} {PD.DIA1.name}: {PD.DIA1.address}")
@@ -151,6 +168,8 @@ class ServoController:
         print(f"Build Read Command: {message}")
         response = self.modbus_client.send_and_receive(message)
         print(f"Response Message: {response}")
+
+    
 
 
 

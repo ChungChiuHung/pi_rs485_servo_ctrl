@@ -1,6 +1,6 @@
 from enum import Enum
 
-class DIBitMap(Enum):
+class DI_Function_Code(Enum):
     SON = 0x01
     RES = 0x02
     PC = 0x03
