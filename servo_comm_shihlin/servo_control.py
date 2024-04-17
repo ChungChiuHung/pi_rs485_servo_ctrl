@@ -74,8 +74,15 @@ class ServoController:
         print(f"execute_motion {commands}")
         
     def read_PA01_Ctrl_Mode(self):
-        print(f"Address of PD{PA.STY.no} {PA.STY.name}: {PA.STY.address}")
+        print(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
         message = self.modbus_client.build_read_message(PA.STY.address, 2)
+        print(f"Build Read Message: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        print(f"Respnose Message: {response}")
+
+    def write_PA01_Ctrl_Mode(self):
+        print(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
+        message = self.modbus_client.build_read_message(PA.STY.address, 0x1000)
         print(f"Build Read Message: {message}")
         response = self.modbus_client.send_and_receive(message)
         print(f"Respnose Message: {response}")
