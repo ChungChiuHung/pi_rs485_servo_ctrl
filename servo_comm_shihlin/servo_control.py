@@ -72,7 +72,7 @@ class ServoController:
             raise ValueError("All inputs must be within the range 0 to 15 (inclusive).") 
         value = (x << 12) | (y << 8)| (z << 4) | u
 
-        print(f"Config value: {value}")
+        print(f"Config value: {hex(value)}")
 
 
     

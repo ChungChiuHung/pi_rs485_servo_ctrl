@@ -7,7 +7,7 @@ if __name__ =="__main__":
     serial_manager = SerialPortManager()
     controller = ServoController(serial_manager)
 
-    controller.enable_control_DI(1,2,3,4)
+    value = controller.enable_control_DI(1,2,3,4)
     
 
     
