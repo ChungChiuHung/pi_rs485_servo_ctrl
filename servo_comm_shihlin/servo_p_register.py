@@ -36,6 +36,47 @@ class PA:
         cls.POL = Register(39, "POL", "Motor rotary direction option", 0x0000, cls.calculate_address(39))
         #------------Digital I/O setting related parameters-----------
         INP = Register(12, "INP", "In-position range [pulse]", 100, cls.calculate_address(12))
+
+    @classmethod
+    def encode_HMOV(cls, z, y, x):
+        if any(not (0 <= a <= 15) for a in (z, y, x)):
+            raise ValueError("One or more paramter values are out of expected range")
+        return (z << 8) | (y << 4) | x
+    
+    @classmethod
+    def decode_HMOV(cls, value):
+        z = (value // 0x0100) % 0x10
+        y = (value // 0x10) % 0x10
+        x = value % 0x10
+        return z,y,x
+    
+    @classmethod
+    def explain_HMOV(cls, value):
+        # Using English version, I could not understand the manual in chinese...why? I am a netive chinese speaker
+        z,y,x = cls.decode_HMOV(value)
+        explanations = {
+            'z': f"origin recognized completion option: {'Decelerates to stop then return to the mechanism origin' if z == 0 else 'decelerates to stop'}",
+            'y': "Origin attained shortcut moving option: " + ["Turn back to last Z pulse to attain", "goes ahead to next Z pulse to attain", "origin recognized right away"][y % 3],
+            'x': "Origin detector and rotation option: " + [
+                "Running in CCW rotation and LSP is as a trigger",
+                "Running in CW rotation and LSN is as a trigger",
+                "Running in CCW rotation and ORGP ↑ is as a trigger",
+                "Running in CW rotation and ORGP ↑ is as a trigger",
+                "Running in CCW rotation and Encoder Z pulse as a trigger",
+                "Running in CW rotation and Encoder Z pulse as a trigger",
+                "Running in CCW rotation and ORGP ↓  is as a trigger",
+                "Rotate CCW to zero point the ORGP ↓  from ON to OFF",
+                "Define current position as a origin"
+            ][x % 9]
+        }
+        return f"z (Error Handling): {explanations['z']}, y (Return Behavior): {explanations['y']}, x (Zero Point Definition): {explanations['x']}"
+
+    @classmethod
+    def set_HMOV(cls,z,y,x):
+        value = cls.encode_HMOV(z,y,x)
+        cls.HMOV.write_value(value)
+        print(f"Register set to {hex(value)} ({cls.explain_HMOV(value)})")
+        
     
 
 class PC:
@@ -105,6 +146,8 @@ class PD:
         cls.DOP4 = Register(20, "DOP4", "Alarm reset triggered process", 0x0000, cls.calculate_address(20))
 
         cls.MCOK = Register(28, "MCOK", "Motion completion option", 0x0000, cls.calculate_address(28))
+
+        
 
 class PE:
     _start_address = 0x0700
