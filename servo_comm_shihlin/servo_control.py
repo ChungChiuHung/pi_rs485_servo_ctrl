@@ -104,7 +104,7 @@ class ServoController:
 
     def write_PD_08(self):
         print(f"Address of PD{PD.DI7.no} {PD.DI7.name}: {PD.DI7.address}")
-        message = self.modbus_client.build_write_message(PD.DI7.address, 0x0000)
+        message = self.modbus_client.build_write_message(PD.DI7.address, 0x02F)
         print(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
         print(f"Response Message: {response}")
