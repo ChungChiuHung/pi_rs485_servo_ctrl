@@ -74,12 +74,19 @@ class ServoController:
         print(f"execute_motion {commands}")
         
     def enable_di_control(self):
-        print(f"Address of PA{PD.SDI.no} {PD.SDI.name}: {PD.SDI.address}")
+        print(f"Address of PD{PD.SDI.no} {PD.SDI.name}: {PD.SDI.address}")
         config_value = ServoUtility.config_hex_with(0, 0xF, 0xF, 0xF)
         message = self.modbus_client.build_write_message(PD.SDI.address, config_value)
         print(f"Build Write Message: {message}")
         response = self.modbus_client.send_and_receive(message)
         print(f"Respnose Message: {response}")
+
+    def read_PD_01(self):
+        print(f"Address of PD{PD.DIA1.no} {PD.DIA1.name}: {PD.DIA1.address}")
+        message = self.modbus_client.build_read_message(PD.DIA1.address)
+        print(f"Build Read Message: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        print(f"Response Message: {response}")
 
 
 
