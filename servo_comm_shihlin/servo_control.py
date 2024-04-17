@@ -80,7 +80,9 @@ class ServoController:
         response = self.modbus_client.send_and_receive(message)
         print(f"Respnose Message: {response}")
 
-        print(f"Response['Data Content']= {response['Data Content']}")
+        parsed_respone = self.modbus_client.parse_response(response)
+
+        print(parsed_respone)
 
     def write_PA01_Ctrl_Mode(self):
         print(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
