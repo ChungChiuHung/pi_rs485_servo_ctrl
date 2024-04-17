@@ -90,8 +90,8 @@ class ModbusASCIIClient:
         
         response = response[1:].split('\r\n')[0]
 
-        if len(response) < 11 # Minimal Length with at least on data element
-            raise ValueError("Invalid response: Too short")
+        #if len(response) < 11 # Minimal Length with at least on data element
+        #    raise ValueError("Invalid response: Too short")
         
         adr = response[0:2]
         cmd = response[2:4]
