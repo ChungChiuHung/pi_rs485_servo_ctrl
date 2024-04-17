@@ -98,7 +98,7 @@ class ModbusASCIIClient:
 
         cmd_value = int(cmd, 16)
         print(cmd_value)
-        print(cmd_value == CmdCode.READ_DATA)
+        print(cmd_value == int(CmdCode.READ_DATA,16))
 
         if cmd_value == CmdCode.READ_DATA:
             data_count = response[4:6]
