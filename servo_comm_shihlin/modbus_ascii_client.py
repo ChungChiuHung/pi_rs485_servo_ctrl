@@ -96,9 +96,9 @@ class ModbusASCIIClient:
         adr = response[0:2]
         cmd = response[2:4]
 
-        print(f"Command Code: {cmd}")
+        cmd_hex = ''.join(f"{x:02x}" for x in cmd)
 
-        if cmd == CmdCode.READ_DATA.value:
+        if int(cmd_hex, 16) == CmdCode.READ_DATA.value:
             data_count = response[4:6]
             data_length = int(data_count, 16)
 
