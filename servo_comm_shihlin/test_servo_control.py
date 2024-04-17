@@ -8,8 +8,12 @@ if __name__ =="__main__":
     serial_manager = SerialPortManager()
     controller = ServoController(serial_manager)
 
-    # controller.enable_di_control()
-    # controller.read_PD_01()
+    controller.enable_di_control()
+    time.sleep(0.05)
+    print("\n")
+    controller.read_PD_01()
+    time.sleep(0.05)
+    print("\n")
     controller.read_servo_state()
     time.sleep(0.05)
     print("\n")
@@ -20,6 +24,7 @@ if __name__ =="__main__":
     time.sleep(0.05)
     print("\n")
     controller.read_servo_state()
+
     
     
 

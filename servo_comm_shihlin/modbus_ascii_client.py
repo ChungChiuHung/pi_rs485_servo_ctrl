@@ -66,7 +66,11 @@ class ModbusASCIIClient:
 
                 if response:
                     print("Response received:", response)
-                    print("Parsing Response", self.parse_read_response(response))
+                    if response[2:4] == 0x03:
+                        print("Parsing ReadIO Response: ", self.parse_read_response(response))
+                    elif response[2:4] == 0x10:
+                        print("Parsing WriteIO Response: ", self.parse_write_response(response))
+
                     return response
                 else:
                     print("No response received.")
@@ -118,6 +122,41 @@ class ModbusASCIIClient:
         }
         return parsed_response
     
+    def parse_write_response(self, response):
+        print("write_response.")
+        # Convert bytes to string if needed
+        if isinstance(response, bytes):
+            response = response.decode('utf-8')
+
+        # Verify start and end delimiters
+        if response[0] != ':' or response[-2:] != '\r\n':
+            raise ValueError("Invalid response: Start or End delimiter missing")
+
+        # Strip off the delimiters for easy parsing
+        response = response[1:-2]  # remove ':' prefix and '\r\n' suffix
+
+        # Extract fields
+        adr = response[0:2]  # 1 byte for address, 2 hex digits
+        cmd = response[2:4]  # 1 byte for command, 2 hex digits
+        start_address = response[4:8]  # 2 bytes for start address, 4 hex digits
+        data_count = response[8:12]  # 2 bytes for data count or data content, 4 hex digits
+
+        # LRC is the last two characters
+        lrc = response[-2:]  # 1 byte for LRC, 2 hex digits
+
+        # Output all parts for verification
+        parsed_response = {
+            "STX": ':',
+            "ADR": adr,
+            "CMD": cmd,
+            "Start Address": start_address,
+            "Data Count or Content": data_count,
+            "LRC": lrc,
+            "End1": '\r',
+            "End0": '\n'
+        }
+        return parsed_response
+
     def set_di_control_source(self, control_bits):
         data = struct.pack('>H', control_bits)
         message = self.build_write_message(ServoControlRegistry.SEL_DI_CONTROL_SOURCE, data)
