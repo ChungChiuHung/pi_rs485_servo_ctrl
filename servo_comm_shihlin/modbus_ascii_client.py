@@ -96,14 +96,14 @@ class ModbusASCIIClient:
         adr = response[0:2]
         cmd = response[2:4]
 
-        cmd_hex = ''.join(f"{x:02x}" for x in cmd)
+        cmd_value = int(cmd, 16)
 
-        if int(cmd_hex, 16) == CmdCode.READ_DATA.value:
+        if cmd_value == CmdCode.READ_DATA:
             data_count = response[4:6]
-            data_length = int(data_count, 16)
+            data_length = int(data_count, 16) * 2
 
             data_start_idx = 6
-            data_end_idx = 6 + data_length * 2
+            data_end_idx = 6 + data_length
             data = response[data_start_idx:data_end_idx]
 
             data_addresses = [data[i:i+4] for i in range(0, len(data), 4)]
@@ -121,7 +121,7 @@ class ModbusASCIIClient:
                 "End0": '\n'
             }
             return parsed_response
-        elif cmd == CmdCode.WRITE_DATA.value:
+        elif cmd == CmdCode.WRITE_DATA:
             start_address = response[4:8]  # 2 bytes for start address, 4 hex digits
             data_count = response[8:12]  # 2 bytes for data count or data content, 4 hex digits
 
