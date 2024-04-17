@@ -121,14 +121,13 @@ class ModbusASCIIClient:
                 "End0": '\n'
             }
             return parsed_response
+        
         elif cmd == CmdCode.WRITE_DATA:
             start_address = response[4:8]  # 2 bytes for start address, 4 hex digits
             data_count = response[8:12]  # 2 bytes for data count or data content, 4 hex digits
 
-            # LRC is the last two characters
             lrc = response[-2:]  # 1 byte for LRC, 2 hex digits
 
-            # Output all parts for verification
             parsed_response = {
                 "STX": ':',
                 "ADR": adr,
@@ -140,6 +139,8 @@ class ModbusASCIIClient:
                 "End0": '\n'
             }
             return parsed_response
+        else:
+            raise ValueError(f"Unsupported comand code: {cmd}")
 
     def set_di_control_source(self, control_bits):
         data = struct.pack('>H', control_bits)
