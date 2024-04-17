@@ -73,6 +73,13 @@ class ServoController:
     def execute_motion_sequence(self, commands):
         print(f"execute_motion {commands}")
         
+    def read_PA01_Ctrl_Mode(self):
+        print(f"Address of PD{PA.STY.no} {PA.STY.name}: {PA.STY.address}")
+        message = self.modbus_client.build_read_message(PA.STY.address)
+        print(f"Build Read Message: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        print(f"Respnose Message: {response}")
+
     def enable_di_control(self):
         print(f"Address of PD{PD.SDI.no} {PD.SDI.name}: {PD.SDI.address}")
         config_value = ServoUtility.config_hex_with(0, 0xF, 0xF, 0xF)
