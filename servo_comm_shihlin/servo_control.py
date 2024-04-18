@@ -245,6 +245,55 @@ class ServoController:
     #    response = self.modbus_client.send_and_receive(message)
     #    print(f"Response Message: {response}")
 
+    def config_acc_dec_0x0902(self):
+        print(f"Address 0x0902, 1 word")
+        config_value = 500
+        message = self.modbus_client.build_write_message(0x0902, config_value)
+        print(f"Build Write Command: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+
+        print(response_object)
+
+    def config_speed_0x0903(self):
+        print(f"Address 0x0903, 1 word")
+        config_value = 100
+        message = self.modbus_client.build_write_message(0x0903, config_value)
+        print(f"Build Write Command: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+
+        print(response_object)
+
+    def config_pulses_0x0905_low_byte(self):
+        print(f"Address 0x0905, 1 word")
+        config_value = 0xFFFF
+        message = self.modbus_client.build_write_message(0x0905, config_value)
+        print(f"Build Write Command: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+
+        print(response_object)
+
+    def pos_motion_start_0x0907(self, value):
+        print(f"Address 0x0907, 1 word")
+        config_value = value
+        message = self.modbus_client.build_write_message(0x0907, config_value)
+        print(f"Build Write Command: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+
+        print(response_object)
+
+    def pos_test_sequence(self):
+        self.config_acc_dec_0x0902()
+        time.sleep(0.1)
+        self.config_speed_0x0903()
+        time.sleep(0.1)
+        self.config_pulses_0x0905_low_byte()
+        time.sleep(0.1)
+        self.pos_motion_start_0x0907(1)
+
     
 
 
