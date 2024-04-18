@@ -20,7 +20,7 @@ if __name__ =="__main__":
     time.sleep(0.05)
     print("\n")
 
-    controller.enable_di_control()
+    controller.write_PD_16_Enable_DI_Control()
     time.sleep(0.05)
     print("\n")
 

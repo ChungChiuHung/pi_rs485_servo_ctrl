@@ -3,6 +3,7 @@ import serial
 import time
 from modbus_utils import ModbusUtils
 from modbus_command_code import CmdCode
+from modbus_response import ModbusResponse
 from servo_control_registers import ServoControlRegistry
 from serial_port_manager import SerialPortManager
 
@@ -83,7 +84,7 @@ class ModbusASCIIClient:
                 print("Failed to establish serial connection.")
                 return False
         return True
-    
+
     def parse_response(self, response):
         if isinstance(response, (bytes, bytearray)):
             response = response.decode('utf-8')

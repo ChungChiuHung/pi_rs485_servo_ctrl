@@ -2,6 +2,7 @@ import time
 import struct
 from serial import SerialException
 from modbus_ascii_client import ModbusASCIIClient
+from modbus_response import ModbusResponse
 from servo_utility import ServoUtility
 from servo_control_registers import ServoControlRegistry
 from servo_p_register import PA, PC, PD, PE
@@ -80,9 +81,10 @@ class ServoController:
         response = self.modbus_client.send_and_receive(message)
         print(f"Respnose Message: {response}")
 
-        parsed_respone = self.modbus_client.parse_response(response)
+        response_object = ModbusResponse(response)
 
-        print(parsed_respone)
+        print(response_object)
+        print(response_object.data)
 
     def write_PA01_Ctrl_Mode(self):
         print(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
@@ -92,13 +94,15 @@ class ServoController:
         print(f"Respnose Message: {response}")
 
     # Digital input on/off control source option
-    def write_PD_16(self):
+    def write_PD_16_Enable_DI_Control(self):
         print(f"Address of PD{PD.SDI.no} {PD.SDI.name}: {hex(PD.SDI.address)}")
         config_value = ServoUtility.config_hex_with(0, 0xF, 0xF, 0xF)
         message = self.modbus_client.build_write_message(PD.SDI.address, config_value)
         print(f"Build Write Message: {message}")
         response = self.modbus_client.send_and_receive(message)
         print(f"Respnose Message: {response}")
+        print(f"response['Data Content']")
+
 
     # Communication control DI on/off
     def write_PD_25(self):
