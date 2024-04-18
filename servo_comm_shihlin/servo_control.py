@@ -5,6 +5,7 @@ from modbus_ascii_client import ModbusASCIIClient
 from modbus_response import ModbusResponse
 from servo_utility import ServoUtility
 from servo_control_registers import ServoControlRegistry
+from status_bit_map import DI_Function_Code
 from servo_p_register import PA, PC, PD, PE
 
 PA.init_registers()
@@ -124,7 +125,9 @@ class ServoController:
         print(response_object)
 
         for data in response_object.data:
-            print(f"{data}\n")
+            for code in DI_Function_Code:
+                if code.value == data:
+                    print(code.name) 
         
 
 
