@@ -184,17 +184,16 @@ class ServoController:
         print(f"Response Message: {response}")
 
 
-    #def read_servo_state(self):
-    #    print(f"Addres of 0x0200, 1 word")
-    #    message = self.modbus_client.build_read_message(0x0200, 1)
-    #    print(f"Build Read Message: {message}")
-    #    response = self.modbus_client.send_and_receive(message)
-    #    print(f"Response Message: {response}")
-#
-    #    response_object = ModbusResponse(response)
-#
-    #    print(response_object)
-    #    print(response_object.data)
+    def read_servo_state(self):
+        print(f"Addres of 0x0200, 1 word")
+        message = self.modbus_client.build_read_message(0x0200, 1)
+        print(f"Build Read Message: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        print(f"Response Message: {response}")
+
+        response_object = ModbusResponse(response)
+
+        print(response_object)
 
     def read_control_mode(self):
         print(f"Addres of 0x0201, 1 word")
@@ -218,12 +217,12 @@ class ServoController:
 
         print(response_object)
 
-    def read_servo_state(self):
-        print(f"Address of 0x0900, 1 word")
-        message = self.modbus_client.build_read_message(0x0900, 1)
-        print(f"Build Read Command: {message}")
-        response = self.modbus_client.send_and_receive(message)
-        print(f"Response Message: {response}")
+    #def read_servo_state(self):
+    #    print(f"Address of 0x0900, 1 word")
+    #    message = self.modbus_client.build_read_message(0x0900, 1)
+    #    print(f"Build Read Command: {message}")
+    #    response = self.modbus_client.send_and_receive(message)
+    #    print(f"Response Message: {response}")
 
     
 

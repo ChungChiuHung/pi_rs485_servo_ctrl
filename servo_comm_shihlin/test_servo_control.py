@@ -16,6 +16,10 @@ if __name__ =="__main__":
     time.sleep(0.05)
     print("\n")
 
+    controller.read_servo_state()
+    time.sleep(0.05)
+    print("\n")
+
     #controller.write_PA01_Ctrl_Mode()
     #time.sleep(0.05)
     #print("\n")
