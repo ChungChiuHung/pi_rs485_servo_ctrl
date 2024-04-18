@@ -114,19 +114,11 @@ class ServoController:
         response = self.modbus_client.send_and_receive(message)
         print(f"Response Message: {response}")
 
-    # Try to config IO Function
-    def write_0x0206_SON(self):
-        print(f"Address of 0x0206: Write Value")
-        config_value = 0x01
-        message = self.modbus_client.build_write_message(0x0206, config_value)
-        response = self.modbus_client.send_and_receive(message)
-        response_object = ModbusResponse(response)
-        print(response_object)
-    
+    # Read IO Function From 0x0206
     def read_0x0206_SON(self):
         print(f"Address of 0x0206: Read Value")
         config_value = 0x01
-        message = self.modbus_client.build_read_message(0x0206, 1)
+        message = self.modbus_client.build_read_message(0x0206, 8)
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         print(response_object)
