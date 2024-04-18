@@ -104,7 +104,7 @@ class ServoController:
 
     def read_PD_16(self):
         print(f"Address of PD{PD.SDI.no} {PD.SDI.name}: {hex(PD.SDI.address)}")
-        message = self.modbus_client.build_read_message(PD.SDI.address, 2)
+        message = self.modbus_client.build_read_message(PD.SDI.address, 1)
         print(f"Build Read Message: {message}")
         response = self.modbus_client.send_and_receive(message)
         print(f"Response Message: {response}")
@@ -116,6 +116,12 @@ class ServoController:
         config_value = ServoUtility.config_hex_with(1, 1, 1, 1)
         message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
 
+    def read_PD_25(self):
+        print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
+        message = self.modbus_client.build_read_message(PD.ITST.address, 1)
+        print(f"Build Read Message: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        print(f"Response Message: {response}")
 
     def read_PD_01(self):
         print(f"Address of PD{PD.DIA1.no} {PD.DIA1.name}: {PD.DIA1.address}")
