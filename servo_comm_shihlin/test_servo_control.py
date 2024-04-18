@@ -11,14 +11,14 @@ if __name__ =="__main__":
     print("\n")
     print("START Communication With AC Servo Driver")
     print("\n")
-    
+
     controller.read_PA01_Ctrl_Mode()
     time.sleep(0.05)
     print("\n")
 
-    controller.write_PA01_Ctrl_Mode()
-    time.sleep(0.05)
-    print("\n")
+    #controller.write_PA01_Ctrl_Mode()
+    #time.sleep(0.05)
+    #print("\n")
 
     #controller.write_PD_16_Enable_DI_Control()
     #time.sleep(0.05)
