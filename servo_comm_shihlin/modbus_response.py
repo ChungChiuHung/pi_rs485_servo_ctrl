@@ -16,20 +16,28 @@ class ModbusResponse:
         response = response[1:-2]
         self.adr = response[0:2]
         self.cmd = response[2:4]
+
         self.cmd_value = int(self.cmd, 16)
 
         self.start_address = response[4:8]  # Common extraction for start address
 
-        if self.cmd_value in (CmdCode.WRITE_DATA.value, CmdCode.WRITE_MULTI_DATA.value):
+        if self.cmd_value == CmdCode.WRITE_DATA.value:
+            self.start_address = response[4,8]
+            self.data_content = response[8:12]  # Common extraction for data count/content for writes
+            self.lrc = response[-2:]  # Common LRC extraction
+
+        elif self.cmd_value == CmdCode.WRITE_MULTI_DATA.value:
+            self.start_address = response[4,8]
             self.data_count = response[8:12]  # Common extraction for data count/content for writes
             self.lrc = response[-2:]  # Common LRC extraction
-            self.data = None  # Write commands might not have immediate data following
+
         elif self.cmd_value == CmdCode.READ_DATA.value:
-            self.data_count = response[8:10]
+            self.data_count = response[4:6]
             data_length = int(self.data_count, 16) * 2
-            data_start_idx = 10
+            data_start_idx = 6
             data_end_idx = data_start_idx + data_length
-            self.data = [response[i:i+4] for i in range(data_start_idx, data_end_idx, 4)]
+            self.data = response[data_start_idx:data_end_idx]
+            self.start_address = [self.data[i:i+4] for i in range(0, len(self.data), 4)]
             self.lrc = response[data_end_idx:data_end_idx+2]
         else:
             raise ValueError(f"Unsupported command code: {self.cmd}")
