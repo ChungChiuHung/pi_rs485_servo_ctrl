@@ -78,9 +78,9 @@ class ServoUtility:
         return di1_function, di2_function
     
     @staticmethod
-    def config_hex_with(x, y, z, u):
-        if any(not(0 <= a < 16) for a in [x,y,z,u]):
+    def config_hex_with(u, z, y, x):
+        if any(not(0 <= a < 16) for a in [u , z, y, x]):
             raise ValueError("All inputs must be within the range 0 to 15 (inclusive).") 
-        value = (x << 12) | (y << 8)| (z << 4) | u
+        value = (u << 12) | (z << 8)| (y << 4) | x
         print(f"Config value: {hex(value)}")
         return value

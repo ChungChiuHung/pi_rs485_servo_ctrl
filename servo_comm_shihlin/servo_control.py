@@ -170,6 +170,23 @@ class ServoController:
         response_object = ModbusResponse(response)
         print(response_object)
 
+    # Config DI Function
+    def write_PD_02(self):
+        print(f"Address of PD{PD.DI1.no} {PD.DI1.name}: {PD.DI1.address}")
+        config_value = 0x01
+        message = self.modbus_client.build_write_message(PD.DI1.address, config_value)
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+        print(response_object)
+
+    def read_PD_02(self):
+        print(f"Address of PD{PD.DI1.no} {PD.DI1.name}: {PD.DI1.address}")
+        message = self.modbus_client.build_read_message(PD.DI1.address, 2)
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+        print(response_object)
+
+
     def read_PD_08(self):
         print(f"Address of PD{PD.DI7.no} {PD.DI7.name}: {PD.DI7.address}")
         message = self.modbus_client.build_read_message(PD.DI7.address, 2)
