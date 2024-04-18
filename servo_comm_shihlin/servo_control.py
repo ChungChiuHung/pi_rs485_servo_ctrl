@@ -117,9 +117,9 @@ class ServoController:
         print(f"Response Message: {response}")
 
     # Read IO Function From 0x0206
-    def read_0x0206_SON(self):
+    def read_0x0206_To_0x020B(self):
         print(f"Address of 0x0206: Read Value")
-        message = self.modbus_client.build_read_message(0x0206, 8)
+        message = self.modbus_client.build_read_message(0x0206, 6)
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         print(response_object)
