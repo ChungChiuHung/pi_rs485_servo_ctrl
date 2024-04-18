@@ -119,17 +119,19 @@ class ServoController:
     # Read IO Function From 0x0206
     def read_0x0206_SON(self):
         print(f"Address of 0x0206: Read Value")
-        config_value = 0x01
         message = self.modbus_client.build_read_message(0x0206, 8)
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         print(response_object)
 
+        cnt = 1
         for data in response_object.data:
             print(f"Original data value: {data}")
             for code in DI_Function_Code:
                 if code.value == int(data, 16):
-                    print(code.name) 
+                    print(f"DI{cnt} :{code.name}")
+                    cnt += 1
+                     
         
 
     # Communication control DI on/off
