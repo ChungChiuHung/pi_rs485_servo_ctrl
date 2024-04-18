@@ -37,8 +37,11 @@ class ModbusResponse:
             data_start_idx = 6
             data_end_idx = data_start_idx + data_length
             self.data = response[data_start_idx:data_end_idx]
-            hex_data_str = [self.data[i:i+4] for i in range(0, len(self.data), 4)].decode('ascii')
-            self.start_address = bytes.fromhex(hex_data_str)
+            print(f"print the data: {self.data}")
+
+            self.start_address = [self.data[i:i+4] for i in range(0, len(self.data), 4)]
+            print(f"print start_address: {self.start_address}")
+            
             self.lrc = response[data_end_idx:data_end_idx+2]
         else:
             raise ValueError(f"Unsupported command code: {self.cmd}")
