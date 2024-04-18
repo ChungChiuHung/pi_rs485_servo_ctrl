@@ -22,12 +22,10 @@ class ModbusResponse:
         self.start_address = response[4:8]  # Common extraction for start address
 
         if self.cmd_value == CmdCode.WRITE_DATA.value:
-            self.start_address = response[4,8]
             self.data_content = bytes.fromhex(response[8:12])  # Common extraction for data count/content for writes
             self.lrc = response[-2:]  # Common LRC extraction
 
         elif self.cmd_value == CmdCode.WRITE_MULTI_DATA.value:
-            self.start_address = response[4,8]
             self.data_count = int(response[8:12], 16)  # Common extraction for data count/content for writes
             self.lrc = response[-2:]  # Common LRC extraction
 
@@ -40,7 +38,6 @@ class ModbusResponse:
             print(f"print the data: {self.data}")
             self.data_bytes = bytes.fromhex(''.join(self.data))
             print(f"data bytes: {self.data_bytes}")
-
             self.lrc = response[data_end_idx:data_end_idx+2]
         else:
             raise ValueError(f"Unsupported command code: {self.cmd}")
