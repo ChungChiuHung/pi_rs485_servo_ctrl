@@ -85,7 +85,6 @@ class ServoController:
         response_object = ModbusResponse(response)
 
         print(response_object)
-        print(response_object.data)
 
     def write_PA01_Ctrl_Mode(self):
         print(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
@@ -97,7 +96,6 @@ class ServoController:
         response_object = ModbusResponse(response)
 
         print(response_object)
-        print(response_object.data)
 
     # Digital input on/off control source option
     def write_PD_16_Enable_DI_Control(self):
