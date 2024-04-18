@@ -122,6 +122,9 @@ class ServoController:
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         print(response_object)
+
+        for data in response_object.data:
+            print(f"{data}\n")
         
 
 
