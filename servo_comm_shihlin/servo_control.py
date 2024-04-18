@@ -88,7 +88,7 @@ class ServoController:
 
     def write_PA01_Ctrl_Mode(self):
         print(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
-        config_value = ServoUtility.config_hex_with(1, 0, 1, 0)
+        config_value = ServoUtility.config_hex_with(0, 0, 1, 0)
         message = self.modbus_client.build_write_message(PA.STY.address, config_value)
         print(f"Build Read Message: {message}")
         response = self.modbus_client.send_and_receive(message)
