@@ -76,6 +76,8 @@ class ServoController:
     def execute_motion_sequence(self, commands):
         print(f"execute_motion {commands}")
         
+
+    #  0x0010, 0x0000
     def read_PA01_Ctrl_Mode(self):
         print(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
         message = self.modbus_client.build_read_message(PA.STY.address, 2)
@@ -98,6 +100,7 @@ class ServoController:
         print(response_object)
 
     # Digital input on/off control source option
+    # # Select IO to Be controlled PD16
     def write_PD_16_Enable_DI_Control(self):
         print(f"Address of PD{PD.SDI.no} {PD.SDI.name}: {hex(PD.SDI.address)}")
         config_value = ServoUtility.config_hex_with(0, 0xF, 0xF, 0xF)
@@ -129,9 +132,18 @@ class ServoController:
                     print(f"DI{cnt} :{code.name}")
                     cnt += 1
                      
-        
-
+    # 內部位置命令 p129
+    # Pos 1:  000000 PE01/PE02
+    # Pos 2:  000001 PE03/PE04
+    # ...
+    # Pos 63: 111111 PF29/PF30
+    
     # Communication control DI on/off
+    # 0x0040 (DI7) EMG
+    # 0000 0  0  0  0 0 1 0 0 0 0 0 0
+    #      12 11 10 9 8 7 6 5 4 3 2 1 
+    # 0x0041 (DI7 + DI1) SON
+    # 0000 0  0  0  0 0 1 0 0 0 0 0 1
     def write_PD_25(self):
         print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
         config_value = ServoUtility.config_hex_with(0, 0, 0, 1)
@@ -149,6 +161,7 @@ class ServoController:
         response_object = ModbusResponse(response)
         print(response_object)
 
+    # Pos mode 0x0000 0x0000
     def read_PD_01(self):
         print(f"Address of PD{PD.DIA1.no} {PD.DIA1.name}: {PD.DIA1.address}")
         message = self.modbus_client.build_read_message(PD.DIA1.address, 2)
@@ -159,6 +172,7 @@ class ServoController:
         response_object = ModbusResponse(response)
         print(response_object)
 
+    # 0x0000, 0x0000
     def write_PD_01(self):
         print(f"Address of PD{PD.DIA1.no} {PD.DIA1.name}: {PD.DIA1.address}")
         config_value = ServoUtility.config_hex_with(0, 0, 0, 0)
@@ -171,6 +185,7 @@ class ServoController:
         print(response_object)
 
     # Config DI Function
+    # Pos mode 0x0001 , 0x0000
     def write_PD_02(self):
         print(f"Address of PD{PD.DI1.no} {PD.DI1.name}: {PD.DI1.address}")
         config_value = 1
@@ -179,6 +194,8 @@ class ServoController:
         response_object = ModbusResponse(response)
         print(response_object)
 
+
+    # 0x0001 0x0000
     def read_PD_02(self):
         print(f"Address of PD{PD.DI1.no} {PD.DI1.name}: {PD.DI1.address}")
         message = self.modbus_client.build_read_message(PD.DI1.address, 2)
@@ -187,6 +204,7 @@ class ServoController:
         print(response_object)
 
 
+    # initial 0x0012 0x0000 DI7
     def read_PD_08(self):
         print(f"Address of PD{PD.DI7.no} {PD.DI7.name}: {PD.DI7.address}")
         message = self.modbus_client.build_read_message(PD.DI7.address, 2)
@@ -238,12 +256,15 @@ class ServoController:
 
         print(response_object)
 
-    #def read_servo_state(self):
-    #    print(f"Address of 0x0900, 1 word")
-    #    message = self.modbus_client.build_read_message(0x0900, 1)
-    #    print(f"Build Read Command: {message}")
-    #    response = self.modbus_client.send_and_receive(message)
-    #    print(f"Response Message: {response}")
+    def read_test_mode_0x0901(self):
+        print(f"Address of 0x0901, 1 word")
+        message = self.modbus_client.build_read_message(0x0901, 1)
+        print(f"Build Read Command: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        print(f"Response Message: {response}")
+        response_object = ModbusResponse(response)
+
+        print(response_object)
 
     def config_acc_dec_0x0902(self):
         print(f"Address 0x0902, 1 word")
