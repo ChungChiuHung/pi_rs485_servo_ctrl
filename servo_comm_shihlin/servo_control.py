@@ -113,8 +113,12 @@ class ServoController:
     # Communication control DI on/off
     def write_PD_25(self):
         print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
-        config_value = ServoUtility.config_hex_with(1, 1, 1, 1)
+        config_value = ServoUtility.config_hex_with(0, 0, 0, 1)
         message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+        print(response_object)
+        print(response_object.data)
 
     def read_PD_25(self):
         print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
