@@ -267,6 +267,17 @@ class ServoController:
 
         print(response_object)
 
+    def stop_test_mode(self):
+        print(f"Address of 0x0901, 1 word")
+        config_value = 0x0000
+        message = self.modbus_client.build_write_message(0x0901, config_value)
+        print(f"Build Read Command: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        print(f"Response Message: {response}")
+        response_object = ModbusResponse(response)
+
+        print(response_object)
+
     def start_test_pos_mode(self):
         print(f"Address of 0x0901, 1 word")
         config_value = 0x0004
