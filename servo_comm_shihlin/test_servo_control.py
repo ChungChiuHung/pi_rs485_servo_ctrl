@@ -24,17 +24,17 @@ if __name__ =="__main__":
     #time.sleep(0.05)
     #print("\n")
 
-    #controller.write_PD_16_Enable_DI_Control()
-    #time.sleep(0.05)
-    #print("\n")
+    controller.write_PD_16_Enable_DI_Control()
+    time.sleep(0.05)
+    print("\n")
 
     controller.read_PD_16()
     time.sleep(0.05)
     print("\n")
 
-    #controller.write_PD_25()
-    #time.sleep(0.05)
-    #print("\n")
+    controller.write_PD_25()
+    time.sleep(0.05)
+    print("\n")
 #
     controller.read_PD_25()
     time.sleep(0.05)
@@ -76,11 +76,11 @@ if __name__ =="__main__":
     time.sleep(0.05)
     print("\n")
 
-    controller.stop_test_mode()
-    time.sleep(0.05)
-    print("\n")
+    #controller.stop_test_mode()
+    #time.sleep(0.05)
+    #print("\n")
 
-    #controller.pos_test_sequence()
+    controller.pos_test_sequence()
 
     
     
