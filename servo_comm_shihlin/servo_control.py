@@ -274,6 +274,16 @@ class ServoController:
         response_object = ModbusResponse(response)
 
         print(response_object)
+    
+    def config_pulses_0x0906_high_byte(self):
+        print(f"Address 0x0906, 1 word")
+        config_value = 0x000F
+        message = self.modbus_client.build_write_message(0x0906, config_value)
+        print(f"Build Write Command: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+
+        print(response_object)
 
     def pos_motion_start_0x0907(self, value):
         print(f"Address 0x0907, 1 word")
