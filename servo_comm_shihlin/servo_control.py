@@ -1,5 +1,6 @@
 import time
 import struct
+import inspect
 from serial import SerialException
 from modbus_ascii_client import ModbusASCIIClient
 from modbus_response import ModbusResponse
@@ -125,11 +126,11 @@ class ServoController:
         print(response_object)
 
         for data in response_object.data:
+            print(f"Original data value: {data}")
             for code in DI_Function_Code:
                 if code.value == data:
                     print(code.name) 
         
-
 
     # Communication control DI on/off
     def write_PD_25(self):
