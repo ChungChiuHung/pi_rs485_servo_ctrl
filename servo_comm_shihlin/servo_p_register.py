@@ -163,3 +163,17 @@ class PE:
         cls.PE01 = Register(1, "ODEF", "Origin return definition", 0x0000, cls.calculate_address(1))
         cls.PE02 = Register(2, "ODAT", "Origin offset value definition", 0, cls.calculate_address(2))
     
+
+class PF:
+    _start_address = 0x0800
+    _register_size = 2 # word
+
+    @classmethod
+    def calculate_address(cls, no):
+        return cls._start_address + (no -1) * cls._register_size
+    
+    @classmethod
+    def init_registers(cls):
+        cls.PRCM = Register(82, "PRCM", "PR trigger register: (0~1000)", 0, cls.calculate_address(82))
+
+    

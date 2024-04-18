@@ -7,12 +7,13 @@ from modbus_response import ModbusResponse
 from servo_utility import ServoUtility
 from servo_control_registers import ServoControlRegistry
 from status_bit_map import DI_Function_Code
-from servo_p_register import PA, PC, PD, PE
+from servo_p_register import PA, PC, PD, PE, PF
 
 PA.init_registers()
 PC.init_registers()
 PD.init_registers()
 PE.init_registers()
+PF.init_registers()
 
 class ServoController:
     def __init__(self, serial_port):
@@ -267,6 +268,37 @@ class ServoController:
 
         print(response_object)
 
+    # PR (procedure) sequence control
+    def read_PF82(self):
+        print(f"Address of P{PF.PRCM.no}, {PF.PRCM.name}: {PF.PRCM.address}")
+        # write value
+        origin_return = 0
+        excute_PATH = 1 # (1~63)
+        stop = 1000
+        # Read Value: get the executed PATH situation
+        # 3: PATH#3 is being executed
+        # 1003: PATH#3 command is completed
+        # 2003: PATH#3 positioning is done
+        message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+        print(response_object)
+
+        print(int(response_object.data_bytes, 16))
+
+        while False:
+            message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
+            response = self.modbus_client.send_and_receive(message)
+            response_object = ModbusResponse(response)
+            print(response_object)
+            flag_value = int(response_object.data, 16)
+            time.sleep(0.1)
+
+
+
+    
+    # Position Control Test Mode
+
     def stop_test_mode(self):
         print(f"Address of 0x0901, 1 word")
         config_value = 0x0000
@@ -339,7 +371,7 @@ class ServoController:
 
         print(response_object)
 
-    def pos_test_sequence(self):
+    def pos_ctrl_test_sequence(self):
         self.config_acc_dec_0x0902()
         time.sleep(0.1)
         self.config_speed_0x0903()
