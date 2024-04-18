@@ -128,7 +128,7 @@ class ServoController:
         for data in response_object.data:
             print(f"Original data value: {data}")
             for code in DI_Function_Code:
-                if code.value == data:
+                if code.value == int(data, 16):
                     print(code.name) 
         
 
