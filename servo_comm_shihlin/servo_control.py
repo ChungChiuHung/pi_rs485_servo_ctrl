@@ -88,10 +88,15 @@ class ServoController:
 
     def write_PA01_Ctrl_Mode(self):
         print(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
-        message = self.modbus_client.build_read_message(PA.STY.address, 2)
+        config_value = ServoUtility.config_hex_with(1, 0, 0, 0)
+        message = self.modbus_client.build_write_message(PA.STY.address, config_value)
         print(f"Build Read Message: {message}")
         response = self.modbus_client.send_and_receive(message)
         print(f"Respnose Message: {response}")
+        response_object = ModbusResponse(response)
+
+        print(response_object)
+        print(response_object.data)
 
     # Digital input on/off control source option
     def write_PD_16_Enable_DI_Control(self):
