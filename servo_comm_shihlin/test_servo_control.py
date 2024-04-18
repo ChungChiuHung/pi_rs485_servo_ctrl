@@ -40,9 +40,9 @@ if __name__ =="__main__":
     #time.sleep(0.05)
     #print("\n")
 
-    #controller.write_PD_01()
-    #time.sleep(0.05)
-    #print("\n")
+    controller.write_PD_01()
+    time.sleep(0.05)
+    print("\n")
 
     controller.read_PD_01()
     time.sleep(0.05)
@@ -64,11 +64,11 @@ if __name__ =="__main__":
     #time.sleep(0.05)
     #print("\n")
 
-    controller.read_0x0206_To_0x020B()
-    time.sleep(0.05)
-    print("\n")
+    #controller.read_0x0206_To_0x020B()
+    #time.sleep(0.05)
+    #print("\n")
 
-    controller.pos_test_sequence()
+    #controller.pos_test_sequence()
 
     
     
