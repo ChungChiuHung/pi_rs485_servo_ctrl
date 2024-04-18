@@ -173,7 +173,7 @@ class ServoController:
     # Config DI Function
     def write_PD_02(self):
         print(f"Address of PD{PD.DI1.no} {PD.DI1.name}: {PD.DI1.address}")
-        config_value = 0x01
+        config_value = 0x0001
         message = self.modbus_client.build_write_message(PD.DI1.address, config_value)
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
