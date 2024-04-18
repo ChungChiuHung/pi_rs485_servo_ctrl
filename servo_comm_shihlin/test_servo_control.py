@@ -20,9 +20,9 @@ if __name__ =="__main__":
     time.sleep(0.05)
     print("\n")
 
-    controller.write_PA01_Ctrl_Mode()
-    time.sleep(0.05)
-    print("\n")
+    #controller.write_PA01_Ctrl_Mode()
+    #time.sleep(0.05)
+    #print("\n")
 
     #controller.write_PD_16_Enable_DI_Control()
     #time.sleep(0.05)
@@ -40,13 +40,13 @@ if __name__ =="__main__":
     #time.sleep(0.05)
     #print("\n")
 
-    #controller.write_PD_01()
-    #time.sleep(0.05)
-    #print("\n")
+    controller.write_PD_01()
+    time.sleep(0.05)
+    print("\n")
 
-    #controller.read_PD_01()
-    #time.sleep(0.05)
-    #print("\n")
+    controller.read_PD_01()
+    time.sleep(0.05)
+    print("\n")
 
     controller.write_PD_02()
     time.sleep(0.05)
