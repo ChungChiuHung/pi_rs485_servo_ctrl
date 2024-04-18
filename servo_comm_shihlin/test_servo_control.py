@@ -27,10 +27,10 @@ if __name__ =="__main__":
     time.sleep(0.05)
     print("\n")
 
-    controller.write_PD_25()
-    time.sleep(0.05)
-    print("\n")
-
+    #controller.write_PD_25()
+    #time.sleep(0.05)
+    #print("\n")
+#
     controller.read_PD_25()
     time.sleep(0.05)
     print("\n")
@@ -51,16 +51,13 @@ if __name__ =="__main__":
     #time.sleep(0.05)
     #print("\n")
 
-    controller.read_servo_state()
+    controller.write_0x0206_SON()
     time.sleep(0.05)
     print("\n")
-    controller.read_control_mode()
+
+    controller.read_0x0206_SON()
     time.sleep(0.05)
     print("\n")
-    controller.read_alarm_msg()
-    time.sleep(0.05)
-    print("\n")
-    controller.read_servo_state()
 
     
     
