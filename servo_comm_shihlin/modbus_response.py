@@ -28,20 +28,19 @@ class ModbusResponse:
 
         elif self.cmd_value == CmdCode.WRITE_MULTI_DATA.value:
             self.start_address = response[4,8]
-            self.data_count = response[8:12]  # Common extraction for data count/content for writes
+            self.data_count = int(response[8:12], 16)  # Common extraction for data count/content for writes
             self.lrc = response[-2:]  # Common LRC extraction
 
         elif self.cmd_value == CmdCode.READ_DATA.value:
-            self.data_count = response[4:6]
-            data_length = int(self.data_count, 16) * 2
+            self.data_count = int(response[4:6], 16)
+            data_length = self.data_count * 2
             data_start_idx = 6
             data_end_idx = data_start_idx + data_length
-            self.data = response[data_start_idx:data_end_idx]
+            self.data = [response[i:i+2] for i in range(data_start_idx, data_end_idx, 2)]
             print(f"print the data: {self.data}")
+            self.data_bytes = bytes.fromhex(''.join(self.data))
+            print(f"data bytes: {self.data_bytes}")
 
-            self.start_address = [self.data[i:i+4] for i in range(0, len(self.data), 4)]
-            print(f"print start_address: {self.start_address}")
-            
             self.lrc = response[data_end_idx:data_end_idx+2]
         else:
             raise ValueError(f"Unsupported command code: {self.cmd}")
@@ -53,12 +52,12 @@ class ModbusResponse:
                      f"  Command: {self.cmd} (Cmd Value: {self.cmd_value})\n"
                      f"  Start Address: {self.start_address}\n")
         
-        if self.data:
-            data_str = ', '.join(self.data)
+        if hasattr(self, 'data_bytes'):
+            data_str = ', '.join(f"{b:02X}" for b in self.data_bytes)
             additional_info = (f"  Data Count: {self.data_count}\n"
                                f"  Data: [{data_str}]\n")
         else:
-            additional_info = (f"  Data Count or Content: {self.data_count}\n")
+            additional_info = " Data: Not applicable for write commands\n"
         
         return base_info + additional_info + (f"  LRC: {self.lrc}\n"
                                               f"  End1 (CR): {self.end1}\n"
