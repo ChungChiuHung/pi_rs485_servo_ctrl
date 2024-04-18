@@ -118,7 +118,6 @@ class ServoController:
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         print(response_object)
-        print(response_object.data)
 
     def read_PD_25(self):
         print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
@@ -127,9 +126,7 @@ class ServoController:
         response = self.modbus_client.send_and_receive(message)
         print(f"Response Message: {response}")
         response_object = ModbusResponse(response)
-
         print(response_object)
-        print(response_object.data)
 
     def read_PD_01(self):
         print(f"Address of PD{PD.DIA1.no} {PD.DIA1.name}: {PD.DIA1.address}")
@@ -139,9 +136,7 @@ class ServoController:
         print(f"Response Message: {response}")
 
         response_object = ModbusResponse(response)
-
         print(response_object)
-        print(response_object.data)
 
     def write_PD_01(self):
         print(f"Address of PD{PD.DIA1.no} {PD.DIA1.name}: {PD.DIA1.address}")
@@ -158,9 +153,7 @@ class ServoController:
         print(f"Response Message: {response}")
 
         response_object = ModbusResponse(response)
-
         print(response_object)
-        print(response_object.data)
 
     def write_PD_08(self):
         print(f"Address of PD{PD.DI7.no} {PD.DI7.name}: {PD.DI7.address}")
@@ -192,7 +185,6 @@ class ServoController:
         response_object = ModbusResponse(response)
 
         print(response_object)
-        print(response_object.data)
 
     def read_alarm_msg(self):
         print(f"Address of 0x0100, 1 word")
@@ -204,7 +196,6 @@ class ServoController:
         response_object = ModbusResponse(response)
 
         print(response_object)
-        print(response_object.data)
 
     def read_servo_state(self):
         print(f"Address of 0x0900, 1 word")
