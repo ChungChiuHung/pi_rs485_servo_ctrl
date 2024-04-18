@@ -302,7 +302,9 @@ class ServoController:
         time.sleep(0.1)
         self.config_pulses_0x0905_low_byte()
         time.sleep(0.1)
-        self.pos_motion_start_0x0907(1)
+        self.config_pulses_0x0906_high_byte()
+        time.sleep(0.1)
+        self.pos_motion_start_0x0907(2)
 
     
 
