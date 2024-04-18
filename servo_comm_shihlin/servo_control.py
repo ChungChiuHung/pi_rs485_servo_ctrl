@@ -101,7 +101,13 @@ class ServoController:
         print(f"Build Write Message: {message}")
         response = self.modbus_client.send_and_receive(message)
         print(f"Respnose Message: {response}")
-        print(f"response['Data Content']")
+
+    def read_PD_16(self):
+        print(f"Address of PD{PD.SDI.no} {PD.SDI.name}: {hex(PD.SDI.address)}")
+        message = self.modbus_client.build_read_message(PD.SDI.address, 2)
+        print(f"Build Read Message: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        print(f"Response Message: {response}")
 
 
     # Communication control DI on/off
