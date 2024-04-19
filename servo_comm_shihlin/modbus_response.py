@@ -35,9 +35,9 @@ class ModbusResponse:
             data_start_idx = 6
             data_end_idx = data_start_idx + data_length
             self.data = [response[i:i+2] for i in range(data_start_idx, data_end_idx, 2)]
-            print(f"print the data: {self.data}")
+            #print(f"print the data: {self.data}")
             self.data_bytes = bytes.fromhex(''.join(self.data))
-            print(f"data bytes: {self.data_bytes}")
+            #print(f"data bytes: {self.data_bytes}")
             self.lrc = response[data_end_idx:data_end_idx+2]
         else:
             raise ValueError(f"Unsupported command code: {self.cmd}")
@@ -46,7 +46,7 @@ class ModbusResponse:
         base_info = (f"Modbus Response:\n"
                      f"  STX: {self.stx}\n"
                      f"  Address: {self.adr}\n"
-                     f"  Command: {self.cmd} (Cmd Value: {self.cmd_value})\n"
+                     f"  Command: {self.cmd})\n"
                      f"  Start Address: {self.start_address}\n")
         
         if hasattr(self, 'data_bytes'):
@@ -56,6 +56,7 @@ class ModbusResponse:
         else:
             additional_info = " Data: Not applicable for write commands\n"
         
-        return base_info + additional_info + (f"  LRC: {self.lrc}\n"
-                                              f"  End1 (CR): {self.end1}\n"
-                                              f"  End0 (LF): {self.end0}")
+        #return base_info + additional_info + (f"  LRC: {self.lrc}\n"
+        #                                      f"  End1 (CR): {self.end1}\n"
+        #                                      f"  End0 (LF): {self.end0}")
+        return base_info + additional_info
