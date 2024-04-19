@@ -145,6 +145,8 @@ class ServoController:
     #      12 11 10 9 8 7 6 5 4 3 2 1 
     # 0x0041 (DI7 + DI1) SON
     # 0000 0  0  0  0 0 1 0 0 0 0 0 1
+    # 0x0341
+    # 0000 0  0  1  1 0 1 0 0 0 0 0 1
     def write_PD_25(self):
         self.write_PD_16_Enable_DI_Control()
         time.sleep(0.1)
@@ -170,7 +172,7 @@ class ServoController:
         self.write_PD_16_Enable_DI_Control()
         time.sleep(0.1)
         print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
-        config_value = ServoUtility.config_hex_with(0, 0, 4, 0)
+        config_value = ServoUtility.config_hex_with(0, 3, 4, 0)
         message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
@@ -179,7 +181,7 @@ class ServoController:
 
     def servo_on(self):
         print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
-        config_value = ServoUtility.config_hex_with(0, 0, 4, 1)
+        config_value = ServoUtility.config_hex_with(0, 3, 4, 1)
         message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
