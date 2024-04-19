@@ -84,12 +84,14 @@ def handle_action():
       
       elif action == "getMsg":
 
-            servo_ctrller.read_PD_16()
-            time.sleep(0.1)
-            servo_ctrller.read_PD_25()
-            time.sleep(0.1)
+            #servo_ctrller.read_PD_16()
+            #time.sleep(0.1)
+            #servo_ctrller.read_PD_25()
+            #time.sleep(0.1)
             servo_ctrller.read_0x0905_low_byte()
-            time.sleep(0.1)
+            time.sleep(0.05)
+            servo_ctrller.read_0x0906_high_byte()
+            time.sleep(0.05)
             
 
       elif action == "getIOOutput":

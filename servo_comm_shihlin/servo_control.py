@@ -398,7 +398,15 @@ class ServoController:
 
     def read_0x0905_low_byte(self):
         print(f"Address 0x0905, 1 word")
-        message = self.modbus_client.build_read_message(0x0905, 2)
+        message = self.modbus_client.build_read_message(0x0905, 1)
+        print(f"Build Write Command: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+        print(response_object)
+
+    def read_0x0906_high_byte(self):
+        print(f"Address 0x0906, 1 word")
+        message = self.modbus_client.build_read_message(0x0906, 1)
         print(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
