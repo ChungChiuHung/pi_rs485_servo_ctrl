@@ -87,19 +87,7 @@ def handle_action():
       
       elif action == "getMsg":
 
-            #servo_ctrller.read_PD_16()
-            #time.sleep(0.1)
-            #servo_ctrller.read_PD_25()
-            #time.sleep(0.1)
-            servo_ctrller.read_0x0905_low_byte()
-            time.sleep(0.05)
-            servo_ctrller.read_0x0906_high_byte()
-            time.sleep(0.05)
-            servo_ctrller.read_encoder_before_gear_ratio()
-            time.sleep(0.05)
-            servo_ctrller.read_encoder_after_gear_ratio()
-            time.sleep(0.05)
-            
+            servo_ctrller.Read_Pos_Related_Paremters()
 
       elif action == "clearAlarm12":
             servo_ctrller.clear_alarm_12()

@@ -26,6 +26,8 @@ class PA:
     @classmethod
     def init_registers(cls):
         cls.STY = Register(1, "STY", "Control mode option", 0x1000, cls.calculate_address(1))
+        cls.ATUM = Register(2, "ATUM", "Gain tuning mode option", 0x0002, cls.calculate_address(2))
+        cls.ATUL = Register(3, "ATUL", "Auto-tuning mode option", 10, cls.calculate_address(3))
         cls.HMOV = Register(4, "HMOV", "Home moving option", 0x0000, cls.calculate_address(4))
         cls.TL1 = Register(5, "TL1", "Inner torque limit 1 [%]", 100, cls.calculate_address(5))
         cls.CMX = Register(6, "CMX", "Electornic gear numerator", 1, cls.calculate_address(6))
@@ -35,7 +37,7 @@ class PA:
         cls.PO1H = Register(15, "PO1H", "Revolution of inner position command 1 [rev]", 0, cls.calculate_address(15))
         cls.POL = Register(39, "POL", "Motor rotary direction option", 0x0000, cls.calculate_address(39))
         #------------Digital I/O setting related parameters-----------
-        INP = Register(12, "INP", "In-position range [pulse]", 100, cls.calculate_address(12))
+        cls.INP = Register(12, "INP", "In-position range [pulse]", 100, cls.calculate_address(12))
 
     @classmethod
     def encode_HMOV(cls, z, y, x):

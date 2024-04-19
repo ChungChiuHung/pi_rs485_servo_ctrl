@@ -311,10 +311,27 @@ class ServoController:
         print("\n")
 
 
-
+    # Read Position Control related parameters
+    def Read_Pos_Related_Paremters(self):
+        read_address_array = [PA.STY.address, PA.HMOV.address, PA.PLSS.address,
+                              PA.ENR.address, PA.PO1H.address, PA.POL.address,
+                              ]
+        #PA01, 2 3, 6, 7, 13, 15
+        #PA02, ATUM: Gain tuning mode option
+        #PA03, ATUL: Auto-tuning response level setting
+        #PA06, CMX : Electronic gear numerator
+        #PA07, CDV : Electronic gear denominator
+        #PA13, PLSS: Command pulse option
+        #PA15, CRSHA: Motor crash protection (time) 
+        
+        for address in read_address_array:
+            message = self.modbus_client.build_read_message(address, 1)
+            response = self.modbus_client.send_and_receive(message)
+            response_object = ModbusResponse(response)
+            print(response_object)
+            time.sleep(0.1)
     
     # Position Control Test Mode
-
     def Enable_Position_Mode(self, enable = True):
         address = ServoControlRegistry.CTRL_MODE_SEL.value
         print(f"Address of {address}")
