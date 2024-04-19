@@ -162,6 +162,32 @@ class ServoController:
         response_object = ModbusResponse(response)
         print(response_object)
 
+    def clear_alarm_12(self):
+        print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
+        config_value = ServoUtility.config_hex_with(0, 0, 4, 0)
+        message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+        print(response_object)
+
+    def servo_on(self):
+        print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
+        config_value = ServoUtility.config_hex_with(0, 0, 4, 1)
+        message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+        print(response_object)
+
+    def servo_off(self):
+        print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
+        config_value = ServoUtility.config_hex_with(0, 0, 4, 1)
+        message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+        print(response_object)
+
+
+
     # Pos mode 0x0000 0x0000
     def read_PD_01(self):
         print(f"Address of PD{PD.DIA1.no} {PD.DIA1.name}: {PD.DIA1.address}")
