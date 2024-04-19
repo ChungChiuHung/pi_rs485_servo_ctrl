@@ -146,6 +146,8 @@ class ServoController:
     # 0x0041 (DI7 + DI1) SON
     # 0000 0  0  0  0 0 1 0 0 0 0 0 1
     def write_PD_25(self):
+        self.write_PD_16_Enable_DI_Control()
+        time.sleep(0.1)
         print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
         config_value = ServoUtility.config_hex_with(0, 0, 4, 1)
         message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
@@ -154,6 +156,8 @@ class ServoController:
         print(response_object)
 
     def read_PD_25(self):
+        self.write_PD_16_Enable_DI_Control()
+        time.sleep(0.1)
         print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
         message = self.modbus_client.build_read_message(PD.ITST.address, 1)
         print(f"Build Read Message: {message}")
@@ -163,6 +167,8 @@ class ServoController:
         print(response_object)
 
     def clear_alarm_12(self):
+        self.write_PD_16_Enable_DI_Control()
+        time.sleep(0.1)
         print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
         config_value = ServoUtility.config_hex_with(0, 0, 4, 0)
         message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
