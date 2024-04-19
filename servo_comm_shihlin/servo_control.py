@@ -314,8 +314,12 @@ class ServoController:
     # Read Position Control related parameters
     def Read_Pos_Related_Paremters(self):
         read_address_array = [PA.STY, PA.HMOV, PA.PLSS,
-                              PA.ENR, PA.PO1H, PA.POL,
-                              ]
+                              PA.ENR, PA.PO1H, PA.POL, 
+                              PD.SDI, PD.ITST, PD.MCOK]
+        #PD28 MCOK
+        #PD16 SDI 
+        #PD25 ITST
+
         #PA01, 2 3, 6, 7, 13, 15
         #PA02, ATUM: Gain tuning mode option
         #PA03, ATUL: Auto-tuning response level setting
@@ -325,7 +329,7 @@ class ServoController:
         #PA15, CRSHA: Motor crash protection (time) 
         
         for address in read_address_array:
-            print(f"Read PA{address.no}: {address.name}: {hex(address.address)}")
+            print(f"Read {address.no}: {address.name}: {hex(address.address)}")
             message = self.modbus_client.build_read_message(address.address, 1)
             response = self.modbus_client.send_and_receive(message)
             response_object = ModbusResponse(response)
