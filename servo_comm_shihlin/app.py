@@ -105,8 +105,6 @@ def handle_action():
             servo_ctrller.clear_alarm_12()
 
       elif action == "enablePosMode":
-            servo_ctrller.Enable_Position_Mode(True)
-            time.sleep(0.1)
             servo_ctrller.config_acc_dec_0x0902(500)
             time.sleep(0.1)
             servo_ctrller.config_speed_0x0903(600)
@@ -116,6 +114,9 @@ def handle_action():
             servo_ctrller.config_pulses_0x0906_high_byte(0x0780)
             time.sleep(0.1)
             servo_ctrller.start_continuous_reading(0x0204, 2)
+            time.sleep(0.1)
+            servo_ctrller.Enable_Position_Mode(True)
+            time.sleep(0.1)
             
 
       elif action == "posTestStart_CW":
