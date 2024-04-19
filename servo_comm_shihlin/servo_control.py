@@ -407,6 +407,8 @@ class ServoController:
         print(response_object)
 
     def pos_ctrl_test_sequence(self):
+        self.start_test_pos_mode()
+        time.sleep(0.1)
         self.config_acc_dec_0x0902()
         time.sleep(0.1)
         self.config_speed_0x0903()
