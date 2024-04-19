@@ -83,7 +83,7 @@ def handle_action():
             servo_ctrller.servo_off()
       
       elif action == "getMsg":
-            
+
             servo_ctrller.read_PD_16()
             time.sleep(0.1)
             servo_ctrller.read_PD_25()
@@ -92,9 +92,11 @@ def handle_action():
 
       elif action == "getIOOutput":
 
-            servo_ctrller.read_PD_16()
+            servo_ctrller.read_servo_state()
             time.sleep(0.1)
-            servo_ctrller.read_PD_25()
+
+      elif action == "posTestStart":
+            servo_ctrller.pos_ctrl_test_sequence()
 
       elif action == "setPoint_1":
 
