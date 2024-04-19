@@ -388,7 +388,7 @@ class ServoController:
     
     def config_pulses_0x0906_high_byte(self):
         print(f"Address 0x0906, 1 word")
-        config_value = 0x0040
+        config_value = 0x0780
         message = self.modbus_client.build_write_message(0x0906, config_value)
         print(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
