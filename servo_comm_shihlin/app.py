@@ -98,7 +98,7 @@ def handle_action():
       elif action == "posTestStart_CW":
             servo_ctrller.pos_step_motion_test(CW=True)
 
-      elif action == "posTestStop_CCW":
+      elif action == "posTestStart_CCW":
             servo_ctrller.pos_step_motion_test(CW=False)
 
       elif action == "setPoint_1":
