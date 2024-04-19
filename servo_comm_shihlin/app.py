@@ -16,12 +16,11 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your keys')
 gpio_utils = GPIOUtils()
 
 # Configure the serial port
-port_manager = SerialPortManager(baud_rate=9600)
-port_manager.connect()
-if port_manager.get_serial_instance():
-      print(f"Connected port: {port_manager.get_connected_port()}")
-      print(f"Current baud rate: {port_manager.get_baud_rate()}")
-      servo_ctrller = ServoController(port_manager.get_serial_instance())
+serial_manager = SerialPortManager()
+if serial_manager.get_serial_instance():
+      print(f"Connected port: {serial_manager.get_connected_port()}")
+      print(f"Current baud rate: {serial_manager.get_baud_rate()}")
+      servo_ctrller = ServoController(serial_manager)
 else:
       print("Could not configure any serial port. Exiting.")
       exit()
