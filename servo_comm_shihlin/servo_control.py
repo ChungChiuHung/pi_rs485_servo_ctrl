@@ -408,20 +408,20 @@ class ServoController:
 
     def pos_step_motion_test(self, CW=True):
         self.start_test_pos_mode()
-        time.sleep(0.1)
+        time.sleep(0.05)
         self.config_acc_dec_0x0902()
-        time.sleep(0.1)
+        time.sleep(0.05)
         self.config_speed_0x0903()
-        time.sleep(0.1)
+        time.sleep(0.05)
         self.config_pulses_0x0905_low_byte()
-        time.sleep(0.1)
+        time.sleep(0.05)
         self.config_pulses_0x0906_high_byte()
-        time.sleep(0.1)
+        time.sleep(0.05)
         if CW ==True:
             self.pos_motion_start_0x0907(1)
         else:
             self.pos_motion_start_0x0907(2)
-        time.sleep(0.1)
+        time.sleep(0.05)
 
     
 
