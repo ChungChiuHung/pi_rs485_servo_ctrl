@@ -368,7 +368,7 @@ class ServoController:
 
     def config_speed_0x0903(self):
         print(f"Address 0x0903, 1 word")
-        config_value = 100
+        config_value = 60
         message = self.modbus_client.build_write_message(0x0903, config_value)
         print(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
@@ -378,7 +378,7 @@ class ServoController:
 
     def config_pulses_0x0905_low_byte(self):
         print(f"Address 0x0905, 1 word")
-        config_value = 0xFFFF
+        config_value = 0x05B0
         message = self.modbus_client.build_write_message(0x0905, config_value)
         print(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
@@ -388,7 +388,7 @@ class ServoController:
     
     def config_pulses_0x0906_high_byte(self):
         print(f"Address 0x0906, 1 word")
-        config_value = 0x0FFF
+        config_value = 0x005B
         message = self.modbus_client.build_write_message(0x0906, config_value)
         print(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
