@@ -175,6 +175,7 @@ class ServoController:
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         print(response_object)
+        print("\n")
 
     def servo_on(self):
         print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
@@ -183,16 +184,17 @@ class ServoController:
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         print(response_object)
+        print("\n")
+
 
     def servo_off(self):
         print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
-        config_value = ServoUtility.config_hex_with(0, 0, 4, 1)
+        config_value = ServoUtility.config_hex_with(0, 0, 4, 0)
         message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         print(response_object)
-
-
+        print("\n")
 
     # Pos mode 0x0000 0x0000
     def read_PD_01(self):
@@ -273,9 +275,7 @@ class ServoController:
         print(f"Build Read Command: {message}")
         response = self.modbus_client.send_and_receive(message)
         print(f"Response Message: {response}")
-
         response_object = ModbusResponse(response)
-
         print(response_object)
 
     def read_alarm_msg(self):
@@ -284,9 +284,7 @@ class ServoController:
         print(f"Build Read Command: {message}")
         response = self.modbus_client.send_and_receive(message)
         print(f"Response Message: {response}")
-
         response_object = ModbusResponse(response)
-
         print(response_object)
 
     # Select test mode 0x0004 (Pos test mode)
@@ -318,6 +316,7 @@ class ServoController:
 
         print(int.from_bytes(response_object.data_bytes, byteorder='big'))
 
+        
         while False:
             message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
             response = self.modbus_client.send_and_receive(message)
@@ -325,6 +324,8 @@ class ServoController:
             print(response_object)
             flag_value = int(response_object.data, 16)
             time.sleep(0.1)
+
+        print("\n")
 
 
 

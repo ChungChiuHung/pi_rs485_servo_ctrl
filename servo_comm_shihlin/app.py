@@ -83,7 +83,7 @@ def handle_action():
             servo_ctrller.servo_off()
       
       elif action == "getMsg":
-            print("\n")
+            
             servo_ctrller.read_PD_16()
             time.sleep(0.1)
             servo_ctrller.read_PD_25()
