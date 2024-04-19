@@ -382,7 +382,6 @@ class ServoController:
         time.sleep(0.1)
         self.pos_motion_start_0x0907(1)
         time.sleep(0.1)
-        self.stop_test_mode()
 
     
 
