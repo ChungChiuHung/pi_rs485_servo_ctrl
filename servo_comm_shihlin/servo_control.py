@@ -373,7 +373,6 @@ class ServoController:
         print(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
-
         print(response_object)
 
     def config_pulses_0x0905_low_byte(self):
@@ -383,7 +382,6 @@ class ServoController:
         print(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
-
         print(response_object)
     
     def config_pulses_0x0906_high_byte(self):
@@ -393,7 +391,6 @@ class ServoController:
         print(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
-
         print(response_object)
 
     def read_0x0905_low_byte(self):
@@ -419,25 +416,38 @@ class ServoController:
         print(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
+        print(response_object)
 
+    def read_encoder_before_gear_ratio(self):
+        print(f"Address 0x0000, 1 word")
+        message = self.modbus_client.build_read_message(0x0000, 2)
+        print(f"Build Read Command: {message}")
+        response_object = ModbusResponse(message)
+        print(response_object)
+    
+    def read_encoder_after_gear_ratio(self):
+        print(f"Address 0x0024, 1 word")
+        message = self.modbus_client.build_read_message(0x0024, 2)
+        print(f"Build Read Command: {message}")
+        response_object = ModbusResponse(message)
         print(response_object)
 
     def pos_step_motion_test(self, CW=True):
         self.start_test_pos_mode()
-        time.sleep(0.05)
+        time.sleep(0.1)
         self.config_acc_dec_0x0902()
-        time.sleep(0.05)
+        time.sleep(0.1)
         self.config_speed_0x0903()
-        time.sleep(0.05)
+        time.sleep(0.1)
         self.config_pulses_0x0905_low_byte()
-        time.sleep(0.05)
+        time.sleep(0.1)
         self.config_pulses_0x0906_high_byte()
-        time.sleep(0.05)
+        time.sleep(0.1)
         if CW ==True:
             self.pos_motion_start_0x0907(1)
         else:
             self.pos_motion_start_0x0907(2)
-        time.sleep(0.05)
+        time.sleep(0.1)
 
     
 

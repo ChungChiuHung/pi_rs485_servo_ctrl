@@ -92,6 +92,10 @@ def handle_action():
             time.sleep(0.05)
             servo_ctrller.read_0x0906_high_byte()
             time.sleep(0.05)
+            servo_ctrller.read_encoder_before_gear_ratio()
+            time.sleep(0.05)
+            servo_ctrller.read_encoder_after_gear_ratio()
+            time.sleep(0.05)
             
 
       elif action == "getIOOutput":
