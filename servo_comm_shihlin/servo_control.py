@@ -57,9 +57,7 @@ class ServoController:
         message = self.modbus_client.build_read_message(PA.STY.address, 2)
         print(f"Build Read Message: {message}")
         response = self.modbus_client.send_and_receive(message)
-
         response_object = ModbusResponse(response)
-
         print(response_object)
 
     def write_PA01_Ctrl_Mode(self):

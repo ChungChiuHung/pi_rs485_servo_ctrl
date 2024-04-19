@@ -41,7 +41,7 @@ class ModbusASCIIClient:
         if self.ensure_connection():
             try:
                 self.serial_port_manager.get_serial_instance().write(message)
-                print("Message sent:", message)
+                #print("Message sent:", message)
             except serial.SerialException as e:
                 print(f"Failed to send message due to serial error: {e}")
             except Exception as e:
@@ -67,7 +67,7 @@ class ModbusASCIIClient:
 
                 if response:
                     print("Response received:", response)
-                    print("Parsing Response: ", self.parse_response(response))
+                    #print("Parsing Response: ", self.parse_response(response))
                     return response
                 else:
                     print("No response received.")
