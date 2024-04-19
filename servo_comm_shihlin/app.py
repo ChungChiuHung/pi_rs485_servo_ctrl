@@ -88,6 +88,8 @@ def handle_action():
             time.sleep(0.1)
             servo_ctrller.read_PD_25()
             time.sleep(0.1)
+            servo_ctrller.read_0x0905_low_byte()
+            time.sleep(0.1)
             
 
       elif action == "getIOOutput":
