@@ -284,7 +284,7 @@ class ServoController:
         response_object = ModbusResponse(response)
         print(response_object)
 
-        print(int.from_bytes(response_object.data_bytes))
+        print(int.from_bytes(response_object.data_bytes, byteorder='big'))
 
         while False:
             message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
