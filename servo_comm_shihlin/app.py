@@ -65,8 +65,10 @@ def handle_action():
 
       print(f"Received action: {action}")
 
-      # Perform the raspi action here based on action type
+      # Enable the Digital I/O Writable
+      servo_ctrller.write_PD_16_Enable_DI_Control()
 
+      # Perform the raspi action here based on action type
       if action == "start":
            print("start")
       elif action == "stop":
@@ -98,10 +100,19 @@ def handle_action():
             time.sleep(0.05)
             
 
-      elif action == "getIOOutput":
+      elif action == "clearAlarm12":
+            servo_ctrller.clear_alarm_12()
 
-            servo_ctrller.read_servo_state()
+      elif action == "enablePosMode":
+            servo_ctrller.Enable_Position_Mode(True)
             time.sleep(0.1)
+            servo_ctrller.config_acc_dec_0x0902(500)
+            time.sleep(0.1)
+            servo_ctrller.config_speed_0x0903(600)
+            time.sleep(0.1)
+            servo_ctrller.config_pulses_0x0905_low_byte(0x0001)
+            time.sleep(0.1)
+            servo_ctrller.config_pulses_0x0906_high_byte(0x0780)
 
       elif action == "posTestStart_CW":
             servo_ctrller.pos_step_motion_test(CW=True)

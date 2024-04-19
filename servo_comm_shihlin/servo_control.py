@@ -148,8 +148,6 @@ class ServoController:
     # 0x0341 (DI11 + DI10 + DI7 + DI1) : (LSN, LSP, EMG, SON)
     # 0000 0  0  1  1 0 1 0 0 0 0 0 1
     def write_PD_25(self):
-        self.write_PD_16_Enable_DI_Control()
-        time.sleep(0.1)
         print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
         config_value = ServoUtility.config_hex_with(0, 0, 4, 1)
         message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
@@ -158,8 +156,6 @@ class ServoController:
         print(response_object)
 
     def read_PD_25(self):
-        self.write_PD_16_Enable_DI_Control()
-        time.sleep(0.1)
         print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
         message = self.modbus_client.build_read_message(PD.ITST.address, 1)
         print(f"Build Read Message: {message}")
@@ -168,9 +164,7 @@ class ServoController:
         response_object = ModbusResponse(response)
         print(response_object)
 
-    def clear_alarm_12(self):
-        self.write_PD_16_Enable_DI_Control()
-        time.sleep(0.1)
+    def clear_alarm(self):
         print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
         config_value = ServoUtility.config_hex_with(0, 3, 4, 0)
         message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
@@ -182,6 +176,15 @@ class ServoController:
     def servo_on(self):
         print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
         config_value = ServoUtility.config_hex_with(0, 3, 4, 1)
+        message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+        print(response_object)
+        print("\n")
+
+    def clear_alarm_12(self):
+        print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
+        config_value = ServoUtility.config_hex_with(0, 0, 4, 0)
         message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
@@ -332,31 +335,23 @@ class ServoController:
     
     # Position Control Test Mode
 
-    def stop_test_mode(self):
-        print(f"Address of 0x0901, 1 word")
-        config_value = 0x0000
-        message = self.modbus_client.build_write_message(0x0901, config_value)
+    def Enable_Position_Mode(self, enable = True):
+        address = ServoControlRegistry.CTRL_MODE_SEL.value
+        print(f"Address of {address}")
+        if enable == True:
+            config_value = 0x0004
+        else:
+            config_value = 0x0000
+        message = self.modbus_client.build_write_message(address, config_value)
         print(f"Build Read Command: {message}")
         response = self.modbus_client.send_and_receive(message)
         print(f"Response Message: {response}")
         response_object = ModbusResponse(response)
-
         print(response_object)
 
-    def start_test_pos_mode(self):
-        print(f"Address of 0x0901, 1 word")
-        config_value = 0x0004
-        message = self.modbus_client.build_write_message(0x0901, config_value)
-        print(f"Build Read Command: {message}")
-        response = self.modbus_client.send_and_receive(message)
-        print(f"Response Message: {response}")
-        response_object = ModbusResponse(response)
-
-        print(response_object)
-
-    def config_acc_dec_0x0902(self):
+    def config_acc_dec_0x0902(self, acc_dec_time):
         print(f"Address 0x0902, 1 word")
-        config_value = 500
+        config_value = acc_dec_time
         message = self.modbus_client.build_write_message(0x0902, config_value)
         print(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
@@ -364,28 +359,30 @@ class ServoController:
 
         print(response_object)
 
-    def config_speed_0x0903(self):
+    def config_speed_0x0903(self, speed_rpm):
         print(f"Address 0x0903, 1 word")
-        config_value = 300
+        config_value = speed_rpm
         message = self.modbus_client.build_write_message(0x0903, config_value)
         print(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         print(response_object)
 
-    def config_pulses_0x0905_low_byte(self):
-        print(f"Address 0x0905, 1 word")
-        config_value = 0x0002
-        message = self.modbus_client.build_write_message(0x0905, config_value)
+    def config_pulses_0x0905_low_byte(self, low_byte):
+        address = ServoControlRegistry.POS_PULSES_CMD_L.value
+        print(f"Address {address}, 1 word")
+        config_value = low_byte
+        message = self.modbus_client.build_write_message(address, config_value)
         print(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         print(response_object)
     
-    def config_pulses_0x0906_high_byte(self):
-        print(f"Address 0x0906, 1 word")
-        config_value = 0x0780
-        message = self.modbus_client.build_write_message(0x0906, config_value)
+    def config_pulses_0x0906_high_byte(self, high_byte):
+        address = ServoControlRegistry.POS_PULSES_CMD_H.value
+        print(f"Address {address}, 1 word")
+        config_value = high_byte
+        message = self.modbus_client.build_write_message(address, config_value)
         print(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
@@ -431,15 +428,6 @@ class ServoController:
         print(response_object)
 
     def pos_step_motion_test(self, CW=True):
-        self.start_test_pos_mode()
-        time.sleep(0.1)
-        self.config_acc_dec_0x0902()
-        time.sleep(0.1)
-        self.config_speed_0x0903()
-        time.sleep(0.1)
-        self.config_pulses_0x0905_low_byte()
-        time.sleep(0.1)
-        self.config_pulses_0x0906_high_byte()
         time.sleep(0.1)
         if CW ==True:
             self.pos_motion_start_0x0907(1)
