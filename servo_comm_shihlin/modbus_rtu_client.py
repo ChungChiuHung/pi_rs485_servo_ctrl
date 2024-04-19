@@ -57,7 +57,7 @@ class ModbusRTUClient:
                     response = self.serial_port_manager.get_serial_instance().read.all()
 
                 if response:
-                    print("Response received:", response.hex())
+                    #print("Response received:", response.hex())
                     return response
                 else:
                     print("No response received.")
