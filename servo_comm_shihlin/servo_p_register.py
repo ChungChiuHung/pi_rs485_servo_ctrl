@@ -90,20 +90,20 @@ class PC:
         return cls._start_address + (no -1) * cls._register_size
     @classmethod
     def init_registers(cls):
-        TL2 = Register(25, "TL2", "Inner torque limit 2 [%]", 100, cls.calculate_address(25))
-        CMX2 = Register(32, "CMX2", "Electronic gear numerator 2", 1, cls.calculate_address(32))
-        CMX3 = Register(33, "CMX3", "Electronic gear numerator 3", 1, cls.calculate_address(33))
-        CMX4 = Register(34, "CMX4", "Electronic gear numerator 4", 1, cls.calculate_address(34))
+        cls.TL2 = Register(25, "TL2", "Inner torque limit 2 [%]", 100, cls.calculate_address(25))
+        cls.CMX2 = Register(32, "CMX2", "Electronic gear numerator 2", 1, cls.calculate_address(32))
+        cls.CMX3 = Register(33, "CMX3", "Electronic gear numerator 3", 1, cls.calculate_address(33))
+        cls.CMX4 = Register(34, "CMX4", "Electronic gear numerator 4", 1, cls.calculate_address(34))
 
         #------------Digital I/O setting related parameters-----------
-        MBR = Register(16, "MBR", "Electromagnetic brake output delay time [pulse]", 100, cls.calculate_address(16) )
-        ZSP = Register(17, "ZSP", "Zero speed acknowledged range [ms]", 100, cls.calculate_address(17))
+        cls.MBR = Register(16, "MBR", "Electromagnetic brake output delay time [pulse]", 100, cls.calculate_address(16) )
+        cls.ZSP = Register(17, "ZSP", "Zero speed acknowledged range [ms]", 100, cls.calculate_address(17))
 
         #------------Communication related parameters----------
-        SNO = Register(20, "SNO", "Communication device number", 1, cls.calculate_address(20))
-        CMS = Register(21, "CMS", "Communication mode option", 0x0010, cls.calculate_address(21))
-        BPS = Register(22, "BPS", "Communication protocol option", 0x0010, cls.calculate_address(22))
-        SIC = Register(23, "SIC", "Communication time-out process option", 0, cls.calculate_address(23))
+        cls.SNO = Register(20, "SNO", "Communication device number", 1, cls.calculate_address(20))
+        cls.CMS = Register(21, "CMS", "Communication mode option", 0x0010, cls.calculate_address(21))
+        cls.BPS = Register(22, "BPS", "Communication protocol option", 0x0010, cls.calculate_address(22))
+        cls.SIC = Register(23, "SIC", "Communication time-out process option", 0, cls.calculate_address(23))
 
 class PD:
     _start_address = 0x0600

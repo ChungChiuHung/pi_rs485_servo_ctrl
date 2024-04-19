@@ -314,7 +314,7 @@ class ServoController:
     # Read Position Control related parameters
     def Read_Pos_Related_Paremters(self):
         read_address_array = [PA.STY, PA.HMOV, PA.PLSS,
-                              PA.ENR, PA.PO1H, PA.POL, 
+                              PA.ENR, PA.PO1H, PA.POL,
                               PD.SDI, PD.ITST, PD.MCOK]
         #PD28 MCOK
         #PD16 SDI 
