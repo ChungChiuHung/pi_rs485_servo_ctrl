@@ -84,7 +84,7 @@ if __name__ =="__main__":
     #time.sleep(0.05)
     #print("\n")
 
-    #controller.pos_test_sequence()
+    controller.pos_ctrl_test_sequence()
 
     
     
