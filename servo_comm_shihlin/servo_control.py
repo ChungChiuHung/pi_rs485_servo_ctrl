@@ -368,7 +368,7 @@ class ServoController:
 
     def config_speed_0x0903(self):
         print(f"Address 0x0903, 1 word")
-        config_value = 60
+        config_value = 300
         message = self.modbus_client.build_write_message(0x0903, config_value)
         print(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
