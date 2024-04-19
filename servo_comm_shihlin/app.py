@@ -3,6 +3,7 @@ import time
 from flask import Flask, render_template, request, jsonify, Response
 from functools import wraps
 import traceback
+from threading import Thread, Event
 from gpio_utils import GPIOUtils
 from serial_port_manager import SerialPortManager
 from modbus_command_code import CmdCode
@@ -113,6 +114,9 @@ def handle_action():
             servo_ctrller.config_pulses_0x0905_low_byte(0x0001)
             time.sleep(0.1)
             servo_ctrller.config_pulses_0x0906_high_byte(0x0780)
+            time.sleep(0.1)
+            servo_ctrller.start_continuous_reading(0x0204, 2)
+            
 
       elif action == "posTestStart_CW":
             servo_ctrller.pos_step_motion_test(CW=True)

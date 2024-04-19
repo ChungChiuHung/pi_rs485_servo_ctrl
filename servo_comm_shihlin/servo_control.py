@@ -1,6 +1,6 @@
 import time
 import struct
-import inspect
+from threading import Thread, Event
 from serial import SerialException
 from modbus_ascii_client import ModbusASCIIClient
 from modbus_response import ModbusResponse
@@ -19,6 +19,8 @@ class ServoController:
     def __init__(self, serial_port):
         self.serial_port = serial_port
         self.modbus_client = ModbusASCIIClient(device_number=1, serial_port_manager= serial_port)
+        self.read_thread = None
+        self.read_thread_stop_event = Event()
 
     def delay_ms(self, milliseconds):
       time.sleep(milliseconds / 1000.0)
@@ -27,57 +29,35 @@ class ServoController:
         hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
         print(f"{data_name}: {hex_string}")
 
-    def send_command_and_wait_for_response(self, command, description, read_timeout=0.1):
-        try:
-            self.modbus_client.send(command)
-            time.sleep(read_timeout)
-            response = self.modbus_client.receive()
-            if response:
-                print(f"{description} response received: {response.hex()}")
-            else:
-                print(f"Timeout waiting for {description} response.")
-            return response
-        except SerialException as e:
-            print(f"Error during communication: {e}")
-        except Exception as e:
-            print(f"An unexpected error occurred: {e}")
-        return None
-    
-    def parse_logic_io(self, logic_io_bytes):
-        io_status= {}
-        return io_status
-    
-    def send_servo_command(self, command_code, data=b'', bitmap=None, value=None, response_delay=0):
-        if bitmap is not None and value is not None:
-            command = self.modbus_client.build_write_message(bitmap, struct.pack('>H', value))
-        else:
-            command = self.modbus_client.build_write_message(command_code, data)
-        self.send_command_and_wait_for_response(command, f"{command_code.name}", response_delay)
-
-    def monitor_end_status(self, status_code, interval=0.5, duration=10):
-        end_time = time.time() + duration
-        while time.time() < end_time and self.monitoring_active:
-            status_command = self.modbus_client.build_read_message(status_code, 4)
-            status = self.send_command_and_wait_for_response(status_command, "Monitoring Status", interval)
-            if status:
-                print("Status: ", status.hex())
-            time.sleep(interval)
-
-    def execute_motion_start_sequence(self, commands):
-        self.monitoring_active = True
-        print(f"execute_motion {commands}")
-
-    def start_motion_sequence(self, commands):
-        self.monitoring_active = True
-        print(f"execute_motion {commands}")
-
-    def stop_motion_sequence(self):
-        self.monitoring_active = False
-
-    def execute_motion_sequence(self, commands):
-        print(f"execute_motion {commands}")
+    def start_continuous_reading(self, address, interval=1):
+        if self.read_thread is not None:
+            self.stop_continuous_reading()
         
+        self.read_thread_stop_event.clear()
+        self.read_thread = Thread(target=self._read_continuously, args=(address, interval))
+        self.read_thread.start()
 
+    def _read_continuously(self, address, interval):
+        while not self.read_thread_stop_event.is_set():
+            message = self.modbus_client.build_read_message(address, 1)
+            print(f"Continuous Read - Build Read Message: {message}")
+            response = self.modbus_client.send_and_receive(message)
+            if response:
+                print(f"Continuous Read - Response Message: {response}")
+                response_object = ModbusResponse(response)
+                print(response_object)
+            else:
+                print("Continuous Read - No response or read error.")
+            time.sleep(interval)
+    
+    def stop_continuous_reading(self):
+        if self.read_thread is not None:
+            self.read_thread_stop_event.set()
+            self.read_thread.join()
+            self.read_thread = None
+            print("Continuous reading stopped.")
+
+    
     #  0x0010, 0x0000
     def read_PA01_Ctrl_Mode(self):
         print(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
