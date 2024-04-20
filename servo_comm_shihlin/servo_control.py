@@ -15,6 +15,8 @@ PD.init_registers()
 PE.init_registers()
 PF.init_registers()
 
+float_error = 0
+
 class ServoController:
     def __init__(self, serial_port):
         self.serial_port = serial_port
@@ -427,6 +429,32 @@ class ServoController:
         else:
             self.pos_motion_start_0x0907(2)
         time.sleep(0.1)
+
+    def post_step_motion_by(self, angle=0):
+        # 125829120 pulse/rev
+        # 349525 + 1/3
+        x = 1 + angle + float_error
+        base_pulse_per_degree = 345625 + x//3
+        pulse_value = angle * base_pulse_per_degree
+
+        if x % 3 !=0:
+            float_error += x % 3
+        else:
+            float_error = 0
+        
+        print(base_pulse_per_degree)
+        print(pulse_value)
+        print(float_error)
+
+        low_byte = pulse_value & 0xFFFF
+        high_byte = (pulse_value >> 16) & 0xFFFF
+
+        print (f"{high_byte}, {low_byte}")
+        #self.config_pulses_0x0905_low_byte(low_byte)
+        #time.sleep(0.05)
+        #self.config_pulses_0x0906_high_byte(high_byte)
+
+
 
     
 
