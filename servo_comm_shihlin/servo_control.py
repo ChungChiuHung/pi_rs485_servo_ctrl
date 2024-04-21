@@ -427,7 +427,7 @@ class ServoController:
         print(response_object)
 
     def pos_step_motion_test(self, CW=True):
-        #time.sleep(0.1)
+        time.sleep(0.1)
         if CW ==True:
             self.pos_motion_start_0x0907(1)
         else:

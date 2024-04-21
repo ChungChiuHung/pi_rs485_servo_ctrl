@@ -7,6 +7,7 @@ class ModbusResponse:
             response = response.decode('utf-8')
         
         if response[0] != ':' or response[-2:] != '\r\n':
+            print(f"response: {response}")
             raise ValueError("Invalid response: Does not start with ':' or does not end with '\\r\\n'")
         
         self.stx = ':'
