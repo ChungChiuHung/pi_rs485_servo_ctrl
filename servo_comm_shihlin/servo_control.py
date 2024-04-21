@@ -360,6 +360,7 @@ class ServoController:
         config_value = 0x0000
         if enable:
             config_value = 0x0003
+
         message = self.modbus_client.build_write_message(address, config_value)
         response = self.modbus_client.send_and_receive(message)
 
@@ -519,7 +520,7 @@ class ServoController:
         time.sleep(0.1)
         self.config_speed_0x0903(speed_rpm)
         time.sleep(0.1)
-        self.start_continuous_reading(0x0900, 0.2)
+        self.start_continuous_reading(0x0900, 0.3)
         
 
     # 0: Stop
