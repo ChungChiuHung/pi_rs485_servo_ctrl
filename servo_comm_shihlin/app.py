@@ -108,28 +108,22 @@ def handle_action():
             time.sleep(0.05)
             servo_ctrller.config_pulses_0x0906_high_byte(0x0780)
             time.sleep(0.05)
-            servo_ctrller.start_continuous_reading(0x0900, 0.1)
+            servo_ctrller.start_continuous_reading(0x0900, 0.2)
             time.sleep(0.1)
             
             
 
       elif action == "posTestStart_CW":
-            servo_ctrller.Enable_Position_Mode(True)
-            time.sleep(0.05)
-
             servo_ctrller.pos_step_motion_test(CW=True)
 
       elif action == "posTestStart_CCW":
-            servo_ctrller.Enable_Position_Mode(True)
-            time.sleep(0.05)
-
             servo_ctrller.pos_step_motion_test(CW=False)
 
       elif action == "setPoint_1":
 
             print("set point")
             #servo_ctrller.post_step_motion_by(90)
-            servo_ctrller.Enable_Position_Mode(False)
+
             servo_ctrller.config_pulses_0x0905_low_byte(0x0001)
             time.sleep(0.05)
             servo_ctrller.config_pulses_0x0906_high_byte(0x0380)
@@ -139,7 +133,7 @@ def handle_action():
             
             print("set point")
             #servo_ctrller.post_step_motion_by(180)
-            servo_ctrller.Enable_Position_Mode(False)
+  
             servo_ctrller.config_pulses_0x0905_low_byte(0x0001)
             time.sleep(0.05)
             servo_ctrller.config_pulses_0x0906_high_byte(0x0780)
