@@ -343,17 +343,26 @@ class ServoController:
     # Position Control Test Mode
     def Enable_Position_Mode(self, enable = True):
         address = ServoControlRegistry.CTRL_MODE_SEL.value
-        print(f"Address of {address}")
+        config_value = 0x0000
+        #print(f"Address of {address}")
         if enable == True:
             config_value = 0x0004
-        else:
-            config_value = 0x0000
+
         message = self.modbus_client.build_write_message(address, config_value)
-        print(f"Build Read Command: {message}")
+        # print(f"Build Read Command: {message}")
         response = self.modbus_client.send_and_receive(message)
-        print(f"Response Message: {response}")
-        response_object = ModbusResponse(response)
-        print(response_object)
+        # print(f"Response Message: {response}")
+        # response_object = ModbusResponse(response)
+        # print(response_object)
+
+    def Enable_JOG_Mode(self, enable = True):
+        address = ServoControlRegistry.CTRL_MODE_SEL.value
+        config_value = 0x0000
+        if enable:
+            config_value = 0x0003
+        message = self.modbus_client.build_write_message(address, config_value)
+        self.modbus_client.send_and_receive(message)
+
 
     def config_acc_dec_0x0902(self, acc_dec_time):
         print(f"Address 0x0902, 1 word")
@@ -504,6 +513,29 @@ class ServoController:
         else:
             print("Running Servo CCW")
             self.pos_step_motion_test(False)
+
+    def enable_countinue_rotate(self, speed_rpm):
+        
+        self.Enable_JOG_Mode(True)
+        self.start_continuous_reading()
+        self.config_speed_0x0903(speed_rpm)
+        time.sleep(0.05)
+
+    # 0: Stop
+    # 1: CW
+    # 2: CCW
+    def _countinue_rotate_action(self,action_value = 0):
+        if action_value == 0:
+            print("Servo Stop!")
+        elif action_value == 1:
+            print("Servo CW")
+        elif action_value == 2:
+            print("Servo CCW")
+        else:
+            print("Error Config.")
+        address = 0x0904
+        message = self.modbus_client.build_write_message(address, action_value)
+        self.modbus_client.send_and_receive(message)
 
 
 

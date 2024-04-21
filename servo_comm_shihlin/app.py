@@ -132,14 +132,22 @@ def handle_action():
            
            print("HOME")
            servo_ctrller.post_step_motion_by(0)
-            
-      elif action == "motionStart":
+
+      elif action == "enableSpeedCtrlMode":
+            servo_ctrller.enable_countinue_rotate(100)
+
+      elif action == "motionStart_CW":
             print("START")
+            servo_ctrller._countinue_rotate_action(1)
       
+      elif action == "motionStart_CCW":
+            print("START")
+            servo_ctrller._countinue_rotate_action(1)
 
       elif action == "motionPause":
 
            print("motion pause")
+           servo_ctrller._countinue_rotate_action(0)
 
       elif action == "motionCancel":
             
