@@ -432,7 +432,7 @@ class ServoController:
             self.pos_motion_start_0x0907(1)
         else:
             self.pos_motion_start_0x0907(2)
-        #time.sleep(0.1)
+        time.sleep(0.1)
 
     def post_step_motion_by(self, angle=0):
         # 125829120 pulse/rev

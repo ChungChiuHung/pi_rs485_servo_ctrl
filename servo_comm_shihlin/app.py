@@ -108,9 +108,7 @@ def handle_action():
             time.sleep(0.05)
             servo_ctrller.config_pulses_0x0906_high_byte(0x0780)
             time.sleep(0.05)
-            servo_ctrller.start_continuous_reading(0x0900, 0.2)
-            time.sleep(0.1)
-            
+            servo_ctrller.start_continuous_reading(0x0900, 0.1)          
             
 
       elif action == "posTestStart_CW":
