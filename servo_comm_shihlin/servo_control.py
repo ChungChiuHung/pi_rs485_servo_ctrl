@@ -427,12 +427,12 @@ class ServoController:
         print(response_object)
 
     def pos_step_motion_test(self, CW=True):
-        time.sleep(0.1)
+        #time.sleep(0.1)
         if CW ==True:
             self.pos_motion_start_0x0907(1)
         else:
             self.pos_motion_start_0x0907(2)
-        time.sleep(0.1)
+        #time.sleep(0.1)
 
     def post_step_motion_by(self, angle=0):
         # 125829120 pulse/rev
@@ -477,6 +477,7 @@ class ServoController:
         self.config_pulses_0x0905_low_byte(low_byte)
         time.sleep(0.05)
         self.config_pulses_0x0906_high_byte(high_byte)
+        time.sleep(0.05)
 
         if output_pulse > 0:
             print("Running Servo CW")
