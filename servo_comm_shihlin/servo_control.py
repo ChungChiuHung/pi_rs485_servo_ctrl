@@ -35,7 +35,7 @@ class ServoController:
         hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
         print(f"{data_name}: {hex_string}")
 
-    def start_continuous_reading(self, address=PD.MCOK.address, interval=0.1):
+    def start_continuous_reading(self, address=PD.MCOK.address, interval=0.05):
         if self.read_thread is not None:
             self.stop_continuous_reading()
         
@@ -47,6 +47,8 @@ class ServoController:
         while not self.read_thread_stop_event.is_set():
             message = self.modbus_client.build_read_message(address, 1)
             response = self.modbus_client.send_and_receive(message)
+            response_obj = ModbusResponse(response)
+            print(response_obj)
             time.sleep(interval)
     
     def stop_continuous_reading(self):
@@ -167,7 +169,6 @@ class ServoController:
         response_object = ModbusResponse(response)
         print(response_object)
         print("\n")
-
 
     def servo_off(self):
         print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
