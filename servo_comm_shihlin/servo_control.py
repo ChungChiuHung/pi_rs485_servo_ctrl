@@ -517,11 +517,11 @@ class ServoController:
     def enable_speed_ctrl(self, speed_rpm):
         
         self.Enable_JOG_Mode(True)
-        time.sleep(0.05)
+        time.sleep(0.1)
         self.config_speed_0x0903(speed_rpm)
-        time.sleep(0.05)
+        time.sleep(0.1)
         self.start_continuous_reading()
-        time.sleep(0.05)
+        time.sleep(0.1)
 
     # 0: Stop
     # 1: CW
