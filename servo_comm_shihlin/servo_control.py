@@ -526,7 +526,7 @@ class ServoController:
     # 0: Stop
     # 1: CW
     # 2: CCW
-    def speed_ctrl_action(self,action_value = 0):
+    def speed_ctrl_action(self,action_value):
         if action_value == 0:
             print("Servo Stop!")
         elif action_value == 1:
