@@ -442,7 +442,7 @@ class ServoController:
             self.pos_motion_start_0x0907(2)
         time.sleep(0.1)
 
-    def post_step_motion_by(self, angle=0):
+    def post_step_motion_by(self, angle=0, acc_dec_time = 1000, speed_rpm = 100):
         # 125829120 pulse/rev
         # 349525 + 1/3 pulse/degree
         # 125829120 pulse/rev
@@ -482,10 +482,22 @@ class ServoController:
         print(f"Current Accumulate Pulse: {self.accumulate_pulse}")
         print (f"{hex(high_byte)}, {hex(low_byte)}")
 
+
+        self.stop_continuous_reading()
+        self.Enable_Position_Mode(True)
+        time.sleep(0.01)
+        self.config_acc_dec_0x0902(acc_dec_time)
+        time.sleep(0.01)
+        self.config_speed_0x0903(speed_rpm)
+        time.sleep(0.01)
+        self.start_continuous_reading()
+        time.sleep(0.01)
         self.config_pulses_0x0905_low_byte(low_byte)
-        time.sleep(0.05)
+        time.sleep(0.01)
         self.config_pulses_0x0906_high_byte(high_byte)
-        time.sleep(0.05)
+        time.sleep(0.01)
+
+
 
         if output_pulse > 0:
             print("Running Servo CW")
