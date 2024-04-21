@@ -520,7 +520,7 @@ class ServoController:
         time.sleep(0.1)
         self.config_speed_0x0903(speed_rpm)
         time.sleep(0.1)
-        self.start_continuous_reading(0x0900, 0.1)
+        self.start_continuous_reading(0x0900, 0.25)
         
 
     # 0: Stop
