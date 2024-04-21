@@ -46,7 +46,9 @@ class ServoController:
     def _read_continuously(self, address, interval):
         while not self.read_thread_stop_event.is_set():
             message = self.modbus_client.build_read_message(address, 1)
-            self.modbus_client.send_and_receive(message)
+            response = self.modbus_client.send_and_receive(message)
+            response_obj = ModbusResponse(response)
+            print(response_obj.data)
             time.sleep(interval)
     
     def stop_continuous_reading(self):
