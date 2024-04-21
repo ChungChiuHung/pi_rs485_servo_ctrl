@@ -104,19 +104,17 @@ def handle_action():
             time.sleep(0.05)
             servo_ctrller.config_speed_0x0903(600)
             time.sleep(0.05)
-            servo_ctrller.config_pulses_0x0905_low_byte(0x0001)
+            servo_ctrller.config_pulses_0x0905_low_byte(0x0000)
             time.sleep(0.05)
             servo_ctrller.config_pulses_0x0906_high_byte(0x0780)
             time.sleep(0.05)
-            #servo_ctrller.start_continuous_reading(0x0900, 0.1)          
+            servo_ctrller.start_continuous_reading(0x0900, 0.1)          
             
 
       elif action == "posTestStart_CW":
-            servo_ctrller.start_continuous_reading()
             servo_ctrller.pos_step_motion_test(CW=True)
 
       elif action == "posTestStart_CCW":
-            servo_ctrller.start_continuous_reading()
             servo_ctrller.pos_step_motion_test(CW=False)
 
       elif action == "setPoint_1":
@@ -125,11 +123,17 @@ def handle_action():
             #servo_ctrller.post_step_motion_by(90)
 
             servo_ctrller.stop_continuous_reading()
+            servo_ctrller.Enable_Position_Mode(True)
             time.sleep(0.05)
-            servo_ctrller.config_pulses_0x0905_low_byte(0x0001)
+            servo_ctrller.config_acc_dec_0x0902(1000)
+            time.sleep(0.05)
+            servo_ctrller.config_speed_0x0903(300)
+            time.sleep(0.05)
+            servo_ctrller.config_pulses_0x0905_low_byte(0x0000)
             time.sleep(0.05)
             servo_ctrller.config_pulses_0x0906_high_byte(0x0380)
             time.sleep(0.05)
+            servo_ctrller.start_continuous_reading()
 
       elif action == "setPoint_2":
             
@@ -137,11 +141,17 @@ def handle_action():
             #servo_ctrller.post_step_motion_by(180)
 
             servo_ctrller.stop_continuous_reading()
+            servo_ctrller.Enable_Position_Mode(True)
             time.sleep(0.05)
-            servo_ctrller.config_pulses_0x0905_low_byte(0x0001)
+            servo_ctrller.config_acc_dec_0x0902(1000)
             time.sleep(0.05)
-            servo_ctrller.config_pulses_0x0906_high_byte(0x0780)
+            servo_ctrller.config_speed_0x0903(300)
             time.sleep(0.05)
+            servo_ctrller.config_pulses_0x0905_low_byte(0xFFFF)
+            time.sleep(0.05)
+            servo_ctrller.config_pulses_0x0906_high_byte(0x0180)
+            time.sleep(0.05)
+            servo_ctrller.start_continuous_reading()
 
       elif action == "Home":
            
@@ -159,6 +169,8 @@ def handle_action():
       elif action == "motionCancel":
             
             print("motion cancel")
+            servo_ctrller.stop_continuous_reading()
+            servo_ctrller.Enable_Position_Mode(False)
       else:
             response['error'] = "Action not recognized."
 
