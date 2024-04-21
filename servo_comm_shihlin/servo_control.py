@@ -23,7 +23,9 @@ class ServoController:
         self.modbus_client = ModbusASCIIClient(device_number=1, serial_port_manager= serial_port)
         self.read_thread = None
         self.read_thread_stop_event = Event()
-        self.float_error=0
+        self.current_angle = 0
+        self.previous_angle = 0
+        self.float_error = 0
         self.the_accumulate_pulse = 0
 
     def delay_ms(self, milliseconds):
