@@ -23,6 +23,8 @@ class ServoController:
         self.modbus_client = ModbusASCIIClient(device_number=1, serial_port_manager= serial_port)
         self.read_thread = None
         self.read_thread_stop_event = Event()
+        self.float_error=0
+        self.the_accumulate_pulse = 0
 
     def delay_ms(self, milliseconds):
       time.sleep(milliseconds / 1000.0)
@@ -432,27 +434,54 @@ class ServoController:
 
     def post_step_motion_by(self, angle=0):
         # 125829120 pulse/rev
-        # 349525 + 1/3
-        x = 1 + angle + float_error
-        base_pulse_per_degree = 345625 + x//3
-        pulse_value = angle * base_pulse_per_degree
+        # 349525 + 1/3 pulse/degree
+        # 125829120 pulse/rev
+        # 349525 + 1/3 pulse/degree
+        base_pulse_per_degree = 345625
+        output_pulse = 0
 
-        if x % 3 !=0:
-            float_error += x % 3
-        else:
-            float_error = 0
+        print("\n")
+        print(f"Current Angle: {self.current_angle}")
+        print(f"Previous Angle: {self.previous_angle}")
+        print(f"Set Angle: {angle}")
         
-        print(base_pulse_per_degree)
-        print(pulse_value)
-        print(float_error)
+        self.previous_angle = self.current_angle
+        self.current_angle = angle
+        diff_angle = self.current_angle - self.previous_angle
 
-        low_byte = pulse_value & 0xFFFF
-        high_byte = (pulse_value >> 16) & 0xFFFF
+        if angle == 0:
+            output_pulse = self.accumulate_pulse
+            self.accumulate_pulse = 0
+            self.float_error = 0
+        else:
+            if diff_angle != 0:
+                current_fraction_part = diff_angle
+                total_fraction_part = self.float_error + current_fraction_part
+                output_pulse = (base_pulse_per_degree * diff_angle) + (total_fraction_part//3)
 
-        print (f"{high_byte}, {low_byte}")
-        #self.config_pulses_0x0905_low_byte(low_byte)
-        #time.sleep(0.05)
-        #self.config_pulses_0x0906_high_byte(high_byte)
+                the_left_fraction_part = current_fraction_part % 3
+                self.float_error = the_left_fraction_part
+                self.accumulate_pulse += output_pulse
+
+        low_byte = abs(output_pulse) & 0xFFFF
+        high_byte = (abs(output_pulse) >> 16) & 0xFFFF
+  
+        print("\n")
+        print(f"Output pulse: {output_pulse}")
+        print(f"float error: {self.float_error}")
+        print(f"Current Accumulate Pulse: {self.accumulate_pulse}")
+        print (f"{hex(high_byte)}, {hex(low_byte)}")
+
+        self.config_pulses_0x0905_low_byte(low_byte)
+        time.sleep(0.05)
+        self.config_pulses_0x0906_high_byte(high_byte)
+
+        if output_pulse > 0:
+            print("Running Servo CW")
+            self.pos_step_motion_test(True)
+        else:
+            print("Running Servo CCW")
+            self.pos_step_motion_test(False)
 
 
 

@@ -31,6 +31,11 @@ else:
 START, STOP = False, False
 RS485_send, RS485_read = "00 00 FF FF", "FF FF 00 00"
 
+SET_POINT_1 = 0
+SET_POINT_2 = 0
+SET_POINT_3 = 0
+SET_HOME = 0
+
 def convert_bytes_to_hex(data):
       return data.hex() if isinstance(data, bytes) else data
 
@@ -117,14 +122,17 @@ def handle_action():
       elif action == "setPoint_1":
 
             print("set point")
+            servo_ctrller.post_step_motion_by(90)
 
       elif action == "setPoint_2":
             
             print("set point")
+            servo_ctrller.post_step_motion_by(180)
 
       elif action == "Home":
            
            print("HOME")
+           servo_ctrller.post_step_motion_by(0)
             
       elif action == "motionStart":
             print("START")

@@ -1,6 +1,9 @@
 class MotionController:
     def __init__(self):
         self.float_error= 0
+        self.accumulate_pulse = 0
+        self.current_angle = 0
+        self.previous_angle = 0
 
     def config_bit(self,**kwargs):
         bit_positions = {
@@ -16,22 +19,57 @@ class MotionController:
 
     def post_step_motion_by(self, angle=0):
         # 125829120 pulse/rev
-        # 349525 + 1/3
-        pulse_value = 345625 * angle + (angle + self.float_error) // 3
+        # 349525 + 1/3 pulse/degree
+        base_pulse_per_degree = 345625
+        output_pulse = 0
 
-        fraction_part = angle % 3
-        if fraction_part !=0:
-            self.float_error += fraction_part
-        else:
-            self.float_error = 0
-
-        print(f"Angle: {angle} [degree]")
-        print(f"Total Pulse: {pulse_value}")
-        print(f"float_error: {self.float_error}")
-        low_byte = pulse_value & 0xFFFF
-        high_byte = (pulse_value >> 16) & 0xFFFF
-        print (f"Config Bytes: {hex(high_byte)}, {hex(low_byte)}\n")
+        print("\n")
+        print(f"Current Angle: {self.current_angle}")
+        print(f"Previous Angle: {self.previous_angle}")
+        print(f"Set Angle: {angle}")
         
+        self.previous_angle = self.current_angle
+        self.current_angle = angle
+        diff_angle = self.current_angle - self.previous_angle
+
+        if angle == 0:
+            output_pulse = self.accumulate_pulse
+            self.accumulate_pulse = 0
+            self.float_error = 0
+        else:
+            if diff_angle != 0:
+                current_fraction_part = diff_angle
+                total_fraction_part = self.float_error + current_fraction_part
+                output_pulse = (base_pulse_per_degree * diff_angle) + (total_fraction_part//3)
+
+                the_left_fraction_part = current_fraction_part % 3
+                self.float_error = the_left_fraction_part
+                self.accumulate_pulse += output_pulse
+
+        low_byte = abs(output_pulse) & 0xFFFF
+        high_byte = (abs(output_pulse) >> 16) & 0xFFFF
+
+        if output_pulse > 0:
+            print("Running Servo CW")
+        else:
+            print("Running Servo CCW")
+        
+        print("\n")
+        print(f"Output pulse: {output_pulse}")
+        print(f"float error: {self.float_error}")
+        print(f"Current Accumulate Pulse: {self.accumulate_pulse}")
+        print (f"{hex(high_byte)}, {hex(low_byte)}")
+
+        return (high_byte, low_byte)
+
+    
+    def math_test(self):
+        value = 5//3
+        value_2 = 5/3
+        value_3 = 5 % 3
+        print(f"5//3 = {value}")
+        print(f"5/3 = {value_2}")
+        print(f"5%3 = {value_3}")
 
 if __name__ =="__main__":
     mc = MotionController()
@@ -44,12 +82,14 @@ if __name__ =="__main__":
     print("Value 2 (hex):", value_2)  # the value = 0xF
     print("Value 3 (hex):", value_3) # the value = 0x8
 
+    mc.math_test()
+
     print("Test Angle To Pulse")
-    mc.post_step_motion_by(0)
-    mc.post_step_motion_by(1)
-    mc.post_step_motion_by(2)
-    mc.post_step_motion_by(3)
-    mc.post_step_motion_by(4)
-    mc.post_step_motion_by(5)
-    mc.post_step_motion_by(6)
-    mc.post_step_motion_by(360)
+    byte_value = mc.post_step_motion_by(50)
+    print(byte_value)
+    byte_value = mc.post_step_motion_by(100)
+    print(byte_value)
+    byte_value = mc.post_step_motion_by(150)
+    print(byte_value)
+    byte_value = mc.post_step_motion_by(100)
+    print(byte_value)
