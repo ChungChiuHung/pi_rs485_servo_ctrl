@@ -514,17 +514,19 @@ class ServoController:
             print("Running Servo CCW")
             self.pos_step_motion_test(False)
 
-    def enable_countinue_rotate(self, speed_rpm):
+    def enable_speed_ctrl(self, speed_rpm):
         
         self.Enable_JOG_Mode(True)
-        self.start_continuous_reading()
+        time.sleep(0.05)
         self.config_speed_0x0903(speed_rpm)
+        time.sleep(0.05)
+        self.start_continuous_reading()
         time.sleep(0.05)
 
     # 0: Stop
     # 1: CW
     # 2: CCW
-    def _countinue_rotate_action(self,action_value = 0):
+    def speed_ctrl_action(self,action_value = 0):
         if action_value == 0:
             print("Servo Stop!")
         elif action_value == 1:
