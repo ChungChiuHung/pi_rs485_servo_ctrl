@@ -134,7 +134,7 @@ def handle_action():
            servo_ctrller.post_step_motion_by(0)
 
       elif action == "enableSpeedCtrlMode":
-            servo_ctrller.enable_speed_ctrl(60)
+            servo_ctrller.enable_speed_ctrl(100)
 
       elif action == "motionStart_CW":
             servo_ctrller.speed_ctrl_action(1)

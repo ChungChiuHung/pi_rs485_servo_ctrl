@@ -361,7 +361,7 @@ class ServoController:
         if enable:
             config_value = 0x0003
         message = self.modbus_client.build_write_message(address, config_value)
-        self.modbus_client.send_and_receive(message)
+        response = self.modbus_client.send_and_receive(message)
 
 
     def config_acc_dec_0x0902(self, acc_dec_time):
@@ -371,7 +371,6 @@ class ServoController:
         print(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
-
         print(response_object)
 
     def config_speed_0x0903(self, speed_rpm):
@@ -521,7 +520,7 @@ class ServoController:
         self.config_speed_0x0903(speed_rpm)
         time.sleep(0.1)
         self.start_continuous_reading()
-        time.sleep(0.1)
+        
 
     # 0: Stop
     # 1: CW
@@ -538,6 +537,7 @@ class ServoController:
         address = 0x0904
         message = self.modbus_client.build_write_message(address, action_value)
         self.modbus_client.send_and_receive(message)
+        
 
 
 
