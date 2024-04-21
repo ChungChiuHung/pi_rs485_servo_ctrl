@@ -519,7 +519,7 @@ class ServoController:
         time.sleep(0.1)
         self.config_speed_0x0903(speed_rpm)
         time.sleep(0.1)
-        #self.start_continuous_reading(0x0900, 0.1)
+        self.start_continuous_reading(0x0900, 0.1)
         
 
     # 0: Stop
@@ -536,7 +536,7 @@ class ServoController:
             print("Error Config.")
         address = 0x0904
         message = self.modbus_client.build_write_message(address, action_value)
-        self.modbus_client.send_and_receive(message)
+        response = self.modbus_client.send_and_receive(message)
         
 
 
