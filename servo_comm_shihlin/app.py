@@ -122,9 +122,9 @@ def handle_action():
             print("set point")
             #servo_ctrller.post_step_motion_by(90)
 
-            servo_ctrller.stop_continuous_reading()
-            servo_ctrller.Enable_Position_Mode(True)
-            time.sleep(0.05)
+            #servo_ctrller.stop_continuous_reading()
+            #servo_ctrller.Enable_Position_Mode(True)
+            #time.sleep(0.05)
             servo_ctrller.config_acc_dec_0x0902(1000)
             time.sleep(0.05)
             servo_ctrller.config_speed_0x0903(300)
@@ -133,7 +133,7 @@ def handle_action():
             time.sleep(0.05)
             servo_ctrller.config_pulses_0x0906_high_byte(0x0380)
             time.sleep(0.05)
-            servo_ctrller.start_continuous_reading()
+            #servo_ctrller.start_continuous_reading()
 
       elif action == "setPoint_2":
             
