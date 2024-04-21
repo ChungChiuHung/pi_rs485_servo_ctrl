@@ -26,7 +26,7 @@ class ServoController:
         self.current_angle = 0
         self.previous_angle = 0
         self.float_error = 0
-        self.the_accumulate_pulse = 0
+        self.accumulate_pulse = 0
 
     def delay_ms(self, milliseconds):
       time.sleep(milliseconds / 1000.0)
