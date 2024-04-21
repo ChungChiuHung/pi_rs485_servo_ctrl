@@ -460,7 +460,7 @@ class ServoController:
         diff_angle = self.current_angle - self.previous_angle
 
         if angle == 0:
-            output_pulse = self.accumulate_pulse
+            output_pulse = -1 * self.accumulate_pulse
             self.accumulate_pulse = 0
             self.float_error = 0
         else:
