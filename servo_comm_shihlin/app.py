@@ -122,12 +122,20 @@ def handle_action():
       elif action == "setPoint_1":
 
             print("set point")
-            servo_ctrller.post_step_motion_by(90)
+            #servo_ctrller.post_step_motion_by(90)
+            servo_ctrller.config_pulses_0x0905_low_byte(0x0001)
+            time.sleep(0.05)
+            servo_ctrller.config_pulses_0x0906_high_byte(0x0380)
+            time.sleep(0.05)
 
       elif action == "setPoint_2":
             
             print("set point")
-            servo_ctrller.post_step_motion_by(180)
+            #servo_ctrller.post_step_motion_by(180)
+            servo_ctrller.config_pulses_0x0905_low_byte(0x0001)
+            time.sleep(0.05)
+            servo_ctrller.config_pulses_0x0906_high_byte(0x0780)
+            time.sleep(0.05)
 
       elif action == "Home":
            
