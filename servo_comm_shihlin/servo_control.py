@@ -35,7 +35,7 @@ class ServoController:
         hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
         print(f"{data_name}: {hex_string}")
 
-    def start_continuous_reading(self, address, interval=0.5):
+    def start_continuous_reading(self, address=PD.MCOK.address, interval=0.5):
         if self.read_thread is not None:
             self.stop_continuous_reading()
         
@@ -332,6 +332,14 @@ class ServoController:
             response_object = ModbusResponse(response)
             print(response_object)
             time.sleep(0.1)
+    
+    def Read_Motion_Completed_Signal(self):
+        parameter = PD.MCOK
+        print(f"Read {parameter.no}: {parameter.name}: {hex(parameter.address)}")
+        message = self.modbus_client.build_read_message(parameter.address, 1)
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+        print(response_object)
     
     # Position Control Test Mode
     def Enable_Position_Mode(self, enable = True):
