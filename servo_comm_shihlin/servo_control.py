@@ -17,10 +17,12 @@ PF.init_registers()
 
 float_error = 0
 
+
 class ServoController:
     def __init__(self, serial_port):
         self.serial_port = serial_port
-        self.modbus_client = ModbusASCIIClient(device_number=1, serial_port_manager= serial_port)
+        self.modbus_client = ModbusASCIIClient(
+            device_number=1, serial_port_manager=serial_port)
         self.read_thread = None
         self.read_thread_stop_event = Event()
         self.current_angle = 0
@@ -29,18 +31,19 @@ class ServoController:
         self.accumulate_pulse = 0
 
     def delay_ms(self, milliseconds):
-      time.sleep(milliseconds / 1000.0)
+        time.sleep(milliseconds / 1000.0)
 
-    def print_byte_array_as_spaced_hex(self,byte_array, data_name):
+    def print_byte_array_as_spaced_hex(self, byte_array, data_name):
         hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
         print(f"{data_name}: {hex_string}")
 
     def start_continuous_reading(self, address=PD.MCOK.address, interval=0.1):
         if self.read_thread is not None:
             self.stop_continuous_reading()
-        
+
         self.read_thread_stop_event.clear()
-        self.read_thread = Thread(target=self._read_continuously, args=(address, interval))
+        self.read_thread = Thread(
+            target=self._read_continuously, args=(address, interval))
         self.read_thread.start()
 
     def _read_continuously(self, address, interval):
@@ -48,7 +51,7 @@ class ServoController:
             message = self.modbus_client.build_read_message(address, 1)
             response = self.modbus_client.send_and_receive(message)
             time.sleep(interval)
-    
+
     def stop_continuous_reading(self):
         if self.read_thread is not None:
             self.read_thread_stop_event.set()
@@ -56,8 +59,8 @@ class ServoController:
             self.read_thread = None
             print("Continuous reading stopped.")
 
-    
     #  0x0010, 0x0000
+
     def read_PA01_Ctrl_Mode(self):
         print(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
         message = self.modbus_client.build_read_message(PA.STY.address, 2)
@@ -69,7 +72,8 @@ class ServoController:
     def write_PA01_Ctrl_Mode(self):
         print(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
         config_value = ServoUtility.config_hex_with(0, 0, 1, 0)
-        message = self.modbus_client.build_write_message(PA.STY.address, config_value)
+        message = self.modbus_client.build_write_message(
+            PA.STY.address, config_value)
         print(f"Build Read Message: {message}")
         response = self.modbus_client.send_and_receive(message)
 
@@ -82,7 +86,8 @@ class ServoController:
     def write_PD_16_Enable_DI_Control(self):
         print(f"Address of PD{PD.SDI.no} {PD.SDI.name}: {hex(PD.SDI.address)}")
         config_value = ServoUtility.config_hex_with(0, 0xF, 0xF, 0xF)
-        message = self.modbus_client.build_write_message(PD.SDI.address, config_value)
+        message = self.modbus_client.build_write_message(
+            PD.SDI.address, config_value)
         print(f"Build Write Message: {message}")
         response = self.modbus_client.send_and_receive(message)
         print(f"Respnose Message: {response}")
@@ -109,31 +114,34 @@ class ServoController:
                 if code.value == int(data, 16):
                     print(f"DI{cnt} :{code.name}")
                     cnt += 1
-                     
+
     # 內部位置命令 p129
     # Pos 1:  000000 PE01/PE02
     # Pos 2:  000001 PE03/PE04
     # ...
     # Pos 63: 111111 PF29/PF30
-    
+
     # Communication control DI on/off [Pt Mode]
     # 0x0040 (DI7) EMG
     # 0000 0  0  0  0 0 1 0 0 0 0 0 0
-    #      12 11 10 9 8 7 6 5 4 3 2 1 
+    #      12 11 10 9 8 7 6 5 4 3 2 1
     # 0x0041 (DI7 + DI1) SON
     # 0000 0  0  0  0 0 1 0 0 0 0 0 1
     # 0x0341 (DI11 + DI10 + DI7 + DI1) : (LSN, LSP, EMG, SON)
     # 0000 0  0  1  1 0 1 0 0 0 0 0 1
     def write_PD_25(self):
-        print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
+        print(
+            f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
         config_value = ServoUtility.config_hex_with(0, 0, 4, 1)
-        message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
+        message = self.modbus_client.build_write_message(
+            PD.ITST.address, config_value)
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         print(response_object)
 
     def read_PD_25(self):
-        print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
+        print(
+            f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
         message = self.modbus_client.build_read_message(PD.ITST.address, 1)
         print(f"Build Read Message: {message}")
         response = self.modbus_client.send_and_receive(message)
@@ -142,36 +150,44 @@ class ServoController:
         print(response_object)
 
     def clear_alarm(self):
-        print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
+        print(
+            f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
         config_value = ServoUtility.config_hex_with(0, 3, 4, 0)
-        message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
+        message = self.modbus_client.build_write_message(
+            PD.ITST.address, config_value)
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         print(response_object)
         print("\n")
 
     def servo_on(self):
-        print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
+        print(
+            f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
         config_value = ServoUtility.config_hex_with(0, 3, 4, 1)
-        message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
+        message = self.modbus_client.build_write_message(
+            PD.ITST.address, config_value)
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         print(response_object)
         print("\n")
 
     def clear_alarm_12(self):
-        print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
+        print(
+            f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
         config_value = ServoUtility.config_hex_with(0, 0, 4, 0)
-        message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
+        message = self.modbus_client.build_write_message(
+            PD.ITST.address, config_value)
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         print(response_object)
         print("\n")
 
     def servo_off(self):
-        print(f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
+        print(
+            f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
         config_value = ServoUtility.config_hex_with(0, 0, 0, 0)
-        message = self.modbus_client.build_write_message(PD.ITST.address, config_value)
+        message = self.modbus_client.build_write_message(
+            PD.ITST.address, config_value)
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         print(response_object)
@@ -191,7 +207,8 @@ class ServoController:
     def write_PD_01(self):
         print(f"Address of PD{PD.DIA1.no} {PD.DIA1.name}: {PD.DIA1.address}")
         config_value = ServoUtility.config_hex_with(0, 0, 0, 0)
-        message = self.modbus_client.build_write_message(PD.DIA1.address, config_value)
+        message = self.modbus_client.build_write_message(
+            PD.DIA1.address, config_value)
         print(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
         print(f"Response Message: {response}")
@@ -203,13 +220,14 @@ class ServoController:
     def write_PD_02(self):
         print(f"Address of PD{PD.DI1.no} {PD.DI1.name}: {PD.DI1.address}")
         config_value = 1
-        message = self.modbus_client.build_write_message(PD.DI1.address, config_value)
+        message = self.modbus_client.build_write_message(
+            PD.DI1.address, config_value)
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         print(response_object)
 
-
     # 0x0001 0x0000
+
     def read_PD_02(self):
         print(f"Address of PD{PD.DI1.no} {PD.DI1.name}: {PD.DI1.address}")
         message = self.modbus_client.build_read_message(PD.DI1.address, 2)
@@ -217,8 +235,8 @@ class ServoController:
         response_object = ModbusResponse(response)
         print(response_object)
 
-
     # initial 0x0012 0x0000 DI7
+
     def read_PD_08(self):
         print(f"Address of PD{PD.DI7.no} {PD.DI7.name}: {PD.DI7.address}")
         message = self.modbus_client.build_read_message(PD.DI7.address, 2)
@@ -235,7 +253,6 @@ class ServoController:
         print(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
         print(f"Response Message: {response}")
-
 
     def read_servo_state(self):
         print(f"Addres of 0x0200, 1 word")
@@ -282,7 +299,7 @@ class ServoController:
         print(f"Address of P{PF.PRCM.no}, {PF.PRCM.name}: {PF.PRCM.address}")
         # write value
         origin_return = 0
-        excute_PATH = 1 # (1~63)
+        excute_PATH = 1  # (1~63)
         stop = 1000
         # Read Value: get the executed PATH situation
         # 3: PATH#3 is being executed
@@ -295,7 +312,6 @@ class ServoController:
 
         print(int.from_bytes(response_object.data_bytes, byteorder='big'))
 
-        
         while False:
             message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
             response = self.modbus_client.send_and_receive(message)
@@ -306,24 +322,24 @@ class ServoController:
 
         print("\n")
 
-
     # Read Position Control related parameters
+
     def Read_Pos_Related_Paremters(self):
         read_address_array = [PA.STY, PA.HMOV, PA.PLSS,
                               PA.ENR, PA.PO1H, PA.POL,
                               PD.SDI, PD.ITST, PD.MCOK]
-        #PD28 MCOK
-        #PD16 SDI 
-        #PD25 ITST
+        # PD28 MCOK
+        # PD16 SDI
+        # PD25 ITST
 
-        #PA01, 2 3, 6, 7, 13, 15
-        #PA02, ATUM: Gain tuning mode option
-        #PA03, ATUL: Auto-tuning response level setting
-        #PA06, CMX : Electronic gear numerator
-        #PA07, CDV : Electronic gear denominator
-        #PA13, PLSS: Command pulse option
-        #PA15, CRSHA: Motor crash protection (time) 
-        
+        # PA01, 2 3, 6, 7, 13, 15
+        # PA02, ATUM: Gain tuning mode option
+        # PA03, ATUL: Auto-tuning response level setting
+        # PA06, CMX : Electronic gear numerator
+        # PA07, CDV : Electronic gear denominator
+        # PA13, PLSS: Command pulse option
+        # PA15, CRSHA: Motor crash protection (time)
+
         for address in read_address_array:
             print(f"Read {address.no}: {address.name}: {hex(address.address)}")
             message = self.modbus_client.build_read_message(address.address, 1)
@@ -331,7 +347,7 @@ class ServoController:
             response_object = ModbusResponse(response)
             print(response_object)
             time.sleep(0.1)
-    
+
     def Read_Motion_Completed_Signal(self):
         parameter = PD.MCOK
         print(f"Read {parameter.no}: {parameter.name}: {hex(parameter.address)}")
@@ -339,12 +355,12 @@ class ServoController:
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         print(response_object)
-    
+
     # Position Control Test Mode
-    def Enable_Position_Mode(self, enable = True):
+    def Enable_Position_Mode(self, enable=True):
         address = ServoControlRegistry.CTRL_MODE_SEL.value
         config_value = 0x0000
-        #print(f"Address of {address}")
+        # print(f"Address of {address}")
         if enable == True:
             config_value = 0x0004
 
@@ -355,7 +371,7 @@ class ServoController:
         # response_object = ModbusResponse(response)
         # print(response_object)
 
-    def Enable_JOG_Mode(self, enable = True):
+    def Enable_JOG_Mode(self, enable=True):
         address = ServoControlRegistry.CTRL_MODE_SEL.value
         config_value = 0x0000
         if enable:
@@ -363,7 +379,6 @@ class ServoController:
 
         message = self.modbus_client.build_write_message(address, config_value)
         response = self.modbus_client.send_and_receive(message)
-
 
     def config_acc_dec_0x0902(self, acc_dec_time):
         print(f"Address 0x0902, 1 word")
@@ -392,7 +407,7 @@ class ServoController:
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         print(response_object)
-    
+
     def config_pulses_0x0906_high_byte(self, high_byte):
         address = ServoControlRegistry.POS_PULSES_CMD_H.value
         print(f"Address {address}, 1 word")
@@ -434,7 +449,7 @@ class ServoController:
         print(f"Build Read Command: {message}")
         response_object = ModbusResponse(message)
         print(response_object)
-    
+
     def read_encoder_after_gear_ratio(self):
         print(f"Address 0x0024, 1 word")
         message = self.modbus_client.build_read_message(0x0024, 2)
@@ -444,13 +459,13 @@ class ServoController:
 
     def pos_step_motion_test(self, CW=True):
         time.sleep(0.1)
-        if CW ==True:
+        if CW == True:
             self.pos_motion_start_0x0907(1)
         else:
             self.pos_motion_start_0x0907(2)
         time.sleep(0.1)
 
-    def post_step_motion_by(self, angle=0, acc_dec_time = 1000, speed_rpm = 100):
+    def post_step_motion_by(self, angle=0, acc_dec_time=5000, speed_rpm=10):
         # 125829120 pulse/rev
         # 349525 + 1/3 pulse/degree
         # 125829120 pulse/rev
@@ -462,7 +477,7 @@ class ServoController:
         print(f"Current Angle: {self.current_angle}")
         print(f"Previous Angle: {self.previous_angle}")
         print(f"Set Angle: {angle}")
-        
+
         self.previous_angle = self.current_angle
         self.current_angle = angle
         diff_angle = self.current_angle - self.previous_angle
@@ -475,7 +490,8 @@ class ServoController:
             if diff_angle != 0:
                 current_fraction_part = diff_angle
                 total_fraction_part = self.float_error + current_fraction_part
-                output_pulse = (base_pulse_per_degree * diff_angle) + (total_fraction_part//3)
+                output_pulse = (base_pulse_per_degree *
+                                diff_angle) + (total_fraction_part//3)
 
                 the_left_fraction_part = current_fraction_part % 3
                 self.float_error = the_left_fraction_part
@@ -483,13 +499,12 @@ class ServoController:
 
         low_byte = abs(output_pulse) & 0xFFFF
         high_byte = (abs(output_pulse) >> 16) & 0xFFFF
-  
+
         print("\n")
         print(f"Output pulse: {output_pulse}")
         print(f"float error: {self.float_error}")
         print(f"Current Accumulate Pulse: {self.accumulate_pulse}")
-        print (f"{hex(high_byte)}, {hex(low_byte)}")
-
+        print(f"{hex(high_byte)}, {hex(low_byte)}")
 
         self.stop_continuous_reading()
         self.Enable_Position_Mode(True)
@@ -505,8 +520,6 @@ class ServoController:
         self.start_continuous_reading()
         time.sleep(0.1)
 
-
-
         if output_pulse > 0:
             print("Running Servo CW")
             self.pos_step_motion_test(True)
@@ -515,18 +528,17 @@ class ServoController:
             self.pos_step_motion_test(False)
 
     def enable_speed_ctrl(self, speed_rpm):
-        
+
         self.Enable_JOG_Mode(True)
         time.sleep(0.1)
         self.config_speed_0x0903(speed_rpm)
         time.sleep(0.1)
         self.start_continuous_reading(0x0900, 0.25)
-        
 
     # 0: Stop
     # 1: CW
     # 2: CCW
-    def speed_ctrl_action(self,action_value):
+    def speed_ctrl_action(self, action_value):
         if action_value == 0:
             print("Servo Stop!")
         elif action_value == 1:
@@ -537,15 +549,12 @@ class ServoController:
             print("Error Config.")
         address = 0x0904
         message = self.modbus_client.build_write_message(address, action_value)
-        #response = self.modbus_client.send_and_receive(message)
+        # response = self.modbus_client.send_and_receive(message)
         self.modbus_client.send(message)
-        
 
-
-
-    
-
-
-
-    
-
+    def set_home_position(self):
+        self.current_angle = 0
+        self.previous_angle = 0
+        self.float_error = 0
+        self.accumulate_pulse = 0
+        print("home position set!!!")
