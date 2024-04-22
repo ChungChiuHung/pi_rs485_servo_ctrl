@@ -87,7 +87,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     dispatcher = Dispatcher()
-    dispatcher.map("/print", print)
     dispatcher.map("/clear", clear_handler, "clear")
     dispatcher.map("/set_point", set_point_handler, "angle", "acc_time", "rpm")
     dispatcher.map("/back_home", back_home_handler, "state")
