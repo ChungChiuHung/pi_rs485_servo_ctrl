@@ -4,6 +4,7 @@ from modbus_utils import ModbusUtils
 from modbus_command_code import CmdCode
 from servo_control_registers import ServoControlRegistry
 from serial_port_manager import SerialPortManager
+from modbus_response import ModbusResponse
 
 class ModbusRTUClient:
     def __init__(self, device_number, serial_port_manager: SerialPortManager):
@@ -39,8 +40,8 @@ class ModbusRTUClient:
     def send(self, message):
         if self.ensure_connection():
             try:
-                self.serial_port_manager.get_serial_instance().write(message)
                 print("Message sent:", message.hex())
+                self.serial_port_manager.get_serial_instance().write(message)
             except serial.SerialException as e:
                 print(f"Failed to send message due to serial error: {e}")
             except Exception as e:
@@ -66,7 +67,7 @@ class ModbusRTUClient:
             except Exception as e:
                 print(f"Unexpected error occurred while receiving message: {e}")
                 return None
-        
+                 
     def ensure_connection(self):
         if not self.serial_port_manager.get_serial_instance():
             print("Serial instance not available. Attempting to reconncect...")

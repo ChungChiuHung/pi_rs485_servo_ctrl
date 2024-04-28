@@ -511,6 +511,7 @@ class ServoController:
         # print(f"{hex(high_byte)}, {hex(low_byte)}")
 
         self.stop_continuous_reading()
+
         self.Enable_Position_Mode(True)
         time.sleep(0.05)
         self.config_acc_dec_0x0902(acc_dec_time)
@@ -521,6 +522,7 @@ class ServoController:
         time.sleep(0.05)
         self.config_pulses_0x0906_high_byte(high_byte)
         time.sleep(0.05)
+        
         self.start_continuous_reading()
         time.sleep(0.1)
 
