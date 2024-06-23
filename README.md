@@ -51,6 +51,10 @@ Raspberry Pi 3B + [RS485 CAN HAT](https://www.waveshare.com/wiki/RS485_CAN_HAT)
   ![image](https://github.com/ChungChiuHung/rpiWebServer_RS485_ServoCtrl/assets/52248840/149436ad-a2ca-4dd2-9fa6-c44bf60b2702)
   ## Auto-Configuration of a Startup Script with [PM2](https://pm2.keymetrics.io/docs/usage/startup/)
   [note: install the npm and specific nodejs version](https://phoenixnap.com/kb/update-node-js-version)
+  config the raspberry pi wireless connection
+  ```
+  sudo raspi-config
+  ```
   1. Generate Startup Script
   ```
   pm2 startup
