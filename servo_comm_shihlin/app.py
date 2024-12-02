@@ -135,34 +135,34 @@ def handle_action():
         print("set point")
         servo_ctrller.post_step_motion_by(180)
 
-      elif action == "Home":
+    elif action == "Home":
            
            print("HOME")
            servo_ctrller.post_step_motion_by(0)
 
-      elif action == "enableSpeedCtrlMode":
+    elif action == "enableSpeedCtrlMode":
             servo_ctrller.enable_speed_ctrl(100)
 
-      elif action == "motionStart_CW":
+    elif action == "motionStart_CW":
             servo_ctrller.speed_ctrl_action(1)
       
-      elif action == "motionStart_CCW":
+    elif action == "motionStart_CCW":
             servo_ctrller.speed_ctrl_action(2)
 
-      elif action == "motionPause":
+    elif action == "motionPause":
 
            print("motion pause")
            servo_ctrller.speed_ctrl_action(0)
 
-      elif action == "motionCancel":
+    elif action == "motionCancel":
             
             print("motion cancel")
             servo_ctrller.stop_continuous_reading()
             servo_ctrller.Enable_Position_Mode(False)
-      else:
+    else:
             response['error'] = "Action not recognized."
 
-      return jsonify({
+    return jsonify({
             "status": "success",
             "action": action,
             "RS485_send": RS485_send,
