@@ -62,6 +62,8 @@ def convert_bytes_to_hex(data):
 previous_data = None
 
 
+
+
 def check_duplicated(data):
     global previous_data
     try:
