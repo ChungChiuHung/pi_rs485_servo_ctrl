@@ -3,7 +3,7 @@ from modbus_ascii_client import ModbusASCIIClient
 import time
 
 class ModbusPoller:
-    def __init__(self, modbus_client, address, count, poll_interval=1):
+    def __init__(self, modbus_client, address, count, poll_interval=0.1):
         self.modbus_client = modbus_client
         self.address = address
         self.count = count

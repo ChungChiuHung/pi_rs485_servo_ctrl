@@ -19,12 +19,12 @@ gpio_utils = GPIOUtils()
 # Configure the serial port
 serial_manager = SerialPortManager()
 if serial_manager.get_serial_instance():
-      print(f"Connected port: {serial_manager.get_connected_port()}")
-      print(f"Current baud rate: {serial_manager.get_baud_rate()}")
-      servo_ctrller = ServoController(serial_manager)
+    print(f"Connected port: {serial_manager.get_connected_port()}")
+    print(f"Current baud rate: {serial_manager.get_baud_rate()}")
+    servo_ctrller = ServoController(serial_manager)
 else:
-      print("Could not configure any serial port. Exiting.")
-      exit()
+    print("Could not configure any serial port. Exiting.")
+    exit()
 
 # Initailize global variables for RS485 messages
 
@@ -36,136 +36,140 @@ SET_POINT_2 = 0
 SET_POINT_3 = 0
 SET_HOME = 0
 
+
 def convert_bytes_to_hex(data):
-      return data.hex() if isinstance(data, bytes) else data
+    return data.hex() if isinstance(data, bytes) else data
+
 
 def json_response(f):
-      @wraps(f)
-      def decorated_function(*args, **kwargs):
-            try:
-                  result = f(*args, **kwargs)
-                  if isinstance(result, Response):
-                        return result
-                  return jsonify(Response)
-            except Exception as e:
-                  traceback.print_exc()
-                  return jsonify({"error": "An error occurred", "details":str(e)}),500
-      return decorated_function
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        try:
+            result = f(*args, **kwargs)
+            if isinstance(result, Response):
+                return result
+            return jsonify(Response)
+        except Exception as e:
+            traceback.print_exc()
+            return jsonify({"error": "An error occurred", "details": str(e)}), 500
+    return decorated_function
+
 
 @app.route('/')
 def home():
-      return render_template('home.html')
+    return render_template('home.html')
+
 
 @app.route('/index')
 def index():
-      return render_template('index.html', title='Servo Control Panel', RS485_read=RS485_read, RS485_send=RS485_send)
+    return render_template('index.html', title='Servo Control Panel', RS485_read=RS485_read, RS485_send=RS485_send)
+
 
 @app.route('/action', methods=['POST'])
 @json_response
 def handle_action():
-      global START, STOP, RS485_send, RS485_read
+    global START, STOP, RS485_send, RS485_read
 
-      data = request.json
-      action = data.get('action')
-      response = {"status":"success","action":action}
+    data = request.json
+    action = data.get('action')
+    response = {"status": "success", "action": action}
 
-      print(f"Received action: {action}")
+    print(f"Received action: {action}")
 
-      # Enable the Digital I/O Writable
-      servo_ctrller.write_PD_16_Enable_DI_Control()
+    # Enable the Digital I/O Writable
+    servo_ctrller.write_PD_16_Enable_DI_Control()
 
-      # Perform the raspi action here based on action type
-      if action == "start":
-           print("start")
-      elif action == "stop":
-            print("stop")
-      elif action == "servoOn":
-            # SET_PARAM_2 command        
-            servo_ctrller.clear_alarm_12()
-            time.sleep(0.1)
-            servo_ctrller.servo_on()
-            time.sleep(0.1)
+    # Perform the raspi action here based on action type
+    if action == "start":
+        print("start")
+    elif action == "stop":
+        print("stop")
+    elif action == "servoOn":
+        # SET_PARAM_2 command
+        servo_ctrller.clear_alarm_12()
+        time.sleep(0.1)
+        servo_ctrller.servo_on()
+        time.sleep(0.1)
 
-      elif action == "servoOff":
+    elif action == "servoOff":
 
-            servo_ctrller.servo_off()
-      
-      elif action == "getMsg":
+        servo_ctrller.servo_off()
 
-            servo_ctrller.Read_Pos_Related_Paremters()
+    elif action == "getMsg":
 
-      elif action == "clearAlarm12":
-            servo_ctrller.clear_alarm_12()
+        servo_ctrller.Read_Pos_Related_Paremters()
 
-      elif action == "enablePosMode":
-            servo_ctrller.Enable_Position_Mode(True)
-            time.sleep(0.05)
-            servo_ctrller.config_acc_dec_0x0902(500)
-            time.sleep(0.05)
-            servo_ctrller.config_speed_0x0903(600)
-            time.sleep(0.05)
-            servo_ctrller.config_pulses_0x0905_low_byte(0x0000)
-            time.sleep(0.05)
-            servo_ctrller.config_pulses_0x0906_high_byte(0x0780)
-            time.sleep(0.05)
-            servo_ctrller.start_continuous_reading(0x0900, 0.1)          
-            
+    elif action == "clearAlarm12":
+        servo_ctrller.clear_alarm_12()
 
-      elif action == "posTestStart_CW":
-            servo_ctrller.pos_step_motion_test(CW=True)
+    elif action == "enablePosMode":
+        servo_ctrller.Enable_Position_Mode(True)
+        time.sleep(0.05)
+        servo_ctrller.config_acc_dec_0x0902(0)
+        time.sleep(0.05)
+        servo_ctrller.config_speed_0x0903(10)
+        time.sleep(0.05)
+        servo_ctrller.config_pulses_0x0905_low_byte(0x0000)
+        time.sleep(0.05)
+        servo_ctrller.config_pulses_0x0906_high_byte(0x0780)
+        time.sleep(0.05)
+        servo_ctrller.start_continuous_reading(0x0900, 0.1)
 
-      elif action == "posTestStart_CCW":
-            servo_ctrller.pos_step_motion_test(CW=False)
+    elif action == "posTestStart_CW":
+        servo_ctrller.pos_step_motion_test(CW=True)
 
-      elif action == "setPoint_1":
+    elif action == "posTestStart_CCW":
+        servo_ctrller.pos_step_motion_test(CW=False)
 
-            print("set point")
-            servo_ctrller.post_step_motion_by(90)
+    elif action == "setPoint_1":
 
-            
-      elif action == "setPoint_2":
-            
-            print("set point")
-            servo_ctrller.post_step_motion_by(180)
+        print("set point")
+        servo_ctrller.post_step_motion_by(90)
 
-      elif action == "Home":
-           
-           print("HOME")
-           servo_ctrller.post_step_motion_by(0)
+    elif action == "setPoint_2":
 
-      elif action == "enableSpeedCtrlMode":
-            servo_ctrller.enable_speed_ctrl(100)
+        print("set point")
+        servo_ctrller.post_step_motion_by(180)
 
-      elif action == "motionStart_CW":
-            servo_ctrller.speed_ctrl_action(1)
-      
-      elif action == "motionStart_CCW":
-            servo_ctrller.speed_ctrl_action(2)
+    elif action == "Home":
 
-      elif action == "motionPause":
+        print("HOME")
+        servo_ctrller.post_step_motion_by(0)
 
-           print("motion pause")
-           servo_ctrller.speed_ctrl_action(0)
+    elif action == "enableSpeedCtrlMode":
+        servo_ctrller.enable_speed_ctrl(10)
 
-      elif action == "motionCancel":
-            
-            print("motion cancel")
-            servo_ctrller.stop_continuous_reading()
-            servo_ctrller.Enable_Position_Mode(False)
-      else:
-            response['error'] = "Action not recognized."
+    elif action == "motionStart_CW":
+        servo_ctrller.speed_ctrl_action(1)
 
-      return jsonify({
-            "status": "success",
-            "action": action,
-            "RS485_send": RS485_send,
-            "RS485_read": RS485_read,
-            "message":f"Action {action} completed successfully."  
-      })
+    elif action == "motionStart_CCW":
+        servo_ctrller.speed_ctrl_action(2)
+
+    elif action == "motionPause":
+
+        print("motion pause")
+        servo_ctrller.speed_ctrl_action(0)
+
+    elif action == "motionCancel":
+
+        print("motion cancel")
+        servo_ctrller.stop_continuous_reading()
+        servo_ctrller.Enable_Position_Mode(False)
+    else:
+        response['error'] = "Action not recognized."
+
+    return jsonify({
+        "status": "success",
+        "action": action,
+        "RS485_send": RS485_send,
+        "RS485_read": RS485_read,
+        "message": f"Action {action} completed successfully."
+    })
+
 
 if __name__ == "__main__":
-   gpio_utils.initialize_gpio()
-   try:
-         app.run(host='0.0.0.0', port=5000, debug = True)
-   finally:
-         gpio_utils.cleanup_gpio()
+    gpio_utils.initialize_gpio()
+    try:
+        app.run(host='0.0.0.0', port=5000, debug=True)
+    finally:
+        gpio_utils.cleanup_gpio()
