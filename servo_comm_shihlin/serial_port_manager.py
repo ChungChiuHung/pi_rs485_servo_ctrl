@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO,
 
 
 class SerialPortManager:
-    def __init__(self, port=None, baud_rate=115200, timeout=1, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE):
+    def __init__(self, port=None, baud_rate=115200, timeout=1, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_TWO):
         self.port = port
         self.baud_rate = baud_rate
         self.timeout = timeout
