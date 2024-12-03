@@ -46,7 +46,6 @@ class ServoController:
         time.sleep(milliseconds / 1000.0)
 
     def print_byte_array_as_spaced_hex(self, byte_array, data_name):
-    def print_byte_array_as_spaced_hex(self, byte_array, data_name):
         hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
         print(f"{data_name}: {hex_string}")
 

@@ -9,7 +9,6 @@ from serial_port_manager import SerialPortManager
 from modbus_command_code import CmdCode
 from servo_control import ServoController
 
-
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your keys')
 
