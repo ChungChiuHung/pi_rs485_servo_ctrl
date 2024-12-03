@@ -479,7 +479,6 @@ class ServoController:
 
     # Position Control Test Mode
     def Enable_Position_Mode(self, enable=True):
-    def Enable_Position_Mode(self, enable=True):
         address = ServoControlRegistry.CTRL_MODE_SEL.value
         config_value = 0x0000
         # print(f"Address of {address}")
@@ -495,7 +494,6 @@ class ServoController:
         # response_object = ModbusResponse(response)
         # print(response_object)
 
-    def Enable_JOG_Mode(self, enable=True):
     def Enable_JOG_Mode(self, enable=True):
         address = ServoControlRegistry.CTRL_MODE_SEL.value
         config_value = 0x0000
@@ -624,13 +622,11 @@ class ServoController:
     def pos_step_motion_test(self, CW=True):
         time.sleep(0.1)
         if CW == True:
-        if CW == True:
             self.pos_motion_start_0x0907(1)
         else:
             self.pos_motion_start_0x0907(2)
         time.sleep(0.1)
 
-    def post_step_motion_by(self, angle=0, acc_dec_time=5000, speed_rpm=10):
     def post_step_motion_by(self, angle=0, acc_dec_time=5000, speed_rpm=10):
         # 125829120 pulse/rev
         # 349525 + 1/3 pulse/degree
@@ -709,7 +705,6 @@ class ServoController:
     # 0: Stop
     # 1: CW
     # 2: CCW
-    def speed_ctrl_action(self, action_value):
     def speed_ctrl_action(self, action_value):
         if action_value == 0:
             print("Servo Stop!")
