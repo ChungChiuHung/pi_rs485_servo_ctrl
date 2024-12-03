@@ -137,42 +137,42 @@ def handle_action():
 
     elif action == "Home":
            
-           print("HOME")
-           servo_ctrller.post_step_motion_by(0)
+        print("HOME")
+        servo_ctrller.post_step_motion_by(0)
 
     elif action == "enableSpeedCtrlMode":
-            servo_ctrller.enable_speed_ctrl(100)
+        servo_ctrller.enable_speed_ctrl(100)
 
     elif action == "motionStart_CW":
-            servo_ctrller.speed_ctrl_action(1)
+        servo_ctrller.speed_ctrl_action(1)
       
     elif action == "motionStart_CCW":
-            servo_ctrller.speed_ctrl_action(2)
+        servo_ctrller.speed_ctrl_action(2)
 
     elif action == "motionPause":
 
-           print("motion pause")
-           servo_ctrller.speed_ctrl_action(0)
+        print("motion pause")
+        servo_ctrller.speed_ctrl_action(0)
 
     elif action == "motionCancel":
             
-            print("motion cancel")
-            servo_ctrller.stop_continuous_reading()
-            servo_ctrller.Enable_Position_Mode(False)
+        print("motion cancel")
+        servo_ctrller.stop_continuous_reading()
+        servo_ctrller.Enable_Position_Mode(False)
     else:
-            response['error'] = "Action not recognized."
+        response['error'] = "Action not recognized."
 
     return jsonify({
-            "status": "success",
-            "action": action,
-            "RS485_send": RS485_send,
-            "RS485_read": RS485_read,
-            "message":f"Action {action} completed successfully."  
+        "status": "success",
+        "action": action,
+        "RS485_send": RS485_send,
+        "RS485_read": RS485_read,
+        "message":f"Action {action} completed successfully."  
       })
 
 if __name__ == "__main__":
    gpio_utils.initialize_gpio()
    try:
-         app.run(host='0.0.0.0', port=5000, debug = True)
+        app.run(host='0.0.0.0', port=5000, debug = True)
    finally:
-         gpio_utils.cleanup_gpio()
+        gpio_utils.cleanup_gpio()
