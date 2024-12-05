@@ -127,6 +127,18 @@ def back_home_handler(unused_addr, args, state):
     except Exception as e:
         logging.error(f"Error in back_home_handler: {e}")
 
+def pr_mode_ctrl_handler(unused_addr, args, path_numb=0):
+    try:
+        if not check_duplicated(path_numb):
+            logging.info("Sending Command. ")
+            servo_ctrller.write_PF82(path_numb)
+            logging.info(
+                f"Use Pr Mode to goto configed postion number: {path_numb}. "
+            )
+    except Exception as e:
+        logging.error(f"Error in pr_mode_ctrl_handler")
+
+
 
 def set_home_position_handler(unused_addr, args, state):
     try:
@@ -158,6 +170,7 @@ def main():
         dispatcher.map("/set_point", set_point_handler,
                        "angle", "acc_time", "rpm")
         dispatcher.map("/back_home", back_home_handler, "state")
+        dispatcher.map("/pr_step_path", pr_mode_ctrl_handler, "path_number")
         dispatcher.map("/set_home", set_home_position_handler, "state")
 
         server = osc_server.ThreadingOSCUDPServer(

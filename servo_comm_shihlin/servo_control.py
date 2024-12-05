@@ -404,7 +404,7 @@ class ServoController:
         self.response = self.modbus_client.send_and_receive(message)
         # response_object = ModbusResponse(response)
         # print(response_object)
-        self.response = self.modbus_client.send_and_receive(message)
+        # self.response = self.modbus_client.send_and_receive(message)
         # response_object = ModbusResponse(response)
         # print(response_object)
 
@@ -421,6 +421,66 @@ class ServoController:
             time.sleep(0.1)
 
         print("\n")
+
+    def write_PF82(self, execute_PATH_value=0):
+        """
+        This method writes and controls the PATH execution.
+
+        Parameters:
+            execute_PATH_value (int): The PATH number to execute (1~63)
+        """
+        print(f"Address of P{PF.PRCM.no}, {PF.PRCM.name}: {PF.PRCM.address}")
+        # goto_origin = 0
+        # stop_cmd = 1000
+        excute_PATH = execute_PATH_value
+        # Read Value: get the executed PATH situation
+        # 3: PATH#3 is being executed
+        # 1003: PATH#3 command is completed
+        # 2003: PATH#3 positioning is done
+        # Validate the execute_PATH_value
+        if execute_PATH_value < 0 or execute_PATH_value > 9999:
+            raise ValueError("execute_PATH_value must be between 0 and 9999.")
+        if execute_PATH_value >= 64 and execute_PATH_value < 1000:
+            print("Value out of acceptable rnage.")
+
+        message = self.modbus_client.build_write_message(PF.PRCM.address, 1)
+        self.response = self.modbus_client.send_and_receive(message)
+
+        # Process the response using ModbusResponse
+        try:
+            response_object = ModbusResponse(self.response)
+            print(f"Parsed Mobus Response: {response_object}")
+
+            if hasattr(response_object, 'data_bytes'):
+                # Extract the response value
+                response_value = int.from_bytes(response_object.data_bytes, byteorder='big')
+                print(f"Response value: {response_value}")
+
+                #Handle the response value logic
+                if response_value == execute_PATH_value:
+                    print(f"Command {execute_PATH_value} is still being executed.")
+                elif response_value == execute_PATH_value + 10000:
+                    print(f"Commnad {execute_PATH_value} has been executed, but motor positioning is not complete.")
+                elif response_value == execute_PATH_value + 20000:
+                    print(f"Command {execute_PATH_value} has been executed, and motor position is complete.")
+
+            else:
+                print("No data_bytes found in response.")
+        except ValueError as e:
+            print(f"Failed to process response: {e}")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")       
+
+        while False:
+            message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
+            response = self.modbus_client.send_and_receive(message)
+            response_object = ModbusResponse(response)
+            print(response_object)
+            flag_value = int(response_object.data, 16)
+            time.sleep(0.1)
+
+        print("\n")
+
 
     # Read Position Control related parameters
 

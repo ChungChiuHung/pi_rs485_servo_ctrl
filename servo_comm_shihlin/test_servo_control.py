@@ -81,5 +81,9 @@ if __name__ =="__main__":
     #time.sleep(0.05)
     #print("\n")
 
+    controller.write_PF82(1)
+    time.sleep(0.1)
+    print("\n")
+
 
 
