@@ -687,12 +687,12 @@ class ServoController:
             self.pos_motion_start_0x0907(2)
         time.sleep(0.1)
 
-    def post_step_motion_by(self, angle=0, acc_dec_time=5000, speed_rpm=10):
+    def post_step_motion_by(self, angle=0.0, acc_dec_time=5000, speed_rpm=10):
         # 125829120 pulse/rev
         # 349525 + 1/3 pulse/degree
         # 125829120 pulse/rev
         # 349525 + 1/3 pulse/degree
-        base_pulse_per_degree = 345625
+        base_pulse_per_degree = 349525
         output_pulse = 0
 
         print("\n")
@@ -707,18 +707,22 @@ class ServoController:
         if angle == 0:
             output_pulse = -1 * self.accumulate_pulse
             self.accumulate_pulse = 0
-            self.float_error = 0
+            self.float_error = 0.0
         else:
             if diff_angle != 0:
-                current_fraction_part = diff_angle
-                total_fraction_part = self.float_error + current_fraction_part
-                output_pulse = (base_pulse_per_degree *
-                                diff_angle) + (total_fraction_part//3)
-                output_pulse = (base_pulse_per_degree *
-                                diff_angle) + (total_fraction_part//3)
+                pulse_with_float = base_pulse_per_degree * diff_angle
+                integer_pulse = int(pulse_with_float)
+                fractional_pulse = pulse_with_float - integer_pulse
 
-                the_left_fraction_part = current_fraction_part % 3
-                self.float_error = the_left_fraction_part
+                # Accumulate fractional part
+                self.float_error += fractional_pulse
+
+                if self.float_error >=1.0:
+                    integer_error = int(self.float_error)
+                    integer_pulse += integer_error
+                    self.float_error -= integer_error
+
+                output_pulse = integer_pulse
                 self.accumulate_pulse += output_pulse
 
         low_byte = abs(output_pulse) & 0xFFFF
@@ -783,15 +787,8 @@ class ServoController:
         self.modbus_client.send(message)
 
     def set_home_position(self):
-        self.current_angle = 0
-        self.previous_angle = 0
-        self.float_error = 0
-        self.accumulate_pulse = 0
-        print("home position set!!!")
-
-    def set_home_position(self):
-        self.current_angle = 0
-        self.previous_angle = 0
-        self.float_error = 0
+        self.current_angle = 0.0
+        self.previous_angle = 0.0
+        self.float_error = 0.0
         self.accumulate_pulse = 0
         print("home position set!!!")
