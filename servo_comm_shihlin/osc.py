@@ -62,8 +62,6 @@ def convert_bytes_to_hex(data):
 previous_data = None
 
 
-
-
 def check_duplicated(data):
     global previous_data
     try:
@@ -105,17 +103,28 @@ def set_point_handler(unused_addr, args, angle, acc_time, rpm):
     #     logging.info("Movement is still running.")
     #     return
     # else:
-        try:
-            if not check_duplicated(angle):
-                logging.info("Sending command.")
-                servo_ctrller.post_step_motion_by(angle, acc_time, rpm)
-                logging.info(
-                    f"Set point to {angle} degrees. Acc time: {acc_time} ms. RPM: {rpm}")
-                # servo_ctrller.check_movement = True
+    try:
+        if not check_duplicated(angle):
+            logging.info("Sending command.")
+            servo_ctrller.post_step_motion_by(angle, acc_time, rpm)
+            logging.info(
+                f"Set point to {angle} degrees. Acc time: {acc_time} ms. RPM: {rpm}")
+            # servo_ctrller.check_movement = True
 
-        except Exception as e:
-            logging.error(f"Error in set_point_handler: {e}")
-            # servo_ctrller.check_movement = False
+    except Exception as e:
+        logging.error(f"Error in set_point_handler: {e}")
+        # servo_ctrller.check_movement = False
+
+def set_point_handler_2(unused_addr, args, angle, acc_time, rpm):
+    try:
+        if not check_duplicated(angle):
+            logging.info("Sending command.")
+            servo_ctrller.pos_step_motion_by(angle, acc_time, rpm)
+            logging.info(
+                f"Set point to {angle} degrees. Acc time: {acc_time} ms. RPM: {rpm}"
+            )
+    except Exception as e:
+        logging.error(f"Error in set_point_handler_2: {e}")
 
 
 def back_home_handler(unused_addr, args, state):
@@ -168,6 +177,8 @@ def main():
         dispatcher.map("/servo", servo_handler, "data")
         dispatcher.map("/clear", clear_handler, "clear")
         dispatcher.map("/set_point", set_point_handler,
+                       "angle", "acc_time", "rpm")
+        dispatcher.map("/set_point_2", set_point_handler_2,
                        "angle", "acc_time", "rpm")
         dispatcher.map("/back_home", back_home_handler, "state")
         dispatcher.map("/pr_step_path", pr_mode_ctrl_handler, "path_number")
