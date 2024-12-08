@@ -599,19 +599,13 @@ class ServoController:
             self.pos_motion_start_0x0907(1)
         else:
             self.pos_motion_start_0x0907(2)
-        time.sleep(0.1)
+        #time.sleep(0.1)
 
     def pos_step_motion_by(self, angle=0.0, acc_dec_time=5000, speed_rpm=10):
         base_pulse_per_degree = 349525 + 1/3
         output_pulse = 0
 
         self.previous_angle = self.current_angle
-        # previous_angle = 10.5
-        # current_angle = 5.2 or 12.3
-        # diff_angle = 5.2-10.5 or 12.3-10.5
-        #            = -5.3 or 1.8
-        # convert to pulses
-        # diff_angle = 
         self.current_angle = angle
         diff_angle = self.current_angle - self.current_angle
         diff_pulse = diff_angle * base_pulse_per_degree
@@ -665,20 +659,21 @@ class ServoController:
         print(f"{hex(high_byte)}, {hex(low_byte)}")
 
         self.stop_continuous_reading()
+        time.sleep(0.08)
 
         self.Enable_Position_Mode(True)
-        time.sleep(0.06)
+        time.sleep(0.08)
         self.config_acc_dec_0x0902(acc_dec_time)
-        time.sleep(0.06)
+        time.sleep(0.08)
         self.config_speed_0x0903(speed_rpm)
-        time.sleep(0.06)
+        time.sleep(0.08)
         self.config_pulses_0x0905_low_byte(low_byte)
-        time.sleep(0.06)
+        time.sleep(0.08)
         self.config_pulses_0x0906_high_byte(high_byte)
-        time.sleep(0.06)
+        time.sleep(0.08)
         
         self.start_continuous_reading()
-        time.sleep(0.06)
+        time.sleep(0.08)
 
         if output_pulse > 0:
             print("Running Servo CW")
