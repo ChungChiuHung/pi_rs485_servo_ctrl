@@ -601,12 +601,33 @@ class ServoController:
             self.pos_motion_start_0x0907(2)
         time.sleep(0.1)
 
+    def pos_step_motion_by(self, angle=0.0, acc_dec_time=5000, speed_rpm=10):
+        base_pulse_per_degree = 349525 + 1/3
+        output_pulse = 0
+
+        self.previous_angle = self.current_angle
+        # previous_angle = 10.5
+        # current_angle = 5.2 or 12.3
+        # diff_angle = 5.2-10.5 or 12.3-10.5
+        #            = -5.3 or 1.8
+        # convert to pulses
+        # diff_angle = 
+        self.current_angle = angle
+        diff_angle = self.current_angle - self.current_angle
+        diff_pulse = diff_angle * base_pulse_per_degree
+        fraction_part = diff_pulse - int(diff_pulse)
+        
+        self.float_error += fraction_part
+
+
+
+
     def post_step_motion_by(self, angle=0.0, acc_dec_time=5000, speed_rpm=10):
         # 125829120 pulse/rev
         # 349525 + 1/3 pulse/degree
         # 125829120 pulse/rev
         # 349525 + 1/3 pulse/degree
-        base_pulse_per_degree = 349525
+        base_pulse_per_degree = 349525.333
         output_pulse = 0
 
         print("\n")
@@ -618,29 +639,24 @@ class ServoController:
         self.current_angle = angle
         diff_angle = self.current_angle - self.previous_angle
 
-        if angle == 0:
-            output_pulse = -1 * self.accumulate_pulse
-            self.accumulate_pulse = 0
-            self.float_error = 0.0
-        else:
-            if diff_angle != 0:
-                pulse_with_float = base_pulse_per_degree * diff_angle
-                integer_pulse = int(pulse_with_float)
-                fractional_pulse = pulse_with_float - integer_pulse
+        if diff_angle != 0.0:
+            total_pulse = base_pulse_per_degree * diff_angle
+            integer_pulse = int(total_pulse)
+            fractional_pulse = total_pulse - integer_pulse
 
-                # Accumulate fractional part
-                self.float_error += fractional_pulse
+            # Accumulate fractional part
+            self.float_error += fractional_pulse
 
-                if self.float_error >=1.0:
-                    integer_error = int(self.float_error)
-                    integer_pulse += integer_error
-                    self.float_error -= integer_error
+            if self.float_error >=1.0:
+                integer_error = int(self.float_error)
+                integer_pulse += integer_error
+                self.float_error -= integer_error
 
-                output_pulse = integer_pulse
-                self.accumulate_pulse += output_pulse
+            output_pulse = integer_pulse
+            self.accumulate_pulse += output_pulse
 
-        low_byte = abs(output_pulse) & 0xFFFF
-        high_byte = (abs(output_pulse) >> 16) & 0xFFFF
+        low_byte = abs(self.accumulate_pulse) & 0xFFFF
+        high_byte = (abs(self.accumulate_pulse) >> 16) & 0xFFFF
 
         print("\n")
         print(f"Output pulse: {output_pulse}")
@@ -651,18 +667,18 @@ class ServoController:
         self.stop_continuous_reading()
 
         self.Enable_Position_Mode(True)
-        time.sleep(0.05)
+        time.sleep(0.06)
         self.config_acc_dec_0x0902(acc_dec_time)
-        time.sleep(0.05)
+        time.sleep(0.06)
         self.config_speed_0x0903(speed_rpm)
-        time.sleep(0.05)
+        time.sleep(0.06)
         self.config_pulses_0x0905_low_byte(low_byte)
-        time.sleep(0.05)
+        time.sleep(0.06)
         self.config_pulses_0x0906_high_byte(high_byte)
-        time.sleep(0.05)
+        time.sleep(0.06)
         
         self.start_continuous_reading()
-        time.sleep(0.05)
+        time.sleep(0.06)
 
         if output_pulse > 0:
             print("Running Servo CW")
