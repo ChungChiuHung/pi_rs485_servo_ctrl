@@ -655,8 +655,8 @@ class ServoController:
             output_pulse = integer_pulse
             self.accumulate_pulse += output_pulse
 
-        low_byte = abs(self.accumulate_pulse) & 0xFFFF
-        high_byte = (abs(self.accumulate_pulse) >> 16) & 0xFFFF
+        low_byte = abs(output_pulse) & 0xFFFF
+        high_byte = (abs(output_pulse) >> 16) & 0xFFFF
 
         print("\n")
         print(f"Output pulse: {output_pulse}")
