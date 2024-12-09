@@ -119,7 +119,7 @@ def set_point_handler_2(unused_addr, args, angle, acc_time, rpm):
     try:
         if not check_duplicated(angle):
             logging.info("Sending command.")
-            servo_ctrller.pos_step_motion_by(angle, acc_time, rpm)
+            servo_ctrller.post_step_motion_by(angle, acc_time, rpm)
             logging.info(
                 f"Set point to {angle} degrees. Acc time: {acc_time} ms. RPM: {rpm}"
             )
