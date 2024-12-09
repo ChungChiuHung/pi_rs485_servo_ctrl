@@ -602,7 +602,7 @@ class ServoController:
         #time.sleep(0.1)
 
     def pos_step_motion_by(self, angle=0.0, acc_dec_time=5000, speed_rpm=10):
-        base_pulse_per_degree = 349525 + 1/3
+        base_pulse_per_degree = 349525.333
         output_pulse = 0
 
         self.previous_angle = self.current_angle
@@ -641,7 +641,7 @@ class ServoController:
             # Accumulate fractional part
             self.float_error += fractional_pulse
 
-            if self.float_error >=1.0:
+            if self.float_error >= 1.0:
                 integer_error = int(self.float_error)
                 integer_pulse += integer_error
                 self.float_error -= integer_error
@@ -655,7 +655,7 @@ class ServoController:
         print("\n")
         print(f"Output pulse: {output_pulse}")
         print(f"float error: {self.float_error}")
-        print(f"Current Accumulate Pulse: {self.accumulate_pulse}")
+        # print(f"Current Accumulate Pulse: {self.accumulate_pulse}")
         print(f"{hex(high_byte)}, {hex(low_byte)}")
 
         self.stop_continuous_reading()
