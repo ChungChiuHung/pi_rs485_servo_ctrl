@@ -48,34 +48,39 @@ class ModbusASCIIClient:
                 print(f"Unexpected error occurred: {e}")
 
     def receive(self, expected_length=None, timeout=0.1):
-        if self.ensure_connection():
-            try:
-                response = bytearray()
-                start_time = time.time()
+        if not self.ensure_connection():
+            print("Connection is not stablished.")
+            return None
 
-                while True:
+        response = bytearray()
+        start_time = time.time()
+
+        try:
+            while True:
+                if time.time() - start_time > timeout:
+                    if not self.serial_port_manager.get_serial_instance().in_waiting:
+                        break
+                bytes_to_read = self.serial_port_manager.get_serial_instance().in_waiting
+                if bytes_to_read:
+                    response.extend(self.serial_port_manager.get_serial_instance().read(bytes_to_read or 1))
                     if expected_length and len(response) >= expected_length:
                         break
-                    if not expected_length and time.time() - start_time > timeout:
-                        if not self.serial_port_manager.get_serial_instance().in_waiting:
-                            break
+                    start_time = time.time()
 
-                    bytes_to_read = self.serial_port_manager.get_serial_instance().in_waiting
-                    if bytes_to_read:
-                        response.extend(self.serial_port_manager.get_serial_instance().read(bytes_to_read or 1))
-                        start_time = time.time()
-
-                if response:
-                    print("Response received:", response)
-                    #print("Parsing Response: ", self.parse_response(response))
-                    return response
-                else:
-                    print("No response received.")
-            except serial.SerialException as e:
-                print(f"Failed to receive message due to serial error: {e}")
-            except Exception as e:
-                print(f"Unexpected error occurred while receiving message: {e}")
+            if response:
+                print("Response received:", response)
+                #print("Parsing Response: ", self.parse_response(response))
+                return response
+            else:
+                print("No response received.")
                 return None
+            
+        except serial.SerialException as e:
+            print(f"Failed to receive message due to serial error: {e}")
+        except Exception as e:
+            print(f"Unexpected error occurred while receiving message: {e}")
+        
+        return None
             
     def ensure_connection(self):
         if not self.serial_port_manager.get_serial_instance():

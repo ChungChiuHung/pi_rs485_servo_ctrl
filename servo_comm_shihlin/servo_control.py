@@ -574,9 +574,6 @@ class ServoController:
         self.response = self.modbus_client.send_and_receive(message)
         # response_object = ModbusResponse(response)
         # print(response_object)
-        # print(f"Build Write Command: {message}")
-        # time.sleep(0.05)
-
 
     def read_encoder_before_gear_ratio(self):
         print(f"Address 0x0000, 1 word")
@@ -610,11 +607,7 @@ class ServoController:
         diff_angle = self.current_angle - self.current_angle
         diff_pulse = diff_angle * base_pulse_per_degree
         fraction_part = diff_pulse - int(diff_pulse)
-        
         self.float_error += fraction_part
-
-
-
 
     def post_step_motion_by(self, angle=0.0, acc_dec_time=5000, speed_rpm=10):
         # 125829120 pulse/rev
@@ -659,21 +652,21 @@ class ServoController:
         print(f"{hex(high_byte)}, {hex(low_byte)}")
 
         self.stop_continuous_reading()
-        time.sleep(0.08)
+        time.sleep(0.05)
 
         self.Enable_Position_Mode(True)
-        time.sleep(0.08)
+        time.sleep(0.05)
         self.config_acc_dec_0x0902(acc_dec_time)
-        time.sleep(0.08)
+        time.sleep(0.05)
         self.config_speed_0x0903(speed_rpm)
-        time.sleep(0.08)
+        time.sleep(0.05)
         self.config_pulses_0x0905_low_byte(low_byte)
-        time.sleep(0.08)
+        time.sleep(0.05)
         self.config_pulses_0x0906_high_byte(high_byte)
-        time.sleep(0.08)
+        time.sleep(0.05)
         
         self.start_continuous_reading()
-        time.sleep(0.08)
+        time.sleep(0.05)
 
         if output_pulse > 0:
             print("Running Servo CW")
