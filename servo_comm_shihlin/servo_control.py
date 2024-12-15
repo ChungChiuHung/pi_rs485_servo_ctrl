@@ -45,7 +45,7 @@ class ServoController:
         hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
         print(f"{data_name}: {hex_string}")
 
-    def start_continuous_reading(self, address=0x0205, interval=0.1):
+    def start_continuous_reading(self, address=0x0205, interval=0.15):
         if self.read_thread is not None:
             self.stop_continuous_reading()
 
