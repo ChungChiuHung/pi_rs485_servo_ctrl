@@ -62,8 +62,8 @@ class ServoController:
             try:
                 message = self.modbus_client.build_read_message(address, 1)
                 response = self.modbus_client.send_and_receive(message)
-                response_object = ModbusResponse(response)
-                print(response_object)
+                # response_object = ModbusResponse(response)
+                # print(response_object)
                 # if self.check_movement:
                 #     if self.is_movement_complete(response):
                 #         # self.completed_tag = True
