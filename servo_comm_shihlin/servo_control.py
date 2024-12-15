@@ -31,7 +31,6 @@ class ServoController:
         self.read_thread = None
         self.read_thread_stop_event = Event()
         self.response = ""
-        self.response = ""
         self.current_angle = 0.0
         self.previous_angle = 0.0
         self.float_error = 0.0
@@ -351,12 +350,6 @@ class ServoController:
         self.response = self.modbus_client.send_and_receive(message)
         # response_object = ModbusResponse(response)
         # print(response_object)
-        # self.response = self.modbus_client.send_and_receive(message)
-        # response_object = ModbusResponse(response)
-        # print(response_object)
-
-        # print(int.from_bytes(response_object.data_bytes, byteorder='big'))
-
         # print(int.from_bytes(response_object.data_bytes, byteorder='big'))
 
         while False:
@@ -451,20 +444,9 @@ class ServoController:
         # PA13, PLSS: Command pulse option
         # PA15, CRSHA: Motor crash protection (time)
 
-        # PA01, 2 3, 6, 7, 13, 15
-        # PA02, ATUM: Gain tuning mode option
-        # PA03, ATUL: Auto-tuning response level setting
-        # PA06, CMX : Electronic gear numerator
-        # PA07, CDV : Electronic gear denominator
-        # PA13, PLSS: Command pulse option
-        # PA15, CRSHA: Motor crash protection (time)
-
         for address in read_address_array:
             print(f"Read {address.no}: {address.name}: {hex(address.address)}")
             message = self.modbus_client.build_read_message(address.address, 1)
-            self.response = self.modbus_client.send_and_receive(message)
-            # response_object = ModbusResponse(response)
-            # print(response_object)
             self.response = self.modbus_client.send_and_receive(message)
             # response_object = ModbusResponse(response)
             # print(response_object)
@@ -505,7 +487,6 @@ class ServoController:
 
     def config_acc_dec_0x0902(self, acc_dec_time):
         # print(f"Address 0x0902, 1 word")
-        # print(f"Address 0x0902, 1 word")
         config_value = acc_dec_time
         message = self.modbus_client.build_write_message(0x0902, config_value)
         # print(f"Build Write Command: {message}")
@@ -516,7 +497,6 @@ class ServoController:
         
 
     def config_speed_0x0903(self, speed_rpm):
-        # print(f"Address 0x0903, 1 word")
         # print(f"Address 0x0903, 1 word")
         config_value = speed_rpm
         message = self.modbus_client.build_write_message(0x0903, config_value)
@@ -652,21 +632,21 @@ class ServoController:
         print(f"{hex(high_byte)}, {hex(low_byte)}")
 
         self.stop_continuous_reading()
-        time.sleep(0.05)
+        time.sleep(0.06)
 
         self.Enable_Position_Mode(True)
-        time.sleep(0.05)
+        time.sleep(0.06)
         self.config_acc_dec_0x0902(acc_dec_time)
-        time.sleep(0.05)
+        time.sleep(0.06)
         self.config_speed_0x0903(speed_rpm)
-        time.sleep(0.05)
+        time.sleep(0.06)
         self.config_pulses_0x0905_low_byte(low_byte)
-        time.sleep(0.05)
+        time.sleep(0.06)
         self.config_pulses_0x0906_high_byte(high_byte)
-        time.sleep(0.05)
+        time.sleep(0.06)
         
         self.start_continuous_reading()
-        time.sleep(0.05)
+        time.sleep(0.06)
 
         if output_pulse > 0:
             print("Running Servo CW")
