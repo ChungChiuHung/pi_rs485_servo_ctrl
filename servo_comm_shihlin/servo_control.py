@@ -100,6 +100,13 @@ class ServoController:
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         print(response_object)
+    
+    def read_PA33_Encoder_ABS_Pos(self):
+        message = self.modbus_client.build_read_message(0x0340, 2)
+        print(f"Build Read Message: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+        print(response_object)
 
     def write_PA01_Ctrl_Mode(self):
         print(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
@@ -645,7 +652,7 @@ class ServoController:
         self.config_pulses_0x0906_high_byte(high_byte)
         time.sleep(0.06)
         
-        self.start_continuous_reading()
+        self.start_continuous_reading(0x0340)
         time.sleep(0.06)
 
         if output_pulse > 0:
