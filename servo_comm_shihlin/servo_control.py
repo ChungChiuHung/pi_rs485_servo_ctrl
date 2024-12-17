@@ -630,11 +630,6 @@ class ServoController:
 
             output_pulse = integer_pulse
             self.accumulate_pulse += output_pulse
-        else:
-            output_pulse = -1 * self.accumulate_pulse
-            self.accumulate_pulse = 0
-            self.current_angle = 0.0
-            self.previous_angle = 0.0
 
         low_byte = abs(output_pulse) & 0xFFFF
         high_byte = (abs(output_pulse) >> 16) & 0xFFFF
@@ -649,15 +644,15 @@ class ServoController:
         time.sleep(0.06)
 
         self.Enable_Position_Mode(True)
-        time.sleep(0.07)
+        time.sleep(0.05)
         self.config_acc_dec_0x0902(acc_dec_time)
-        time.sleep(0.07)
+        time.sleep(0.05)
         self.config_speed_0x0903(speed_rpm)
-        time.sleep(0.07)
+        time.sleep(0.05)
         self.config_pulses_0x0905_low_byte(low_byte)
-        time.sleep(0.07)
+        time.sleep(0.05)
         self.config_pulses_0x0906_high_byte(high_byte)
-        time.sleep(0.07)
+        time.sleep(0.05)
         
         self.start_continuous_reading(0x0340)
         time.sleep(0.06)
