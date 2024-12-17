@@ -630,6 +630,11 @@ class ServoController:
 
             output_pulse = integer_pulse
             self.accumulate_pulse += output_pulse
+        else:
+            output_pulse = -1 * self.accumulate_pulse
+            self.accumulate_pulse = 0
+            self.current_angle = 0.0
+            self.previous_angle = 0.0
 
         low_byte = abs(output_pulse) & 0xFFFF
         high_byte = (abs(output_pulse) >> 16) & 0xFFFF
