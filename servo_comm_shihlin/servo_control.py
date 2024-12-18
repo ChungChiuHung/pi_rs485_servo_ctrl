@@ -60,7 +60,7 @@ class ServoController:
                 logging.info("Reconnection attempts stopped.")
                 break
             try:
-                self.Read_Motion_Completed_Signal()
+                self.read_encoder_before_gear_ratio()
                 #message = self.modbus_client.build_read_message(address, 1)
                 #response = self.modbus_client.send_and_receive(message)
                 #response_object = ModbusResponse(response)
@@ -108,8 +108,7 @@ class ServoController:
         message = self.modbus_client.build_read_message(0x0340, 2)
         print(f"Build Read Message: {message}")
         response = self.modbus_client.send_and_receive(message)
-        response_object = ModbusResponse(response)
-        print(response_object)
+        logger.info(response)
 
     def write_PA01_Ctrl_Mode(self):
         print(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
@@ -455,11 +454,10 @@ class ServoController:
         # PA15, CRSHA: Motor crash protection (time)
 
         for address in read_address_array:
-            print(f"Read {address.no}: {address.name}: {hex(address.address)}")
+            logger.info(f"Read {address.no}: {address.name}: {hex(address.address)}")
             message = self.modbus_client.build_read_message(address.address, 1)
             self.response = self.modbus_client.send_and_receive(message)
-            # response_object = ModbusResponse(response)
-            # print(response_object)
+            logger.info(self.response)
             time.sleep(0.1)
 
 
@@ -560,11 +558,12 @@ class ServoController:
         # print(response_object)
 
     def read_encoder_before_gear_ratio(self):
-        print(f"Address 0x0000, 1 word")
+        # logger.info(f"Address 0x0000, 1 word")
         message = self.modbus_client.build_read_message(0x0000, 2)
-        print(f"Build Read Command: {message}")
-        response_object = ModbusResponse(message)
-        print(response_object)
+        response = self.modbus_client.send_and_receive(message)
+        # logger.info(f"Build Read Command: {message}")
+        # response_object = ModbusResponse(message)
+        logger.info(response)
 
 
     def read_encoder_after_gear_ratio(self):
