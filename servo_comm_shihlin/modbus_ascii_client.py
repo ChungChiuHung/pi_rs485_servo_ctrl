@@ -1,17 +1,38 @@
 import struct
 import serial
 import time
+import threading
+from threading import Event
 from modbus_utils import ModbusUtils
 from modbus_command_code import CmdCode
 from modbus_response import ModbusResponse
 from servo_control_registers import ServoControlRegistry
 from serial_port_manager import SerialPortManager
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class ModbusASCIIClient:
-    def __init__(self, device_number, serial_port_manager: SerialPortManager):
-        self.device_number = device_number
-        self.serial_port_manager = serial_port_manager
-        self.lrc = ModbusUtils()
+    _instance = None
+    _lock = threading.Lock()
+    _is_initialized = False
+
+    def __new__(cls, device_number, serial_port_manager: SerialPortManager):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super(ModbusASCIIClient, cls).__new__(cls)
+                cls._instance._initialize(device_number, serial_port_manager)
+        return cls._instance
+
+    def _initialize(self, device_number, serial_port_manager: SerialPortManager):
+        if not self._is_initialized:
+            self.device_number = device_number
+            self.serial_port_manager = serial_port_manager
+            self.lrc = ModbusUtils()
+            self._is_initialized = True
+            logger.info("ModbusASCIIClient initialized.")
 
     def build_read_message(self, servo_control_registry, word_length):
         address = servo_control_registry
@@ -20,7 +41,7 @@ class ModbusASCIIClient:
 
     def build_write_message(self, servo_control_registry, data):
         address = servo_control_registry
-        print(f"Address : {struct.pack('>H',address)}")
+        # print(f"Address : {struct.pack('>H',address)}")
         new_data = struct.pack('>HH', address, data)
         return self._build_message(CmdCode.WRITE_DATA.value, new_data)
 
@@ -34,22 +55,30 @@ class ModbusASCIIClient:
         return full_message.encode('utf-8')
 
     def send_and_receive(self, message, expected_length = None, timeout = 0.1):
-        self.send(message)
-        return self.receive(expected_length, timeout)
+        try:
+            self.send(message)
+            return self.receive(expected_length, timeout)
+        except Exception as e:
+            logger.error(f"Error in send_and_receive: {e}")
+            return None
 
     def send(self, message):
         if self.ensure_connection():
             try:
                 self.serial_port_manager.get_serial_instance().write(message)
+                logger.debug(f"Message sent: {message}")
                 #print("Message sent:", message)
             except serial.SerialException as e:
-                print(f"Failed to send message due to serial error: {e}")
+                #print(f"Failed to send message due to serial error: {e}")
+                logger.error(f"Failed to send message due to serial error: {e}")
             except Exception as e:
-                print(f"Unexpected error occurred: {e}")
+                #print(f"Unexpected error occurred: {e}")
+                logger.error(f"Unexpected error occurred: {e}")
 
     def receive(self, expected_length=None, timeout=0.1):
         if not self.ensure_connection():
-            print("Connection is not stablished.")
+            # print("Connection is not stablished.")
+            logger.warning("Connection not established.")
             return None
 
         response = bytearray()
@@ -70,23 +99,25 @@ class ModbusASCIIClient:
             if response:
                 #print("Response received:", response)
                 #print("Parsing Response: ", self.parse_response(response))
+                logger.debug(f"Response received: {response}")
                 return response
             else:
-                print("No response received.")
+                #print("No response received.")
+                logger.warning("No response received.")
                 return None
             
         except serial.SerialException as e:
-            print(f"Failed to receive message due to serial error: {e}")
+            logger.error(f"Failed to receive message due to serial error: {e}")
         except Exception as e:
-            print(f"Unexpected error occurred while receiving message: {e}")
+            logger.error(f"Unexpected error occurred while receiving message: {e}")
         
         return None
             
     def ensure_connection(self):
         if not self.serial_port_manager.get_serial_instance():
-            print("Serial instance not available. Attempting to reconnect...")
+            logger.warning("Serial instance not available. Attempting to reconnect...")
             if not self.serial_port_manager.connect():
-                print("Failed to establish serial connection.")
+                logger.error("Failed to establish serial connection.")
                 return False
         return True
 

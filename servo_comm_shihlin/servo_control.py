@@ -16,11 +16,10 @@ PD.init_registers()
 PE.init_registers()
 PF.init_registers()
 
-float_error = 0
-
 # Configure logging
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 
 class ServoController:
@@ -43,7 +42,7 @@ class ServoController:
 
     def print_byte_array_as_spaced_hex(self, byte_array, data_name):
         hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
-        print(f"{data_name}: {hex_string}")
+        logger.info(f"{data_name}: {hex_string}")
 
     def start_continuous_reading(self, address=0x0205, interval=0.15):
         if self.read_thread is not None:
@@ -62,8 +61,8 @@ class ServoController:
             try:
                 message = self.modbus_client.build_read_message(address, 1)
                 response = self.modbus_client.send_and_receive(message)
-                # response_object = ModbusResponse(response)
-                # print(response_object)
+                response_object = ModbusResponse(response)
+                logging.info(response_object)
                 # if self.check_movement:
                 #     if self.is_movement_complete(response):
                 #         # self.completed_tag = True
@@ -90,7 +89,7 @@ class ServoController:
             self.read_thread_stop_event.set()
             self.read_thread.join()
             self.read_thread = None
-            print("Continuous reading stopped.")
+            logging.info("Continuous reading stopped.")
 
     #  0x0010, 0x0000
 
@@ -194,7 +193,7 @@ class ServoController:
         print(response_object)
 
     def clear_alarm(self):
-        print(
+        logging.info(
             f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
         config_value = ServoUtility.config_hex_with(0, 3, 4, 0)
         message = self.modbus_client.build_write_message(
@@ -205,7 +204,7 @@ class ServoController:
         # print("\n")
 
     def servo_on(self):
-        print(
+        logging.info(
             f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
         config_value = ServoUtility.config_hex_with(0, 3, 4, 1)
         message = self.modbus_client.build_write_message(
@@ -216,7 +215,7 @@ class ServoController:
         # print("\n")
 
     def clear_alarm_12(self):
-        print(
+        logging.info(
             f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
         config_value = ServoUtility.config_hex_with(0, 0, 4, 0)
         message = self.modbus_client.build_write_message(
@@ -480,7 +479,8 @@ class ServoController:
 
         message = self.modbus_client.build_write_message(address, config_value)
         # print(f"Build Read Command: {message}")
-        self.response = self.modbus_client.send_and_receive(message)
+        # self.response = self.modbus_client.send_and_receive(message)
+        self.modbus_client.send(message)
         # print(f"Response Message: {response}")
         # response_object = ModbusResponse(response)
         # print(response_object)
@@ -499,7 +499,8 @@ class ServoController:
         config_value = acc_dec_time
         message = self.modbus_client.build_write_message(0x0902, config_value)
         # print(f"Build Write Command: {message}")
-        self.response = self.modbus_client.send_and_receive(message)
+        # self.response = self.modbus_client.send_and_receive(message)
+        self.modbus_client.send(message)
         # response_object = ModbusResponse(response)
         # print(response_object)
         # print(f"Build Write Command: {message}")
@@ -510,7 +511,8 @@ class ServoController:
         config_value = speed_rpm
         message = self.modbus_client.build_write_message(0x0903, config_value)
         # print(f"Build Write Command: {message}")
-        self.response = self.modbus_client.send_and_receive(message)
+        # self.response = self.modbus_client.send_and_receive(message)
+        self.modbus_client.send(message)
         # response_object = ModbusResponse(response)
         # print(response_object)
         # print(f"Build Write Command: {message}")
@@ -521,7 +523,8 @@ class ServoController:
         config_value = low_byte
         message = self.modbus_client.build_write_message(address, config_value)
         # print(f"Build Write Command: {message}")
-        self.response = self.modbus_client.send_and_receive(message)
+        # self.response = self.modbus_client.send_and_receive(message)
+        self.modbus_client.send(message)
         # response_object = ModbusResponse(response)
         # print(response_object)
         # print(f"Build Write Command: {message}")
@@ -532,7 +535,8 @@ class ServoController:
         config_value = high_byte
         message = self.modbus_client.build_write_message(address, config_value)
         # print(f"Build Write Command: {message}")
-        response = self.modbus_client.send_and_receive(message)
+        # response = self.modbus_client.send_and_receive(message)
+        self.modbus_client.send(message)
         # response_object = ModbusResponse(response)
         # print(response_object)
 
@@ -560,7 +564,8 @@ class ServoController:
         message = self.modbus_client.build_write_message(0x0907, config_value)
         # print(f"Build Write Command: {message}")
         # time.sleep(0.05)
-        self.response = self.modbus_client.send_and_receive(message)
+        # self.response = self.modbus_client.send_and_receive(message)
+        self.modbus_client.send(message)
         # response_object = ModbusResponse(response)
         # print(response_object)
 
@@ -589,79 +594,74 @@ class ServoController:
 
     def pos_step_motion_by(self, angle=0.0, acc_dec_time=5000, speed_rpm=10):
         base_pulse_per_degree = 349525.333
-        output_pulse = 0
-
-        self.previous_angle = self.current_angle
-        self.current_angle = angle
-        diff_angle = self.current_angle - self.current_angle
-        diff_pulse = diff_angle * base_pulse_per_degree
-        fraction_part = diff_pulse - int(diff_pulse)
-        self.float_error += fraction_part
+        # self.previous_angle = self.current_angle
+        # self.current_angle = angle
+        # diff_angle = self.current_angle - self.current_angle
+        # diff_pulse = diff_angle * base_pulse_per_degree
+        # fraction_part = diff_pulse - int(diff_pulse)
+        # self.float_error += fraction_part
 
     def post_step_motion_by(self, angle=0.0, acc_dec_time=5000, speed_rpm=10):
         # 125829120 pulse/rev
         # 349525 + 1/3 pulse/degree
         # 125829120 pulse/rev
         # 349525 + 1/3 pulse/degree
-        base_pulse_per_degree = 349525.333
-        output_pulse = 0
-
-        print("\n")
-        print(f"Current Angle: {self.current_angle}")
-        print(f"Previous Angle: {self.previous_angle}")
-        print(f"Set Angle: {angle}")
-
+        base_pulse_per_degree = 349525.333  
         self.previous_angle = self.current_angle
         self.current_angle = angle
         diff_angle = self.current_angle - self.previous_angle
 
+        logger.info(f"Performing motion: Current Angle={self.current_angle}, Previous Angle={self.previous_angle}")
+
+        #print("\n")
+        #print(f"Current Angle: {self.current_angle}")
+        #print(f"Previous Angle: {self.previous_angle}")
+        #print(f"Set Angle: {angle}")
+        #print(f"Diff Angle: {diff_angle}")
+
         if diff_angle != 0.0:
-            total_pulse = base_pulse_per_degree * diff_angle
+            total_pulse = base_pulse_per_degree * abs(diff_angle)
             integer_pulse = int(total_pulse)
             fractional_pulse = total_pulse - integer_pulse
 
             # Accumulate fractional part
-            self.float_error += fractional_pulse
+            self.float_error -= fractional_pulse
 
             if self.float_error >= 1.0:
                 integer_error = int(self.float_error)
                 integer_pulse += integer_error
                 self.float_error -= integer_error
 
-            output_pulse = integer_pulse
-            self.accumulate_pulse += output_pulse
+            self.accumulate_pulse += integer_pulse
 
-        low_byte = abs(output_pulse) & 0xFFFF
-        high_byte = (abs(output_pulse) >> 16) & 0xFFFF
+            low_byte = integer_pulse & 0xFFFF
+            high_byte = (integer_pulse >> 16) & 0xFFFF
 
-        print("\n")
-        print(f"Output pulse: {output_pulse}")
-        print(f"float error: {self.float_error}")
-        # print(f"Current Accumulate Pulse: {self.accumulate_pulse}")
-        print(f"{hex(high_byte)}, {hex(low_byte)}")
+            logger.info(f"Motion Pulses: {integer_pulse}, Low Byte={hex(low_byte)}, High Byte={hex(high_byte)}")
 
+            self._execute_positioning(diff_angle, low_byte, high_byte, acc_dec_time, speed_rpm)
+    
+    def _execute_positioning(self, angle, low_byte, high_byte, acc_dec_time, speed_rpm):
         self.stop_continuous_reading()
-        time.sleep(0.06)
-
         self.Enable_Position_Mode(True)
-        time.sleep(0.05)
+        self.delay_ms(50)
         self.config_acc_dec_0x0902(acc_dec_time)
-        time.sleep(0.05)
+        self.delay_ms(50)
         self.config_speed_0x0903(speed_rpm)
-        time.sleep(0.05)
+        self.delay_ms(50)
         self.config_pulses_0x0905_low_byte(low_byte)
-        time.sleep(0.05)
+        self.delay_ms(50)
         self.config_pulses_0x0906_high_byte(high_byte)
-        time.sleep(0.05)
+        self.delay_ms(50)
         
         self.start_continuous_reading(0x0340)
-        time.sleep(0.06)
+        self.delay_ms(60)
 
-        if output_pulse > 0:
-            print("Running Servo CW")
+        if angle > 0:
+            logger.info("Running Servo CW")
             self.pos_step_motion_test(True)
         else:
-            print("Running Servo CCW")
+            logger.info("Running Servo CCW")
             self.pos_step_motion_test(False)
 
     def enable_speed_ctrl(self, speed_rpm):
@@ -694,4 +694,4 @@ class ServoController:
         self.previous_angle = 0.0
         self.float_error = 0.0
         self.accumulate_pulse = 0
-        print("home position set!!!")
+        logger.info("home position set!!!")
