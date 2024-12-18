@@ -562,14 +562,15 @@ class ServoController:
         message = self.modbus_client.build_read_message(0x0000, 2)
         response = self.modbus_client.send_and_receive(message)
         # logger.info(f"Build Read Command: {message}")
-        response_object = ModbusResponse(message)
+        response_object = ModbusResponse(response)
         logger.info(response_object)
 
     def read_encoder_after_gear_ratio(self):
-        print(f"Address 0x0024, 1 word")
+        #logger.info(f"Address 0x0024, 1 word")
         message = self.modbus_client.build_read_message(0x0024, 2)
-        print(f"Build Read Command: {message}")
-        response_object = ModbusResponse(message)
+        response = self.modbus_client.send_and_receive(message)
+        #logger.info(f"Build Read Command: {message}")
+        response_object = ModbusResponse(response)
         print(response_object)
 
     def pos_step_motion_test(self, CW=True):
