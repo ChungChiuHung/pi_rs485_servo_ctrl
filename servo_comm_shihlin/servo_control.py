@@ -562,7 +562,8 @@ class ServoController:
         message = self.modbus_client.build_read_message(0x0000, 2)
         response = self.modbus_client.send_and_receive(message)
         # logger.info(f"Build Read Command: {message}")
-        logger.info(response)
+        response_object = ModbusResponse(message)
+        logger.info(response_object)
 
     def read_encoder_after_gear_ratio(self):
         print(f"Address 0x0024, 1 word")
