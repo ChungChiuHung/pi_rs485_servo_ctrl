@@ -562,32 +562,7 @@ class ServoController:
         message = self.modbus_client.build_read_message(0x0000, 2)
         response = self.modbus_client.send_and_receive(message)
         # logger.info(f"Build Read Command: {message}")
-        response_str = response.strip("bytearray(b')").rstrip("')")
-
-        response_content = response_str[1:-2]
-        address = response_content[0:2]
-        function_code = response_content[2:4]
-
-        data_length_hex = response_content[4:6]
-        data_length = int(data_length_hex, 16)
-
-        data_start = 6
-        data_end = 6 + (data_length * 2)
-        data_hex = response_content[data_start:data_end]
-
-        data_values = [int(data_hex[i:i+4], 16) for i in range(0, len(data_hex), 4)]
-    
-        lrc = response_content[data_start:data_end]
-        
-        parsed_response = {
-            "Address": address,
-            "Command Code": function_code,
-            "Data": data_length,
-            "Data Values": data_values,
-            "LRC": lrc,
-        }
-
-        logger.info(parsed_response)
+        logger.info(response)
 
     def read_encoder_after_gear_ratio(self):
         print(f"Address 0x0024, 1 word")
