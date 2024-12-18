@@ -66,9 +66,16 @@ class ModbusResponse:
             additional_info += f" Start Address: {self.start_address}\n"
 
         if hasattr(self, 'data_bytes'):
+            def hex_to_decimal(data_bytes):
+                return sum(byte << (8 * i) for i, byte in enumerate(data_bytes))
+            
             data_str = ', '.join(f"{b:02X}" for b in self.data_bytes)
+
+            decimal_value = hex_to_decimal(self.data_bytes)
+
             additional_info = (f"  Data Count: {self.data_count}\n"
-                               f"  Data: [{data_str}]\n")
+                               f"  Data: [{data_str}]\n"
+                               f"  Decimal Value: {decimal_value}\n")
         else:
             additional_info += " Data: Not applicable for write commands\n"
 

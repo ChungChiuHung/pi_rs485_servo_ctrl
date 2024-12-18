@@ -466,7 +466,7 @@ class ServoController:
         # print(f"Read {parameter.no}: {parameter.name}: {hex(parameter.address)}")
         message = self.modbus_client.build_read_message(parameter.address, 1)
         self.response = self.modbus_client.send_and_receive(message)
-        logger.info(message)
+        logger.info(self.response)
 
     # Position Control Test Mode
     def Enable_Position_Mode(self, enable=True):
@@ -554,8 +554,6 @@ class ServoController:
         # time.sleep(0.05)
         # self.response = self.modbus_client.send_and_receive(message)
         self.modbus_client.send(message)
-        # response_object = ModbusResponse(response)
-        # print(response_object)
 
     def read_encoder_before_gear_ratio(self):
         # logger.info(f"Address 0x0000, 1 word")
