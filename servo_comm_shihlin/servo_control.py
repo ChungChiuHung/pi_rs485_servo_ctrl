@@ -44,6 +44,7 @@ class ServoController:
         hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
         logger.info(f"{data_name}: {hex_string}")
 
+    # default address = 0x0205
     def start_continuous_reading(self, address=0x0205, interval=0.15):
         if self.read_thread is not None:
             self.stop_continuous_reading()
@@ -61,7 +62,7 @@ class ServoController:
             try:
                 message = self.modbus_client.build_read_message(address, 1)
                 response = self.modbus_client.send_and_receive(message)
-                response_object = ModbusResponse(response)
+                response_object = self.modbus_client.parse_response(response)
                 logging.info(response_object)
                 # if self.check_movement:
                 #     if self.is_movement_complete(response):
@@ -466,8 +467,6 @@ class ServoController:
         # print(f"Read {parameter.no}: {parameter.name}: {hex(parameter.address)}")
         message = self.modbus_client.build_read_message(parameter.address, 1)
         self.response = self.modbus_client.send_and_receive(message)
-        # response_object = ModbusResponse(response)
-        # print(response_object)
 
     # Position Control Test Mode
     def Enable_Position_Mode(self, enable=True):
@@ -481,9 +480,7 @@ class ServoController:
         # print(f"Build Read Command: {message}")
         # self.response = self.modbus_client.send_and_receive(message)
         self.modbus_client.send(message)
-        # print(f"Response Message: {response}")
-        # response_object = ModbusResponse(response)
-        # print(response_object)
+
 
     def Enable_JOG_Mode(self, enable=True):
         address = ServoControlRegistry.CTRL_MODE_SEL.value
@@ -501,9 +498,6 @@ class ServoController:
         # print(f"Build Write Command: {message}")
         # self.response = self.modbus_client.send_and_receive(message)
         self.modbus_client.send(message)
-        # response_object = ModbusResponse(response)
-        # print(response_object)
-        # print(f"Build Write Command: {message}")
         
 
     def config_speed_0x0903(self, speed_rpm):
@@ -513,9 +507,7 @@ class ServoController:
         # print(f"Build Write Command: {message}")
         # self.response = self.modbus_client.send_and_receive(message)
         self.modbus_client.send(message)
-        # response_object = ModbusResponse(response)
-        # print(response_object)
-        # print(f"Build Write Command: {message}")
+
 
     def config_pulses_0x0905_low_byte(self, low_byte):
         address = ServoControlRegistry.POS_PULSES_CMD_L.value
@@ -525,9 +517,7 @@ class ServoController:
         # print(f"Build Write Command: {message}")
         # self.response = self.modbus_client.send_and_receive(message)
         self.modbus_client.send(message)
-        # response_object = ModbusResponse(response)
-        # print(response_object)
-        # print(f"Build Write Command: {message}")
+
 
     def config_pulses_0x0906_high_byte(self, high_byte):
         address = ServoControlRegistry.POS_PULSES_CMD_H.value
@@ -537,8 +527,6 @@ class ServoController:
         # print(f"Build Write Command: {message}")
         # response = self.modbus_client.send_and_receive(message)
         self.modbus_client.send(message)
-        # response_object = ModbusResponse(response)
-        # print(response_object)
 
     def read_0x0905_low_byte(self):
         # print(f"Address 0x0905, 1 word")
