@@ -60,10 +60,11 @@ class ServoController:
                 logging.info("Reconnection attempts stopped.")
                 break
             try:
-                message = self.modbus_client.build_read_message(address, 1)
-                response = self.modbus_client.send_and_receive(message)
-                response_object = self.modbus_client.parse_response(response)
-                logging.info(response_object)
+                self.Read_Motion_Completed_Signal()
+                #message = self.modbus_client.build_read_message(address, 1)
+                #response = self.modbus_client.send_and_receive(message)
+                #response_object = ModbusResponse(response)
+                #logging.info(response_object)
                 # if self.check_movement:
                 #     if self.is_movement_complete(response):
                 #         # self.completed_tag = True
@@ -467,6 +468,8 @@ class ServoController:
         # print(f"Read {parameter.no}: {parameter.name}: {hex(parameter.address)}")
         message = self.modbus_client.build_read_message(parameter.address, 1)
         self.response = self.modbus_client.send_and_receive(message)
+        response = ModbusResponse(self.response)
+        logger.info(response)
 
     # Position Control Test Mode
     def Enable_Position_Mode(self, enable=True):
