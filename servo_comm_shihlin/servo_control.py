@@ -654,7 +654,7 @@ class ServoController:
         self.config_pulses_0x0906_high_byte(high_byte)
         self.delay_ms(50)
         
-        self.start_continuous_reading(0x0340)
+        self.start_continuous_reading(0x0340, 0.2)
         self.delay_ms(60)
 
         if angle > 0:
