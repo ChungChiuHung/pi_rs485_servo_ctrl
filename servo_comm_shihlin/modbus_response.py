@@ -58,8 +58,7 @@ class ModbusResponse:
         base_info = (f"Modbus Response:\n"
                      f"  STX: {self.stx}\n"
                      f"  Address: {self.adr}\n"
-                     f"  Command: {self.cmd})\n"
-        )
+                     f"  Command: {self.cmd}\n")
 
         additional_info = ""
         if hasattr(self, 'start_address'):
@@ -72,13 +71,26 @@ class ModbusResponse:
             data_str = ', '.join(f"{b:02X}" for b in self.data_bytes)
 
             decimal_value = hex_to_decimal(self.data_bytes)
+            scaled_value = round(decimal_value * 0.0001, 1)
 
             additional_info = (f"  Data Count: {self.data_count}\n"
                                f"  Data: [{data_str}]\n"
-                               f"  Decimal Value: {decimal_value}\n")
+                               f"  Decimal Value: {decimal_value}\n"
+                               f"  Scaled Value: {scaled_value}\n")
         else:
             additional_info += " Data: Not applicable for write commands\n"
 
         additional_info += f" LRC: {self.lrc}\n"
 
         return base_info + additional_info
+
+    def get_scaled_value(self):
+        if hasattr(self, 'data_bytes'):
+            def hex_to_decimal(data_bytes):
+                return sum(byte << (8 * i) for i, byte in enumerate(data_bytes))
+            
+            decimal_value = hex_to_decimal(self.data_bytes)
+            scaled_value = round(decimal_value * 0.0001, 1)
+            return scaled_value
+        else:
+            return None

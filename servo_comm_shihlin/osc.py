@@ -176,16 +176,13 @@ def main():
         dispatcher = Dispatcher()
         dispatcher.map("/servo", servo_handler, "data")
         dispatcher.map("/clear", clear_handler, "clear")
-        dispatcher.map("/set_point", set_point_handler,
-                       "angle", "acc_time", "rpm")
-        dispatcher.map("/set_point_2", set_point_handler_2,
-                       "angle", "acc_time", "rpm")
+        dispatcher.map("/set_point", set_point_handler, "angle", "acc_time", "rpm")
+        dispatcher.map("/set_point_2", set_point_handler_2, "angle", "acc_time", "rpm")
         dispatcher.map("/back_home", back_home_handler, "state")
         dispatcher.map("/pr_step_path", pr_mode_ctrl_handler, "path_number")
         dispatcher.map("/set_home", set_home_position_handler, "state")
 
-        server = osc_server.ThreadingOSCUDPServer(
-            (args.ip, args.port_receive), dispatcher)
+        server = osc_server.ThreadingOSCUDPServer((args.ip, args.port_receive), dispatcher)
         logging.info(f"Serving on {server.server_address}")
 
         server.serve_forever()
