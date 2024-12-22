@@ -52,8 +52,7 @@ class ServoController:
             self.stop_continuous_reading()
 
         self.read_thread_stop_event.clear()
-        self.read_thread = Thread(
-            target=self._read_continuously, args=(interval,))
+        self.read_thread = Thread(target=self._read_continuously, args=(interval,))
         self.read_thread.start()
     
     def stop_continuous_reading(self):
@@ -90,16 +89,16 @@ class ServoController:
         return response_bytes == completion_pattern
 
     def read_PA01_Ctrl_Mode(self):
-        print(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
+        logging.info(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
         message = self.modbus_client.build_read_message(PA.STY.address, 2)
-        print(f"Build Read Message: {message}")
+        # print(f"Build Read Message: {message}")
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
-        print(response_object)
+        logging.info(response_object)
     
     def read_PA33_Encoder_ABS_Pos(self):
         message = self.modbus_client.build_read_message(0x0340, 2)
-        print(f"Build Read Message: {message}")
+        # print(f"Build Read Message: {message}")
         response = self.modbus_client.send_and_receive(message)
         logger.info(response)
 
@@ -141,7 +140,7 @@ class ServoController:
             logger.error(f"Serial connection error: {e}")
         except Exception as e:
             logger.error(f"Error during Modbus communication: {e}")
-        message = self.modbus_client.build_read_message(PD.SDI.address, 1)
+
     def read_0x0206_To_0x020B(self):
         logger.info(f"Address of 0x0206: Read Value")
         message = self.modbus_client.build_read_message(0x0206, 6)
@@ -161,12 +160,6 @@ class ServoController:
             logger.error(f"Serial connection error: {e}")
         except Exception as e:
             logger.error(f"Error during Modbus communication: {e}")
-            logger.info(f"Original data value: {data}")
-            for code in DI_Function_Code:
-                if code.value == int(data, 16):
-                    logger.info(f"DI{cnt} :{code.name}")
-                    cnt += 1
-
 
     # 內部位置命令 p129
     # Pos 1:  000000 PE01/PE02
@@ -358,28 +351,11 @@ class ServoController:
 
     # PR (procedure) sequence control
     def read_PF82(self):
-        # (f"Address of P{PF.PRCM.no}, {PF.PRCM.name}: {PF.PRCM.address}")
-        # write value
-        origin_return = 0
-        excute_PATH = 1  # (1~63)
-        excute_PATH = 1  # (1~63)
-        stop = 1000
-        # Read Value: get the executed PATH situation
-        # 3: PATH#3 is being executed
-        # 1003: PATH#3 command is completed
-        # 2003: PATH#3 positioning is done
+        logging.info(f"Address of P{PF.PRCM.no}, {PF.PRCM.name}: {PF.PRCM.address}")
         message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
         self.response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(self.response)
         logger.info(response_object.get_value())
-
-        #while False:
-        #    message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
-        #    response = self.modbus_client.send_and_receive(message)
-        #    response_object = ModbusResponse(response)
-        #    print(response_object)
-        #    flag_value = int(response_object.data, 16)
-        #    time.sleep(0.1)
 
     def write_PF82(self, execute_PATH_value=0):
         """
@@ -429,17 +405,6 @@ class ServoController:
             logging.info(f"Failed to process response: {e}")
         except Exception as e:
             logging.info(f"An unexpected error occurred: {e}")       
-
-        while False:
-            message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
-            response = self.modbus_client.send_and_receive(message)
-            response_object = ModbusResponse(response)
-            print(response_object)
-            flag_value = int(response_object.data, 16)
-            self.delay_ms(100)
-
-        print("\n")
-
 
     # Read Position Control related parameters
 
