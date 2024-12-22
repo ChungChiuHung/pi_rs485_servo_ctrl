@@ -74,6 +74,13 @@ class ServoController:
 
         self.completed_cnt = 0
         self.completed_tag = False
+        
+        for i in range(10):
+            current_pulse = self.read_encoder_before_gear_ratio()
+            #diff_pulse_value = self.read_encoder_before_gear_ratio() - self.abs_home_pos
+            #logging.info(f"Diff Encoder Value: {diff_pulse_value}")
+            logging.info(f"Current Encoder Value: {current_pulse}")
+            self.delay_ms(100)
 
     def _read_continuously(self, interval: float) -> None:
         self.completed_tag = False
@@ -86,12 +93,6 @@ class ServoController:
                 if self.completed_tag:
                     self.completed_cnt += 1
                     if self.completed_cnt > 10:
-                        for i in range(10):
-                            diff_pulse_value = self.read_encoder_before_gear_ratio() - self.abs_home_pos
-                            logging.info(f"Diff Encoder Value: {diff_pulse_value}")
-                            self.delay_ms(100)
-                        if self.initial_home == True:
-                            self.initial_home = False
                         self.stop_continuous_reading()
                         break
             except Exception as e:
