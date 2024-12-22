@@ -56,12 +56,12 @@ class ServoController:
             self.stop_continuous_reading()
 
         self.read_thread_stop_event.clear()
-        self.read_thread = Thread(target=self._read_continuously, args=(interval,))
+        self.read_thread = threading.Thread(target=self._read_continuously, args=(interval,))
         self.read_thread.start()
     
     def stop_continuous_reading(self) -> None:
         if self.read_thread:
-            if threading.current_thread() != self.read_thread:
+            if threading.current_thread() is self.read_thread:
                 logger.warning("Cannot join the current thread; skipping join.")
                 self.read_thread_stop_event.set()
                 self.read_thread = None
