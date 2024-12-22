@@ -612,7 +612,7 @@ class ServoController:
             low_byte = integer_pulse & 0xFFFF
             high_byte = (integer_pulse >> 16) & 0xFFFF
 
-            logger.info(f"Motion Pulses: {integer_pulse}, Low Byte={hex(low_byte)}, High Byte={hex(high_byte)}")
+            logger.info(f"Motion Pulses: {integer_pulse}")
 
             self._execute_positioning(diff_angle, low_byte, high_byte, acc_dec_time, speed_rpm)
     
