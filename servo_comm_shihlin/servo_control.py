@@ -16,6 +16,7 @@ PD.init_registers()
 PE.init_registers()
 PF.init_registers()
 
+
 # Configure logging
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
@@ -35,7 +36,7 @@ class ServoController:
         self.float_error = 0.0
         self.accumulate_pulse = 0
         self.initial_home = False
-        # self.completed_tag = False
+        self.completed_tag = False
         # self.check_movement = False
 
     def delay_ms(self, milliseconds):
@@ -61,7 +62,13 @@ class ServoController:
                 logging.info("Reconnection attempts stopped.")
                 break
             try:
-                Is_Completed = self.Read_Motion_Completed_Signal()
+                self.completed_tag = self.Read_Motion_Completed_Signal()
+                if self.completed_tag:
+                    self.stop_continuous_reading()
+                    break
+            except SerialException as e:
+                logging.error(f"Serial connection error: {e}")
+                break
             except Exception as e:
                 logging.error(f"Error during read: {e}")
                 break
