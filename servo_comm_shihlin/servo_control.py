@@ -42,6 +42,7 @@ class ServoController:
         self.initial_home = False
         self.completed_tag = False
         self.completed_cnt = 0
+        self.abs_home_pos = 0
 
     def delay_ms(self, milliseconds: int) -> None:
         time.sleep(milliseconds / 1000.0)
@@ -552,9 +553,9 @@ class ServoController:
         # logger.info(f"Build Read Command: {message}")
         response_object = ModbusResponse(response)
         # logger.info(response_object)
-        scaled_value = response_object.get_scaled_value()
-        if scaled_value is not None:
-            return int(scaled_value)
+        encoder_value = response_object.get_value()
+        if encoder_value is not None:
+            return int(encoder_value)
         return None
 
     def read_encoder_after_gear_ratio(self):
