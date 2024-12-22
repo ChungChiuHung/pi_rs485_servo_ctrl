@@ -40,6 +40,7 @@ class ServoController:
         self.accumulate_pulse = 0
         self.initial_home = False
         self.completed_tag = False
+        self.completed_cnt = 0
 
     def delay_ms(self, milliseconds: int) -> None:
         time.sleep(milliseconds / 1000.0)
@@ -72,9 +73,10 @@ class ServoController:
                 break
             try:
                 self.completed_tag = self.Read_Motion_Completed_Signal()
-                # if self.completed_tag:
-                #    self.stop_continuous_reading()
-                #    break
+                if self.completed_tag:
+                    self.completed_cnt += 1
+                    if self.completed_cnt > 5:
+                        self.stop_continuous_reading()
             except SerialException as e:
                 logging.error(f"Serial connection error: {e}")
                 break
