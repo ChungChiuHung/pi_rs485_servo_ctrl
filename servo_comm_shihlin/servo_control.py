@@ -55,6 +55,13 @@ class ServoController:
         self.read_thread = Thread(
             target=self._read_continuously, args=(address, interval))
         self.read_thread.start()
+    
+    def stop_continuous_reading(self):
+        if self.read_thread is not None:
+            self.read_thread_stop_event.set()
+            self.read_thread.join()
+            self.read_thread = None
+            logging.info("Continuous reading stopped.")
 
     def _read_continuously(self, address, interval):
         while not self.read_thread_stop_event.is_set():
@@ -74,24 +81,12 @@ class ServoController:
                 break
             self.delay_ms(interval * 1000)
 
-    
-
     # add completion check
 
     def is_movement_complete(self, response):
         completion_pattern = bytearray(
             b'\xba\xb0\xb1\xb0\xb3\xb0\xb2\xb0\xb0\xb3\xb3\xc3\xb7\x8d\x8a')
         return response == completion_pattern
-
-    def stop_continuous_reading(self):
-        if self.read_thread is not None:
-            self.read_thread_stop_event.set()
-            self.read_thread.join()
-            self.read_thread = None
-            logging.info("Continuous reading stopped.")
-
-    #  0x0010, 0x0000
-
 
     def read_PA01_Ctrl_Mode(self):
         print(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
