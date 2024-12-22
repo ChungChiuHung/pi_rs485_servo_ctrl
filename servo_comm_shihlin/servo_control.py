@@ -61,8 +61,8 @@ class ServoController:
                 logging.info("Reconnection attempts stopped.")
                 break
             try:
-                #self.Read_Motion_Completed_Signal()
-                self.Read_Pos_Related_Paremters()
+                self.Read_Motion_Completed_Signal()
+                #self.Read_Pos_Related_Paremters()
             except Exception as e:
                 logging.error(f"Error during read: {e}")
                 break
@@ -432,9 +432,6 @@ class ServoController:
         # PD28 MCOK
         # PD16 SDI
         # PD25 ITST
-        # PD28 MCOK
-        # PD16 SDI
-        # PD25 ITST
 
         # PA01, 2 3, 6, 7, 13, 15
         # PA02, ATUM: Gain tuning mode option
@@ -453,11 +450,11 @@ class ServoController:
 
 
     def Read_Motion_Completed_Signal(self):
-        parameter = PD.MCOK
+        parameter = PD.ITST
         # print(f"Read {parameter.no}: {parameter.name}: {hex(parameter.address)}")
         message = self.modbus_client.build_read_message(parameter.address, 1)
         response = self.modbus_client.send_and_receive(message)
-        logger.info(response)
+        logger.info(ModbusResponse(response))
 
     # Position Control Test Mode
     def Enable_Position_Mode(self, enable=True):
