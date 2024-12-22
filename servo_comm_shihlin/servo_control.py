@@ -82,11 +82,11 @@ class ServoController:
                 break
             try:
                 self.completed_tag = self.Read_Motion_Completed_Signal()
-                encoder_value = self.read_encoder_before_gear_ratio()
-                logger.info(f"Encoder Value: {encoder_value}")  
                 if self.completed_tag:
                     self.completed_cnt += 1
                     if self.completed_cnt > 5:
+                        encoder_value = self.read_encoder_before_gear_ratio()
+                        logger.info(f"Encoder Value: {encoder_value}")  
                         self.stop_continuous_reading()
             except Exception as e:
                 logging.error(f"Error during read: {e}")
