@@ -5,7 +5,7 @@ from modbus_command_code import CmdCode
 class ModbusResponse:
     def __init__(self, response):
         if isinstance(response, (bytes, bytearray)):
-            response = response.decode('utf-8', error='replace')
+            response = response.decode('utf-8', errors='replace')
 
         if len(response) < 5 or response[0] != ':' or response[-2:] != '\r\n':
             raise ValueError("Invalid response: Does not start with ':' or does not end with '\\r\\n'")
