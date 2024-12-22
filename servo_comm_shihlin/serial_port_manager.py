@@ -2,7 +2,7 @@ import serial
 import time
 import logging
 from serial.serialutil import SerialException
-from typing import Union
+from typing import Union, List
 import serial.tools.list_ports  # For dynamically listing available ports
 
 # Configure logging
@@ -24,7 +24,7 @@ class SerialPortManager:
         self.available_ports = self.list_available_ports()
         self.keep_running = True  # Flag to control reconnection attempts
 
-    def list_available_ports(self) -> list[str]:
+    def list_available_ports(self) -> List[str]:
         """List all available serial ports."""
         ports = [port.device for port in serial.tools.list_ports.comports()]
         return ports if ports else self.DEFAULT_PORTS
