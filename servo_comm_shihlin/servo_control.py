@@ -61,8 +61,9 @@ class ServoController:
                 logging.info("Reconnection attempts stopped.")
                 break
             try:
-                self.Read_Motion_Completed_Signal()
+                #self.Read_Motion_Completed_Signal()
                 #self.Read_Pos_Related_Paremters()
+                self.read_PF82()
             except Exception as e:
                 logging.error(f"Error during read: {e}")
                 break
@@ -336,7 +337,7 @@ class ServoController:
 
     # PR (procedure) sequence control
     def read_PF82(self):
-        print(f"Address of P{PF.PRCM.no}, {PF.PRCM.name}: {PF.PRCM.address}")
+        # (f"Address of P{PF.PRCM.no}, {PF.PRCM.name}: {PF.PRCM.address}")
         # write value
         origin_return = 0
         excute_PATH = 1  # (1~63)
@@ -348,19 +349,18 @@ class ServoController:
         # 2003: PATH#3 positioning is done
         message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
         self.response = self.modbus_client.send_and_receive(message)
+        logger.info(ModbusResponse(self.response))
         # response_object = ModbusResponse(response)
         # print(response_object)
         # print(int.from_bytes(response_object.data_bytes, byteorder='big'))
 
-        while False:
-            message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
-            response = self.modbus_client.send_and_receive(message)
-            response_object = ModbusResponse(response)
-            print(response_object)
-            flag_value = int(response_object.data, 16)
-            time.sleep(0.1)
-
-        print("\n")
+        #while False:
+        #    message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
+        #    response = self.modbus_client.send_and_receive(message)
+        #    response_object = ModbusResponse(response)
+        #    print(response_object)
+        #    flag_value = int(response_object.data, 16)
+        #    time.sleep(0.1)
 
     def write_PF82(self, execute_PATH_value=0):
         """
