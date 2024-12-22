@@ -65,6 +65,7 @@ class ServoController:
             logging.info("Continuous reading stopped.")
 
     def _read_continuously(self, interval: float) -> None:
+        self.completed_tag = False
         while not self.read_thread_stop_event.is_set():
             if not self.serial_port.keep_running:
                 logging.info("Reconnection attempts stopped.")
