@@ -61,7 +61,7 @@ class ServoController:
                 logging.info("Reconnection attempts stopped.")
                 break
             try:
-                self.read_PF82()
+                Is_Completed = self.Read_Motion_Completed_Signal()
             except Exception as e:
                 logging.error(f"Error during read: {e}")
                 break
@@ -446,11 +446,15 @@ class ServoController:
 
 
     def Read_Motion_Completed_Signal(self):
-        parameter = PD.SDI
-        # print(f"Read {parameter.no}: {parameter.name}: {hex(parameter.address)}")
-        message = self.modbus_client.build_read_message(parameter.address, 1)
-        response = self.modbus_client.send_and_receive(message)
-        logger.info(ModbusResponse(response))
+        message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
+        self.response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(self.response)
+        if response_object.get_value() != 0:
+            logger.info("Motion Completed!")
+            return True
+        else:
+            logger.info("Motion Not Completed!")
+            return False
 
     # Position Control Test Mode
     def Enable_Position_Mode(self, enable=True):
