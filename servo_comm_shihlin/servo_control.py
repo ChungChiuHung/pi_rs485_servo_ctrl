@@ -88,7 +88,7 @@ class ServoController:
                         for i in range(10):
                             encoder_value = self.read_encoder_before_gear_ratio()
                             logger.info(f"Encoder Value: {encoder_value}")
-                            self.delay_ms(60)
+                            self.delay_ms(100)
                         self.stop_continuous_reading()
                         break
             except Exception as e:
