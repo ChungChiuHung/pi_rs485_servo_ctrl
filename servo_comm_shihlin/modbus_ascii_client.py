@@ -19,25 +19,19 @@ class ModbusASCIIClient:
     _instance = None
     _lock = threading.Lock()
 
-    def __new__(cls, device_number=None, serial_port_manager=None):
+    def __new__(cls, device_number=None, serial_port_manager: SerialPortManager = None):
+        """Singleton instance creation."""
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super(ModbusASCIIClient, cls).__new__(cls)
                 cls._instance._initialize(device_number, serial_port_manager)
         return cls._instance
-    
-    @classmethod
-    def get_instance(cls, device_number=None, serial_port_manager=None):
-        with cls._lock:
-            if cls._instance is None:
-                if device_number is None or serial_port_manager is None:
-                    raise ValueError("Device number and serial port manager must be provided.")
-                cls._instance = cls(device_number, serial_port_manager)
-            return cls._instance
 
-    def _initialize(self, device_number, serial_port_manager: SerialPortManager):
+    def _initialize(self, device_number: int, serial_port_manager: SerialPortManager):
+        """Initialize the Modbus ASCII client."""
         if hasattr(self, '_is_initialized') and self._is_initialized:
             return
+        
         if device_number is None or serial_port_manager is None:
             raise ValueError("Device number and serial port manager must be provided.")
         
@@ -47,12 +41,12 @@ class ModbusASCIIClient:
         self._is_initialized = True
         logger.info("ModbusASCIIClient initialized.")
 
-    def build_read_message(self, servo_control_registry, word_length):
+    def build_read_message(self, servo_control_registry: int, word_length: int) -> bytes:
         address = servo_control_registry
         data = struct.pack('>HH', address, word_length)
         return self._build_message(CmdCode.READ_DATA.value, data)
 
-    def build_write_message(self, servo_control_registry, data):
+    def build_write_message(self, servo_control_registry: int, data: int) -> bytes:
         address = servo_control_registry
         # print(f"Address : {struct.pack('>H',address)}")
         new_data = struct.pack('>HH', address, data)
@@ -67,7 +61,7 @@ class ModbusASCIIClient:
         full_message = f'{message_without_lrc}{lrc:02X}\r\n'
         return full_message.encode('utf-8')
 
-    def send_and_receive(self, message, expected_length = None, timeout = 0.1):
+    def send_and_receive(self, message: bytes, expected_length: int = None, timeout:float = 0.1) -> bytes | None:
         try:
             self.send(message)
             return self.receive(expected_length, timeout)
@@ -80,15 +74,12 @@ class ModbusASCIIClient:
             try:
                 self.serial_port_manager.get_serial_instance().write(message)
                 logger.debug(f"Message sent: {message}")
-                #print("Message sent:", message)
             except serial.SerialException as e:
-                #print(f"Failed to send message due to serial error: {e}")
                 logger.error(f"Failed to send message due to serial error: {e}")
             except Exception as e:
-                #print(f"Unexpected error occurred: {e}")
                 logger.error(f"Unexpected error occurred: {e}")
 
-    def receive(self, expected_length=None, timeout=0.1):
+    def receive(self, expected_length: int = None, timeout: float = 0.1) -> bytes | None:
         if not self.ensure_connection():
             # print("Connection is not stablished.")
             logger.warning("Connection not established.")
@@ -110,12 +101,9 @@ class ModbusASCIIClient:
                     start_time = time.time()
 
             if response:
-                #print("Response received:", response)
-                #print("Parsing Response: ", self.parse_response(response))
                 logger.debug(f"Response received: {response}")
                 return response
             else:
-                #print("No response received.")
                 logger.warning("No response received.")
                 return None
             
@@ -126,7 +114,7 @@ class ModbusASCIIClient:
         
         return None
             
-    def ensure_connection(self):
+    def ensure_connection(self) -> bool:
         if not self.serial_port_manager.get_serial_instance():
             logger.warning("Serial instance not available. Attempting to reconnect...")
             if not self.serial_port_manager.connect():
@@ -134,7 +122,7 @@ class ModbusASCIIClient:
                 return False
         return True
 
-    def parse_response(self, response):
+    def parse_response(self, response: bytes | bytearray) -> dict:
         if isinstance(response, (bytes, bytearray)):
             response = response.decode('utf-8')
         
@@ -142,73 +130,61 @@ class ModbusASCIIClient:
             raise ValueError("Invalid response: Does not start with ':'")
         
         response = response[1:-2]
-
         adr = response[0:2]
         cmd = response[2:4]
-
         cmd_value = int(cmd, 16)
 
         if cmd_value == CmdCode.READ_DATA.value:
-            data_count = response[4:6]
-            data_length = int(data_count, 16) * 2
-
-            data_start_idx = 6
-            data_end_idx = 6 + data_length
-            data = response[data_start_idx:data_end_idx]
-
-            data_addresses = [data[i:i+4] for i in range(0, len(data), 4)]
-
-            lrc = response[data_end_idx:data_end_idx+2]
-
-            parsed_response ={
-                "STX": ':',
-                "ADR":adr,
-                "CMD":cmd,
-                "Data Count":data_count,
-                "Data":data_addresses,
-                "LRC":lrc,
-                "End1": '\r',
-                "End0": '\n'
-            }
-            return parsed_response
-        
+            return self._parse_read_response(response)
         elif cmd_value == CmdCode.WRITE_DATA.value:
-            start_address = response[4:8]  # 2 bytes for start address, 4 hex digits
-            data_content = response[8:12]  # 2 bytes for data count or data content, 4 hex digits
-
-            lrc = response[-2:]  # 1 byte for LRC, 2 hex digits
-
-            parsed_response = {
-                "STX": ':',
-                "ADR": adr,
-                "CMD": cmd,
-                "Start Address": start_address,
-                "Data Content": data_content,
-                "LRC": lrc,
-                "End1": '\r',
-                "End0": '\n'
-            }
-            return parsed_response
-            
+            return self._parse_write_response(response) 
         elif cmd_value == CmdCode.WRITE_MULTI_DATA.value:
-            start_address = response[4:8]  # 2 bytes for start address, 4 hex digits
-            data_count = response[8:12]  # 2 bytes for data count or data content, 4 hex digits
-
-            lrc = response[-2:]  # 1 byte for LRC, 2 hex digits
-
-            parsed_response = {
-                "STX": ':',
-                "ADR": adr,
-                "CMD": cmd,
-                "Start Address": start_address,
-                "Data Count or Content": data_count,
-                "LRC": lrc,
-                "End1": '\r',
-                "End0": '\n'
-            }
-            return parsed_response
+            return self._parse_write_multi_response(response)
         else:
             raise ValueError(f"Unsupported comand code: {cmd}")
+        
+    def _parse_read_response(self, response: str) -> dict:
+        """Parse a Modbus read response."""
+        data_count = response[4:6]
+        data_length = int(data_count, 16) * 2
+        data = response[6:6 + data_length]
+        data_addresses = [data[i:i + 4] for i in range(0, len(data), 4)]
+        lrc = response[6 + data_length:6 + data_length + 2]
+
+        return {
+            "STX": ':',
+            "ADR": response[0:2],
+            "CMD": response[2:4],
+            "Data Count": data_count,
+            "Data": data_addresses,
+            "LRC": lrc,
+            "End1": '\r',
+            "End0": '\n'
+        }
+    
+    def _parse_write_response(self, response: str) -> dict:
+        return {
+            "STX": ':',
+            "ADR": response[0:2],
+            "CMD": response[2:4],
+            "Start Address": response[4:8],
+            "Data Content": response[8:12],
+            "LRC": response[-2:],
+            "End1": '\r',
+            "End0": '\n'
+        }
+    
+    def _parse_write_multi_response(self, response: str) -> dict:
+        return {
+            "STX": ':',
+            "ADR": response[0:2],
+            "CMD": response[2:4],
+            "Start Address": response[4:8],
+            "Data Count or Content": response[8:12],
+            "LRC": response[-2:],
+            "End1": '\r',
+            "End0": '\n'
+        }
 
     def set_di_control_source(self, control_bits):
         data = struct.pack('>H', control_bits)
