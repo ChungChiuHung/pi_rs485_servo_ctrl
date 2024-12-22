@@ -85,7 +85,7 @@ class ServoController:
                 if self.completed_tag:
                     self.completed_cnt += 1
                     if self.completed_cnt > 5:
-                        for i in range(5):
+                        for i in range(10):
                             encoder_value = self.read_encoder_before_gear_ratio()
                             logger.info(f"Encoder Value: {encoder_value}")
                             self.delay_ms(60)
