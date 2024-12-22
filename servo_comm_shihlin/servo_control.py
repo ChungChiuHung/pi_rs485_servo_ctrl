@@ -61,8 +61,6 @@ class ServoController:
                 logging.info("Reconnection attempts stopped.")
                 break
             try:
-                #self.Read_Motion_Completed_Signal()
-                #self.Read_Pos_Related_Paremters()
                 self.read_PF82()
             except Exception as e:
                 logging.error(f"Error during read: {e}")
@@ -349,7 +347,8 @@ class ServoController:
         # 2003: PATH#3 positioning is done
         message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
         self.response = self.modbus_client.send_and_receive(message)
-        logger.info(ModbusResponse.get_value(self.response))
+        response_object = ModbusResponse(self.response)
+        logger.info(response_object.get_value())
         # response_object = ModbusResponse(response)
         # print(response_object)
         # print(int.from_bytes(response_object.data_bytes, byteorder='big'))
