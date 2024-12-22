@@ -42,7 +42,7 @@ class ServoController:
         self.initial_home = False
         self.completed_tag = False
         self.completed_cnt = 0
-        self.abs_home_pos = 0
+        self.abs_home_pos = 2158434943
 
     def delay_ms(self, milliseconds: int) -> None:
         time.sleep(milliseconds / 1000.0)
@@ -87,8 +87,8 @@ class ServoController:
                     self.completed_cnt += 1
                     if self.completed_cnt > 10:
                         for i in range(10):
-                            encoder_value = self.read_encoder_before_gear_ratio()
-                            logger.info(f"Encoder Value: {encoder_value}")
+                            diff_pulse_value = self.read_encoder_before_gear_ratio() - self.abs_home_pos
+                            logger.info(f"Diff Encoder Value: {diff_pulse_value}")
                             self.delay_ms(100)
                         self.stop_continuous_reading()
                         break
