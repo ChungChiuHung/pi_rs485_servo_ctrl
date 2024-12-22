@@ -88,8 +88,10 @@ class ServoController:
                     if self.completed_cnt > 10:
                         for i in range(10):
                             diff_pulse_value = self.read_encoder_before_gear_ratio() - self.abs_home_pos
-                            logger.info(f"Diff Encoder Value: {diff_pulse_value}")
+                            logging.info(f"Diff Encoder Value: {diff_pulse_value}")
                             self.delay_ms(100)
+                        if self.initial_home == True:
+                            self.initial_home = False
                         self.stop_continuous_reading()
                         break
             except Exception as e:
@@ -574,14 +576,37 @@ class ServoController:
             self.pos_motion_start_0x0907(2)
         #time.sleep(0.1)
 
-    def pos_step_motion_by(self, angle=0.0, acc_dec_time=5000, speed_rpm=10):
-        base_pulse_per_degree = 349525.333
-        # self.previous_angle = self.current_angle
-        # self.current_angle = angle
-        # diff_angle = self.current_angle - self.current_angle
-        # diff_pulse = diff_angle * base_pulse_per_degree
-        # fraction_part = diff_pulse - int(diff_pulse)
-        # self.float_error += fraction_part
+    def pos_step_motion_by(self, pulses: int = 0, acc_dec_time=5000, speed_rpm=10):
+        # Get Current Pulse Value
+        current_pulse = self.read_encoder_before_gear_ratio()
+        # Set Target Pulse Value
+        diff_pulses = current_pulse - pulses
+
+        low_byte = diff_pulses & 0xFFFF
+        high_byte = (diff_pulses >> 16) & 0xFFFF
+
+        self.stop_continuous_reading()
+        self.Enable_Position_Mode(True)
+        self.delay_ms(50)
+        self.config_acc_dec_0x0902(acc_dec_time)
+        self.delay_ms(50)
+        self.config_speed_0x0903(speed_rpm)
+        self.delay_ms(50)
+        self.config_pulses_0x0905_low_byte(low_byte)
+        self.delay_ms(50)
+        self.config_pulses_0x0906_high_byte(high_byte)
+        self.delay_ms(50)
+        
+        self.start_continuous_reading(0.2)
+        self.delay_ms(60)
+
+        if diff_pulses > 0:
+            logger.info("Running Servo CW")
+            self.pos_step_motion_test(True)
+        else:
+            logger.info("Running Servo CCW")
+            self.pos_step_motion_test(False)
+
 
     def post_step_motion_by(self, angle: float = 0.0, acc_dec_time: int = 5000, speed_rpm: int =10):
         # 125829120 pulse/rev
@@ -675,7 +700,7 @@ class ServoController:
     def initial_abs_home(self):
         if self.initial_home == False:
             self.initial_home = True
-            self.enable_speed_ctrl(10)
-            self.speed_ctrl_action(2)
+            diff_pulse_value = self.abs_home_pos - self.read_encoder_before_gear_ratio()
+            self.pos_step_motion_by(diff_pulse_value, 5000, 15)
             self.start_continuous_reading()
 
