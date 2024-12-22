@@ -349,7 +349,7 @@ class ServoController:
         # 2003: PATH#3 positioning is done
         message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
         self.response = self.modbus_client.send_and_receive(message)
-        logger.info(ModbusResponse(self.response))
+        logger.info(ModbusResponse.get_value(self.response))
         # response_object = ModbusResponse(response)
         # print(response_object)
         # print(int.from_bytes(response_object.data_bytes, byteorder='big'))

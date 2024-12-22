@@ -94,3 +94,13 @@ class ModbusResponse:
             return scaled_value
         else:
             return None
+    
+    def get_value(self):
+        if hasattr(self, 'data_bytes'):
+            def hex_to_decimal(data_bytes):
+                return sum(byte << (8 * i) for i, byte in enumerate(data_bytes))
+            
+            decimal_value = hex_to_decimal(self.data_bytes)
+            return decimal_value
+        else:
+            return None
