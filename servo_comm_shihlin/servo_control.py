@@ -455,8 +455,8 @@ class ServoController:
         parameter = PD.MCOK
         # print(f"Read {parameter.no}: {parameter.name}: {hex(parameter.address)}")
         message = self.modbus_client.build_read_message(parameter.address, 1)
-        self.response = self.modbus_client.send_and_receive(message)
-        logger.info(ModbusResponse(self.response))
+        response = self.modbus_client.send_and_receive(message)
+        logger.info(ModbusResponse(response))
 
     # Position Control Test Mode
     def Enable_Position_Mode(self, enable=True):
