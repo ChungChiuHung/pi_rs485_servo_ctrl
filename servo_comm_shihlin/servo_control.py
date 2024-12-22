@@ -84,7 +84,7 @@ class ServoController:
                 self.completed_tag = self.Read_Motion_Completed_Signal()
                 if self.completed_tag:
                     self.completed_cnt += 1
-                    if self.completed_cnt > 5:
+                    if self.completed_cnt > 10:
                         for i in range(10):
                             encoder_value = self.read_encoder_before_gear_ratio()
                             logger.info(f"Encoder Value: {encoder_value}")
