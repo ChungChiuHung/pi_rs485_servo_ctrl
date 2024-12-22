@@ -24,8 +24,14 @@ class ModbusASCIIClient:
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super(ModbusASCIIClient, cls).__new__(cls)
-                cls._instance._initialize(device_number, serial_port_manager)
         return cls._instance
+    
+    @classmethod
+    def get_instance(cls, device_number = None, serial_port_manager = None):
+        instance = cls()
+        if not hasattr(isinstance, '_is_initialized'):
+            instance._initialize(device_number, serial_port_manager)
+        return instance    
 
     def _initialize(self, device_number: int, serial_port_manager: SerialPortManager):
         """Initialize the Modbus ASCII client."""
