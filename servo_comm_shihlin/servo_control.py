@@ -450,7 +450,7 @@ class ServoController:
 
 
     def Read_Motion_Completed_Signal(self):
-        parameter = PD.ITST
+        parameter = PD.SDI
         # print(f"Read {parameter.no}: {parameter.name}: {hex(parameter.address)}")
         message = self.modbus_client.build_read_message(parameter.address, 1)
         response = self.modbus_client.send_and_receive(message)
