@@ -1,6 +1,6 @@
 import time
 import logging
-import re
+import typing import Union
 from threading import Thread, Event
 
 from serial import SerialException
@@ -31,7 +31,7 @@ class ServoController:
         self.serial_port = serial_port
         self.modbus_client = ModbusASCIIClient.get_instance(
             device_number=1, serial_port_manager=serial_port)
-        self.read_thread = None
+        self.read_thread: Union[Thread, None] = None
         self.read_thread_stop_event = Event()
         self.response = ""
         self.current_angle = 0.0
@@ -40,17 +40,16 @@ class ServoController:
         self.accumulate_pulse = 0
         self.initial_home = False
         self.completed_tag = False
-        # self.check_movement = False
 
-    def delay_ms(self, milliseconds):
+    def delay_ms(self, milliseconds: int) -> None:
         time.sleep(milliseconds / 1000.0)
 
-    def print_byte_array_as_spaced_hex(self, byte_array, data_name):
+    def print_byte_array_as_spaced_hex(self, byte_array, data_name) -> None:
         hex_string = ' '.join(f"{byte:02X}" for byte in byte_array)
         logger.info(f"{data_name}: {hex_string}")
 
     # default address = 0x0205
-    def start_continuous_reading(self, interval=0.15):
+    def start_continuous_reading(self, interval: float = 0.15):
         if self.read_thread is not None:
             self.stop_continuous_reading()
 
@@ -58,23 +57,23 @@ class ServoController:
         self.read_thread = Thread(target=self._read_continuously, args=(interval,))
         self.read_thread.start()
     
-    def stop_continuous_reading(self):
+    def stop_continuous_reading(self) -> None:
         if self.read_thread is not None:
             self.read_thread_stop_event.set()
             self.read_thread.join()
             self.read_thread = None
             logging.info("Continuous reading stopped.")
 
-    def _read_continuously(self, interval):
+    def _read_continuously(self, interval: float) -> None:
         while not self.read_thread_stop_event.is_set():
             if not self.serial_port.keep_running:
                 logging.info("Reconnection attempts stopped.")
                 break
             try:
                 self.completed_tag = self.Read_Motion_Completed_Signal()
-                if self.completed_tag:
-                    self.stop_continuous_reading()
-                    break
+                # if self.completed_tag:
+                #    self.stop_continuous_reading()
+                #    break
             except SerialException as e:
                 logging.error(f"Serial connection error: {e}")
                 break
@@ -436,7 +435,7 @@ class ServoController:
             self.delay_ms(100)
 
 
-    def Read_Motion_Completed_Signal(self):
+    def Read_Motion_Completed_Signal(self) -> bool:
         try:
             message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
             self.response = self.modbus_client.send_and_receive(message)

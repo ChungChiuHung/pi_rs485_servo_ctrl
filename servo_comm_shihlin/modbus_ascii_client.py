@@ -217,6 +217,7 @@ class ModbusASCIIClient:
         low = pulses & 0xFFFF
         data = struct.pack('>HH', low, high)
         message = self.build_write_message(ServoControlRegistry.POS_PULSES_CMD_1, data)
+        self.send(message)
 
     def start_positioning_peration(self, direction):
         if direction not in [0, 1, 2]:
