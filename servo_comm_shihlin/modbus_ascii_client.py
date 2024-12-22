@@ -4,6 +4,7 @@ import time
 import threading
 from threading import Event
 import logging
+from typing import Union
 
 from modbus_utils import ModbusUtils
 from modbus_command_code import CmdCode
@@ -61,7 +62,7 @@ class ModbusASCIIClient:
         full_message = f'{message_without_lrc}{lrc:02X}\r\n'
         return full_message.encode('utf-8')
 
-    def send_and_receive(self, message: bytes, expected_length: int = None, timeout:float = 0.1) -> bytes | None:
+    def send_and_receive(self, message: bytes, expected_length: int = None, timeout:float = 0.1) -> Union[bytes, None]:
         try:
             self.send(message)
             return self.receive(expected_length, timeout)
@@ -79,7 +80,7 @@ class ModbusASCIIClient:
             except Exception as e:
                 logger.error(f"Unexpected error occurred: {e}")
 
-    def receive(self, expected_length: int = None, timeout: float = 0.1) -> bytes | None:
+    def receive(self, expected_length: int = None, timeout: float = 0.1) -> Union[bytes, None]:
         if not self.ensure_connection():
             # print("Connection is not stablished.")
             logger.warning("Connection not established.")
