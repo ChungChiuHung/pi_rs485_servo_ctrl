@@ -3,12 +3,13 @@ import serial
 import time
 import threading
 from threading import Event
+import logging
+
 from modbus_utils import ModbusUtils
 from modbus_command_code import CmdCode
 from modbus_response import ModbusResponse
 from servo_control_registers import ServoControlRegistry
 from serial_port_manager import SerialPortManager
-import logging
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -25,6 +26,15 @@ class ModbusASCIIClient:
                 cls._instance = super(ModbusASCIIClient, cls).__new__(cls)
                 cls._instance._initialize(device_number, serial_port_manager)
         return cls._instance
+    
+    @classmethod
+    def get_instance(cls, device_number=None, serial_port_manager=None):
+        with cls._lock:
+            if cls._instance is None:
+                if device_number is None or serial_port_manager is None:
+                    raise ValueError("Device number and serial port manager must be provided.")
+                cls._instance = cls(device_number, serial_port_manager)
+            return cls._instance
 
     def _initialize(self, device_number, serial_port_manager: SerialPortManager):
         if not self._is_initialized:

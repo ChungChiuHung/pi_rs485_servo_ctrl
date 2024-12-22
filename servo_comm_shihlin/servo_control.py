@@ -1,6 +1,8 @@
 import time
+import logging
 import re
 from threading import Thread, Event
+
 from serial import SerialException
 from modbus_ascii_client import ModbusASCIIClient
 from modbus_response import ModbusResponse
@@ -8,7 +10,6 @@ from servo_utility import ServoUtility
 from servo_control_registers import ServoControlRegistry
 from status_bit_map import DI_Function_Code
 from servo_p_register import PA, PC, PD, PE, PF
-import logging
 
 PA.init_registers()
 PC.init_registers()
@@ -18,8 +19,10 @@ PF.init_registers()
 
 
 # Configure logging
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 
