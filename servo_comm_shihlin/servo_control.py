@@ -50,8 +50,8 @@ class ServoController:
         logger.info(f"{data_name}: {hex_string}")
 
     # default address = 0x0205
-    def start_continuous_reading(self, interval: float = 0.15):
-        if self.read_thread is not None:
+    def start_continuous_reading(self, interval: float = 0.15) -> None:
+        if self.read_thread and self.read_thread.is_alive():
             self.stop_continuous_reading()
 
         self.read_thread_stop_event.clear()
@@ -59,13 +59,19 @@ class ServoController:
         self.read_thread.start()
     
     def stop_continuous_reading(self) -> None:
-        if self.read_thread is not None:
-            self.read_thread_stop_event.set()
-            self.read_thread.join()
-            self.read_thread = None
-            self.completed_cnt = 0
-            self.completed_tag = False
-            logging.info("Continuous reading stopped.")
+        if self.read_thread:
+            if threading.current_thread() != self.read_thread:
+                logger.warning("Cannot join the current thread; skipping join.")
+                self.read_thread_stop_event.set()
+                self.read_thread = None
+            else:
+                self.read_thread_stop_event.set()
+                self.read_thread.join()
+                self.read_thread = None
+                logging.info("Continuous reading stopped.")
+
+        self.completed_cnt = 0
+        self.completed_tag = False
 
     def _read_continuously(self, interval: float) -> None:
         self.completed_tag = False
@@ -79,9 +85,6 @@ class ServoController:
                     self.completed_cnt += 1
                     if self.completed_cnt > 5:
                         self.stop_continuous_reading()
-            except SerialException as e:
-                logging.error(f"Serial connection error: {e}")
-                break
             except Exception as e:
                 logging.error(f"Error during read: {e}")
                 break
