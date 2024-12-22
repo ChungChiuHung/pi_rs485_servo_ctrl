@@ -18,9 +18,8 @@ logger = logging.getLogger(__name__)
 class ModbusASCIIClient:
     _instance = None
     _lock = threading.Lock()
-    _is_initialized = False
 
-    def __new__(cls, device_number, serial_port_manager: SerialPortManager):
+    def __new__(cls, device_number=None, serial_port_manager=None):
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super(ModbusASCIIClient, cls).__new__(cls)
@@ -37,12 +36,16 @@ class ModbusASCIIClient:
             return cls._instance
 
     def _initialize(self, device_number, serial_port_manager: SerialPortManager):
-        if not self._is_initialized:
-            self.device_number = device_number
-            self.serial_port_manager = serial_port_manager
-            self.lrc = ModbusUtils()
-            self._is_initialized = True
-            logger.info("ModbusASCIIClient initialized.")
+        if hasattr(self, '_is_initialized') and self._is_initialized:
+            return
+        if device_number is None or serial_port_manager is None:
+            raise ValueError("Device number and serial port manager must be provided.")
+        
+        self.device_number = device_number
+        self.serial_port_manager = serial_port_manager
+        self.lrc = ModbusUtils()
+        self._is_initialized = True
+        logger.info("ModbusASCIIClient initialized.")
 
     def build_read_message(self, servo_control_registry, word_length):
         address = servo_control_registry
