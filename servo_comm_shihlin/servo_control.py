@@ -1,6 +1,6 @@
 import time
 import logging
-import typing import Union
+from typing import Union
 from threading import Thread, Event
 
 from serial import SerialException
