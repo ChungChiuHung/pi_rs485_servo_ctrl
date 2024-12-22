@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 class ServoController:
     def __init__(self, serial_port):
         self.serial_port = serial_port
-        self.modbus_client = ModbusASCIIClient(
+        self.modbus_client = ModbusASCIIClient.get_instance(
             device_number=1, serial_port_manager=serial_port)
         self.read_thread = None
         self.read_thread_stop_event = Event()
@@ -86,7 +86,8 @@ class ServoController:
     def is_movement_complete(self, response):
         completion_pattern = bytearray(
             b'\xba\xb0\xb1\xb0\xb3\xb0\xb2\xb0\xb0\xb3\xb3\xc3\xb7\x8d\x8a')
-        return response == completion_pattern
+        response_bytes = bytearray(response)
+        return response_bytes == completion_pattern
 
     def read_PA01_Ctrl_Mode(self):
         print(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
@@ -107,39 +108,59 @@ class ServoController:
         config_value = ServoUtility.config_hex_with(0, 0, 1, 0)
         message = self.modbus_client.build_write_message(
             PA.STY.address, config_value)
-        #print(f"Build Read Message: {message}")
-        response = self.modbus_client.send_and_receive(message)
-        response_object = ModbusResponse(response)
-        logger.info(response_object)
+        try:
+            response = self.modbus_client.send_and_receive(message)
+            response_object = ModbusResponse(response)
+            logger.info(response_object)
+        except SerialException as e:
+            logger.error(f"Serial connection error: {e}")
+        except Exception as e:
+            logger.error(f"Error during Modbus communication: {e}")
 
-    # Digital input on/off control source option
-    # # Select IO to Be controlled PD16
     def write_PD_16_Enable_DI_Control(self):
         logger.info(f"Address of PD{PD.SDI.no} {PD.SDI.name}: {hex(PD.SDI.address)}")
         config_value = ServoUtility.config_hex_with(0, 0xF, 0xF, 0xF)
         message = self.modbus_client.build_write_message(
             PD.SDI.address, config_value)
-        # print(f"Build Write Message: {message}")
-        response = self.modbus_client.send_and_receive(message)
-        logger.info(f"Respnose Message: {response}")
+        try:
+            response = self.modbus_client.send_and_receive(message)
+            logger.info(f"Response Message: {response}")
+        except SerialException as e:
+            logger.error(f"Serial connection error: {e}")
+        except Exception as e:
+            logger.error(f"Error during Modbus communication: {e}")
 
     def read_PD_16(self):
         logger.info(f"Address of PD{PD.SDI.no} {PD.SDI.name}: {hex(PD.SDI.address)}")
         message = self.modbus_client.build_read_message(PD.SDI.address, 1)
-        #print(f"Build Read Message: {message}")
-        response = self.modbus_client.send_and_receive(message)
-        logger.info(f"Response Message: {response}")
-
-    # Read IO Function From 0x0206
+        try:
+            #print(f"Build Read Message: {message}")
+            response = self.modbus_client.send_and_receive(message)
+            logger.info(f"Response Message: {response}")
+        except SerialException as e:
+            logger.error(f"Serial connection error: {e}")
+        except Exception as e:
+            logger.error(f"Error during Modbus communication: {e}")
+        message = self.modbus_client.build_read_message(PD.SDI.address, 1)
     def read_0x0206_To_0x020B(self):
         logger.info(f"Address of 0x0206: Read Value")
         message = self.modbus_client.build_read_message(0x0206, 6)
-        response = self.modbus_client.send_and_receive(message)
-        response_object = ModbusResponse(response)
-        logger.info(response_object)
+        try:
+            response = self.modbus_client.send_and_receive(message)
+            response_object = ModbusResponse(response)
+            logger.info(response_object)
 
-        cnt = 1
-        for data in response_object.data:
+            cnt = 1
+            for data in response_object.data:
+                logger.info(f"Original data value: {data}")
+                for code in DI_Function_Code:
+                    if code.value == int(data, 16):
+                        logger.info(f"DI{cnt} :{code.name}")
+                        cnt += 1
+        except SerialException as e:
+            logger.error(f"Serial connection error: {e}")
+        except Exception as e:
+            logger.error(f"Error during Modbus communication: {e}")
             logger.info(f"Original data value: {data}")
             for code in DI_Function_Code:
                 if code.value == int(data, 16):
@@ -448,14 +469,21 @@ class ServoController:
 
 
     def Read_Motion_Completed_Signal(self):
-        message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
-        self.response = self.modbus_client.send_and_receive(message)
-        response_object = ModbusResponse(self.response)
-        if response_object.get_value() != 0:
-            logger.info("Motion Completed!")
-            return True
-        else:
-            logger.info("Motion Not Completed!")
+        try:
+            message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
+            self.response = self.modbus_client.send_and_receive(message)
+            response_object = ModbusResponse(self.response)
+            if response_object.get_value() != 0:
+                logger.info("Motion Completed!")
+                return True
+            else:
+                logger.info("Motion Not Completed!")
+                return False
+        except SerialException as e:
+            logger.error(f"Serial connection error: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Error during Modbus communication: {e}")
             return False
 
     # Position Control Test Mode
