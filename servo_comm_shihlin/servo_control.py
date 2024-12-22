@@ -61,7 +61,8 @@ class ServoController:
                 logging.info("Reconnection attempts stopped.")
                 break
             try:
-                self.Read_Motion_Completed_Signal()
+                #self.Read_Motion_Completed_Signal()
+                self.Read_Pos_Related_Paremters()
             except Exception as e:
                 logging.error(f"Error during read: {e}")
                 break
