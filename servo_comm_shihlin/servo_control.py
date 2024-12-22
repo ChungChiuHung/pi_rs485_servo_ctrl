@@ -349,9 +349,6 @@ class ServoController:
         self.response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(self.response)
         logger.info(response_object.get_value())
-        # response_object = ModbusResponse(response)
-        # print(response_object)
-        # print(int.from_bytes(response_object.data_bytes, byteorder='big'))
 
         #while False:
         #    message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
