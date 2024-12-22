@@ -47,13 +47,13 @@ class ServoController:
         logger.info(f"{data_name}: {hex_string}")
 
     # default address = 0x0205
-    def start_continuous_reading(self, address=0x0205, interval=0.15):
+    def start_continuous_reading(self, interval=0.15):
         if self.read_thread is not None:
             self.stop_continuous_reading()
 
         self.read_thread_stop_event.clear()
         self.read_thread = Thread(
-            target=self._read_continuously, args=(address, interval))
+            target=self._read_continuously, args=(interval,))
         self.read_thread.start()
     
     def stop_continuous_reading(self):
@@ -63,7 +63,7 @@ class ServoController:
             self.read_thread = None
             logging.info("Continuous reading stopped.")
 
-    def _read_continuously(self, address, interval):
+    def _read_continuously(self, interval):
         while not self.read_thread_stop_event.is_set():
             if not self.serial_port.keep_running:
                 logging.info("Reconnection attempts stopped.")
@@ -629,7 +629,7 @@ class ServoController:
         self.config_pulses_0x0906_high_byte(high_byte)
         self.delay_ms(50)
         
-        self.start_continuous_reading(0x0340, 0.2)
+        self.start_continuous_reading(0.2)
         self.delay_ms(60)
 
         if angle > 0:
@@ -644,7 +644,7 @@ class ServoController:
         self.delay_ms(100)
         self.config_speed_0x0903(speed_rpm)
         self.delay_ms(100)
-        self.start_continuous_reading(0x0900, 0.1)
+        self.start_continuous_reading(0.1)
 
     # 0: Stop
     # 1: CW
