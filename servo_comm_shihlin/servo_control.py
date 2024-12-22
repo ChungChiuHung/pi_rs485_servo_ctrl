@@ -63,6 +63,8 @@ class ServoController:
             self.read_thread_stop_event.set()
             self.read_thread.join()
             self.read_thread = None
+            self.completed_cnt = 0
+            self.completed_tag = False
             logging.info("Continuous reading stopped.")
 
     def _read_continuously(self, interval: float) -> None:
