@@ -2,7 +2,6 @@ import struct
 import serial
 import time
 import threading
-from threading import Event
 import logging
 from typing import Union
 
@@ -20,7 +19,7 @@ class ModbusASCIIClient:
     _instance = None
     _lock = threading.Lock()
 
-    def __new__(cls, device_number=None, serial_port_manager: SerialPortManager = None):
+    def __new__(cls, device_number = None, serial_port_manager: SerialPortManager = None):
         """Singleton instance creation."""
         with cls._lock:
             if cls._instance is None:
@@ -123,7 +122,7 @@ class ModbusASCIIClient:
                 return False
         return True
 
-    def parse_response(self, response: bytes | bytearray) -> dict:
+    def parse_response(self, response: Union[bytes, bytearray]) -> dict:
         if isinstance(response, (bytes, bytearray)):
             response = response.decode('utf-8')
         
