@@ -1,15 +1,15 @@
 from enum import Enum
+from typing import Union
 from modbus_command_code import CmdCode
 
 class ModbusResponse:
     def __init__(self, response):
         if isinstance(response, (bytes, bytearray)):
-            response = response.decode('utf-8')
-        
-        if response[0] != ':' or response[-2:] != '\r\n':
-            print(f"response: {response}")
+            response = response.decode('utf-8', error='replace')
+
+        if len(response) < 5 or response[0] != ':' or response[-2:] != '\r\n':
             raise ValueError("Invalid response: Does not start with ':' or does not end with '\\r\\n'")
-        
+
         self.stx = ':'
         self.end1 = '\r'
         self.end0 = '\n'
@@ -18,9 +18,10 @@ class ModbusResponse:
         self.adr = response[:2]
         self.cmd = response[2:4]
 
-        self.cmd_value = int(self.cmd, 16)
-
-        self.start_address = response[4:8]  # Common extraction for start address
+        try:
+            self.cmd_value = int(self.cmd, 16)
+        except ValueError:
+            raise ValueError(f"Invalid command code: {self.cmd}")
 
         if self.cmd_value == CmdCode.WRITE_DATA.value:
             self._parse_write_data(response)
@@ -65,42 +66,28 @@ class ModbusResponse:
             additional_info += f" Start Address: {self.start_address}\n"
 
         if hasattr(self, 'data_bytes'):
-            def hex_to_decimal(data_bytes):
-                return sum(byte << (8 * i) for i, byte in enumerate(data_bytes))
-            
             data_str = ', '.join(f"{b:02X}" for b in self.data_bytes)
+            decimal_value = self.get_value()
+            scaled_value = self.get_scaled_value()
 
-            decimal_value = hex_to_decimal(self.data_bytes)
-            scaled_value = round(decimal_value * 0.0001, 1)
-
-            additional_info = (f"  Data Count: {self.data_count}\n"
+            additional_info += (f"  Data Count: {self.data_count}\n"
                                f"  Data: [{data_str}]\n"
                                f"  Decimal Value: {decimal_value}\n"
-                               f"  Scaled Value: {scaled_value}\n")
+                               f"  Scaled Value: {scaled_value}\n"
+            )
         else:
             additional_info += " Data: Not applicable for write commands\n"
 
         additional_info += f" LRC: {self.lrc}\n"
-
         return base_info + additional_info
 
-    def get_scaled_value(self):
+    def get_scaled_value(self) -> Union[float, None]:
         if hasattr(self, 'data_bytes'):
-            def hex_to_decimal(data_bytes):
-                return sum(byte << (8 * i) for i, byte in enumerate(data_bytes))
-            
-            decimal_value = hex_to_decimal(self.data_bytes)
-            scaled_value = round(decimal_value * 0.0001, 1)
-            return scaled_value
-        else:
-            return None
+            decimal_value = self.get_value()
+            return round(decimal_value * 0.0001, 1)
+        return None
     
-    def get_value(self):
+    def get_value(self) -> Union[int, None]:
         if hasattr(self, 'data_bytes'):
-            def hex_to_decimal(data_bytes):
-                return sum(byte << (8 * i) for i, byte in enumerate(data_bytes))
-            
-            decimal_value = hex_to_decimal(self.data_bytes)
-            return decimal_value
-        else:
-            return None
+            return int.from_bytes(self.data_bytes, byteorder='big')
+        return None
