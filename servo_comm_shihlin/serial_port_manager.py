@@ -2,6 +2,7 @@ import serial
 import time
 import logging
 from serial.serialutil import SerialException
+from typing import Union
 import serial.tools.list_ports  # For dynamically listing available ports
 
 # Configure logging
@@ -62,7 +63,7 @@ class SerialPortManager:
             logging.error(f"Failed to connect to {port}: {e}")
             return False
 
-    def get_serial_instance(self) -> serial.Serial | None:
+    def get_serial_instance(self) -> Union[serial.Serial, None]:
         """Get the current serial instance, attempting to reconnect if necessary."""
         if self.serial_instance and self.serial_instance.is_open:
             return self.serial_instance
@@ -84,7 +85,7 @@ class SerialPortManager:
             self.serial_instance.close()
             logging.info(f"Disconnected from {self.port}.")
 
-    def send_and_receive(self, message: str, read_timeout: float = 0.1) -> str | None:
+    def send_and_receive(self, message: str, read_timeout: float = 0.1) -> Union[str, None]:
         """Send a message and receive a response from the serial connection."""
         serial_conn = self.get_serial_instance()
         if serial_conn:
