@@ -82,6 +82,8 @@ class ServoController:
                 break
             try:
                 self.completed_tag = self.Read_Motion_Completed_Signal()
+                encoder_value = self.read_encoder_before_gear_ratio()
+                logger.info(f"Encoder Value: {encoder_value}")  
                 if self.completed_tag:
                     self.completed_cnt += 1
                     if self.completed_cnt > 5:
@@ -450,10 +452,10 @@ class ServoController:
             self.response = self.modbus_client.send_and_receive(message)
             response_object = ModbusResponse(self.response)
             if response_object.get_value() != 0:
-                logger.info("Motion Completed!")
+                #logger.info("Motion Completed!")
                 return True
             else:
-                logger.info("Motion Not Completed!")
+                #logger.info("Motion Not Completed!")
                 return False
         except SerialException as e:
             logger.error(f"Serial connection error: {e}")
