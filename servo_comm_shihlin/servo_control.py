@@ -85,9 +85,12 @@ class ServoController:
                 if self.completed_tag:
                     self.completed_cnt += 1
                     if self.completed_cnt > 5:
-                        encoder_value = self.read_encoder_before_gear_ratio()
-                        logger.info(f"Encoder Value: {encoder_value}")  
+                        for i in range(5):
+                            encoder_value = self.read_encoder_before_gear_ratio()
+                            logger.info(f"Encoder Value: {encoder_value}")
+                            self.delay_ms(60)
                         self.stop_continuous_reading()
+                        break
             except Exception as e:
                 logging.error(f"Error during read: {e}")
                 break
@@ -321,24 +324,22 @@ class ServoController:
         #logging.info(f"Response Message: {response}")
 
     def read_servo_state(self):
-        print(f"Addres of 0x0200, 1 word")
+        # print(f"Addres of 0x0200, 1 word")
         message = self.modbus_client.build_read_message(0x0200, 1)
-        print(f"Build Read Message: {message}")
+        # print(f"Build Read Message: {message}")
         response = self.modbus_client.send_and_receive(message)
-        print(f"Response Message: {response}")
-
+        # logging.info(f"Response Message: {response}")
         response_object = ModbusResponse(response)
-
-        print(response_object)
+        logging.info(response_object)
 
     def read_control_mode(self):
-        print(f"Addres of 0x0201, 1 word")
+        #print(f"Addres of 0x0201, 1 word")
         message = self.modbus_client.build_read_message(0x0201, 1)
-        print(f"Build Read Command: {message}")
+        #print(f"Build Read Command: {message}")
         response = self.modbus_client.send_and_receive(message)
-        print(f"Response Message: {response}")
+        #print(f"Response Message: {response}")
         response_object = ModbusResponse(response)
-        print(response_object)
+        logging.info(response_object)
 
     def read_alarm_msg(self):
         # print(f"Address of 0x0100, 1 word")
@@ -348,19 +349,19 @@ class ServoController:
         self.response = self.modbus_client.send_and_receive(message)
         # print(f"Response Message: {response}")
         response_object = ModbusResponse(self.response)
-        print(response_object)
+        logging.info(response_object)
         # print(f"Build Read Command: {message}")
 
     # Select test mode 0x0004 (Pos test mode)
     def read_test_mode_0x0901(self):
-        print(f"Address of 0x0901, 1 word")
+        # print(f"Address of 0x0901, 1 word")
         message = self.modbus_client.build_read_message(0x0901, 1)
-        print(f"Build Read Command: {message}")
+        # print(f"Build Read Command: {message}")
         response = self.modbus_client.send_and_receive(message)
-        print(f"Response Message: {response}")
+        # print(f"Response Message: {response}")
         response_object = ModbusResponse(response)
 
-        print(response_object)
+        logging.info(response_object)
 
     # PR (procedure) sequence control
     def read_PF82(self):
@@ -370,7 +371,7 @@ class ServoController:
         response_object = ModbusResponse(self.response)
         logger.info(response_object.get_value())
 
-    def write_PF82(self, execute_PATH_value=0):
+    def write_PF82(self, execute_PATH_value: int = 0):
         """
         This method writes and controls the PATH execution.
 
@@ -528,27 +529,20 @@ class ServoController:
         # print(f"Address 0x0905, 1 word")
         message = self.modbus_client.build_read_message(0x0905, 1)
         # print(f"Build Write Command: {message}")
-        self.response = self.modbus_client.send_and_receive(message)
-        # response_object = ModbusResponse(response)
-        # print(response_object)
-        # print(f"Build Write Command: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        return response
 
     def read_0x0906_high_byte(self):
         # print(f"Address 0x0906, 1 word")
         message = self.modbus_client.build_read_message(0x0906, 1)
         # print(f"Build Write Command: {message}")
-        self.response = self.modbus_client.send_and_receive(message)
-        # response_object = ModbusResponse(response)
-        # print(response_object)
-        # print(f"Build Write Command: {message}")
+        response = self.modbus_client.send_and_receive(message)
+        return response
 
     def pos_motion_start_0x0907(self, value):
         # print(f"Address 0x0907, 1 word")
         config_value = value
         message = self.modbus_client.build_write_message(0x0907, config_value)
-        # print(f"Build Write Command: {message}")
-        # time.sleep(0.05)
-        # self.response = self.modbus_client.send_and_receive(message)
         self.modbus_client.send(message)
 
     def read_encoder_before_gear_ratio(self):
@@ -569,10 +563,10 @@ class ServoController:
         response = self.modbus_client.send_and_receive(message)
         #logger.info(f"Build Read Command: {message}")
         response_object = ModbusResponse(response)
-        print(response_object)
+        logging.info(response_object)
 
     def pos_step_motion_test(self, CW=True):
-        time.sleep(0.1)
+        self.delay_ms(100)
         if CW == True:
             self.pos_motion_start_0x0907(1)
         else:
@@ -588,7 +582,7 @@ class ServoController:
         # fraction_part = diff_pulse - int(diff_pulse)
         # self.float_error += fraction_part
 
-    def post_step_motion_by(self, angle=0.0, acc_dec_time=5000, speed_rpm=10):
+    def post_step_motion_by(self, angle: float = 0.0, acc_dec_time: int = 5000, speed_rpm: int =10):
         # 125829120 pulse/rev
         # 349525 + 1/3 pulse/degree
         # 125829120 pulse/rev
@@ -657,13 +651,13 @@ class ServoController:
     # 2: CCW
     def speed_ctrl_action(self, action_value):
         if action_value == 0:
-            print("Servo Stop!")
+            logging.info("Servo Stop!")
         elif action_value == 1:
-            print("Servo CW")
+            logging.info("Servo CW")
         elif action_value == 2:
-            print("Servo CCW")
+            logging.info("Servo CCW")
         else:
-            print("Error Config.")
+            logging.info("Error Config.")
         self.delay_ms(100)
         address = 0x0904
         message = self.modbus_client.build_write_message(address, action_value)
