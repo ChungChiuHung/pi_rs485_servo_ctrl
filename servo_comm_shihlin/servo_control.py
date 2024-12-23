@@ -52,7 +52,7 @@ class ServoController:
         logger.info(f"{data_name}: {hex_string}")
 
     # default address = 0x0205
-    def start_continuous_reading(self, interval: float = 0.15) -> None:
+    def start_continuous_reading(self, interval: float = 0.1) -> None:
         if self.read_thread and self.read_thread.is_alive():
             self.stop_continuous_reading()
 
@@ -74,11 +74,10 @@ class ServoController:
 
         self.completed_cnt = 0
         self.completed_tag = False
-        
+        logging.info("Mootion Completed Signal Reading Stopped.")
+
         for i in range(10):
             current_pulse = self.read_encoder_before_gear_ratio()
-            #diff_pulse_value = self.read_encoder_before_gear_ratio() - self.abs_home_pos
-            #logging.info(f"Diff Encoder Value: {diff_pulse_value}")
             logging.info(f"Current Encoder Value: {current_pulse}")
             self.delay_ms(100)
 
@@ -550,43 +549,38 @@ class ServoController:
         self.modbus_client.send(message)
 
     def read_encoder_before_gear_ratio(self):
-        # logger.info(f"Address 0x0000, 1 word")
         message = self.modbus_client.build_read_message(0x0000, 2)
         response = self.modbus_client.send_and_receive(message)
-        # logger.info(f"Build Read Command: {message}")
         response_object = ModbusResponse(response)
-        # logger.info(response_object)
         encoder_value = response_object.get_value()
         if encoder_value is not None:
             return int(encoder_value)
         return None
 
     def read_encoder_after_gear_ratio(self):
-        #logger.info(f"Address 0x0024, 1 word")
         message = self.modbus_client.build_read_message(0x0024, 2)
         response = self.modbus_client.send_and_receive(message)
-        #logger.info(f"Build Read Command: {message}")
         response_object = ModbusResponse(response)
         logging.info(response_object)
 
     def pos_step_motion_test(self, CW=True):
+        self.start_continuous_reading()
         self.delay_ms(100)
         if CW == True:
             self.pos_motion_start_0x0907(1)
         else:
             self.pos_motion_start_0x0907(2)
-        #time.sleep(0.1)
 
-    def pos_step_motion_by(self, pulses: int = 0, acc_dec_time=5000, speed_rpm=10):
+    def pos_step_motion_by(self, target_pulses: int = 0, acc_dec_time=5000, speed_rpm=10):
         # Get Current Pulse Value
         current_pulse = self.read_encoder_before_gear_ratio()
         # Set Target Pulse Value
-        diff_pulses = current_pulse - pulses
+        diff_pulses = target_pulses - current_pulse
 
         low_byte = diff_pulses & 0xFFFF
         high_byte = (diff_pulses >> 16) & 0xFFFF
 
-        self.stop_continuous_reading()
+        # self.stop_continuous_reading()
         self.Enable_Position_Mode(True)
         self.delay_ms(50)
         self.config_acc_dec_0x0902(acc_dec_time)
@@ -597,9 +591,8 @@ class ServoController:
         self.delay_ms(50)
         self.config_pulses_0x0906_high_byte(high_byte)
         self.delay_ms(50)
-        
-        self.start_continuous_reading(0.2)
-        self.delay_ms(60)
+
+        # self.delay_ms(60)
 
         if diff_pulses > 0:
             logger.info("Running Servo CW")
@@ -644,7 +637,7 @@ class ServoController:
             self._execute_positioning(diff_angle, low_byte, high_byte, acc_dec_time, speed_rpm)
     
     def _execute_positioning(self, angle, low_byte, high_byte, acc_dec_time, speed_rpm):
-        self.stop_continuous_reading()
+        # self.stop_continuous_reading()
         self.Enable_Position_Mode(True)
         self.delay_ms(50)
         self.config_acc_dec_0x0902(acc_dec_time)
@@ -656,8 +649,8 @@ class ServoController:
         self.config_pulses_0x0906_high_byte(high_byte)
         self.delay_ms(50)
         
-        self.start_continuous_reading(0.2)
-        self.delay_ms(60)
+        # self.start_continuous_reading(0.2)
+        # self.delay_ms(60)
 
         if angle > 0:
             logger.info("Running Servo CW")
