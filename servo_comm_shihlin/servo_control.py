@@ -42,7 +42,7 @@ class ServoController:
         self.initial_home = False
         self.completed_tag = False
         self.completed_cnt = 0
-        self.abs_home_pos = 2158434943
+        self.abs_home_pos = 1184347
 
     def delay_ms(self, milliseconds: int) -> None:
         time.sleep(milliseconds / 1000.0)
@@ -75,6 +75,7 @@ class ServoController:
 
         self.completed_cnt = 0
         self.completed_tag = False
+        self.initial_home = False
         logging.info("Mootion Completed Signal Reading Stopped.")
             
 
@@ -676,7 +677,6 @@ class ServoController:
     def initial_abs_home(self):
         if self.initial_home == False:
             self.initial_home = True
-            diff_pulse_value = self.abs_home_pos - self.read_encoder_before_gear_ratio()
-            self.pos_step_motion_by(diff_pulse_value, 5000, 15)
+            self.pos_step_motion_by(self.abs_home_pos, 5000, 12)
             self.start_continuous_reading()
 

@@ -131,7 +131,7 @@ def back_home_handler(unused_addr, args, state):
     try:
         if not check_duplicated(state):
             if state == 1.0:
-                servo_ctrller.post_step_motion_by(0, 5000, 10)
+                servo_ctrller.initial_abs_home()
                 logging.info("Back to home position.")
     except Exception as e:
         logging.error(f"Error in back_home_handler: {e}")
