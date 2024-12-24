@@ -550,11 +550,13 @@ class ServoController:
     def pos_step_motion_by(self, target_pulses: int = 0, acc_dec_time=5000, speed_rpm=10):
         # Get Current Pulse Value
         current_pulse = self.read_encoder_before_gear_ratio()
+        logger.info(f"Current Pulse Value: {current_pulse}")
         # Set Target Pulse Value
         diff_pulses = current_pulse - target_pulses
+        logging.info(f"Diff Pulses: {diff_pulses}")
 
-        low_byte = diff_pulses & 0xFFFF
-        high_byte = (diff_pulses >> 16) & 0xFFFF
+        low_byte = abs(diff_pulses) & 0xFFFF
+        high_byte = (abs(diff_pulses) >> 16) & 0xFFFF
 
         # self.stop_continuous_reading()
         self.Enable_Position_Mode(True)
