@@ -83,7 +83,7 @@ class ModbusResponse:
     
     def get_value(self) -> Union[int, None]:
         if not hasattr(self, 'data_bytes'):
-            raise ValueError("No data available to extract value.")
+            return None
         
         high_byte = self.data_bytes[2:4]
         low_byte = self.data_bytes[0:2]
