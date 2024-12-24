@@ -87,7 +87,11 @@ class ModbusResponse:
             return round(decimal_value * 0.0001, 1)
         return None
     
-    def get_value(self) -> Union[int, None]:
-        if hasattr(self, 'data_bytes'):
-            return sum(byte << (8 * i) for i, byte in enumerate(reversed(self.data_bytes)))
-        return None
+    def get_value(self):
+        if not hasattr(self, 'data_bytes'):
+            raise ValueError("No data available to extract value.")
+        
+        ordered_bytes = self.data_bytes[self.data_bytes[2], self.data_bytes[3], self.data_bytes[0], self.data_bytes[1]]
+
+        value = int.from_bytes(ordered_bytes, byteorder='big', signed=True)
+        return value
