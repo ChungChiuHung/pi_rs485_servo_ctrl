@@ -552,7 +552,7 @@ class ServoController:
         current_pulse = self.read_encoder_before_gear_ratio()
         logger.info(f"Current Pulse Value: {current_pulse}")
         # Set Target Pulse Value
-        diff_pulses = current_pulse - target_pulses
+        diff_pulses = target_pulses - current_pulse
         logging.info(f"Diff Pulses: {diff_pulses}")
 
         low_byte = abs(diff_pulses) & 0xFFFF
