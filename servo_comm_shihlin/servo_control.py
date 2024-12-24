@@ -678,5 +678,6 @@ class ServoController:
         if self.initial_home == False:
             self.initial_home = True
             self.pos_step_motion_by(self.abs_home_pos, 5000, 12)
+            self.set_home_position()
             self.start_continuous_reading()
 
