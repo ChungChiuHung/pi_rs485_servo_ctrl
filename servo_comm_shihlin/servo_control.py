@@ -59,6 +59,7 @@ class ServoController:
         self.read_thread_stop_event.clear()
         self.read_thread = threading.Thread(target=self._read_continuously, args=(interval,))
         self.read_thread.start()
+        logging.info("Continuous reading started.")
     
     def stop_continuous_reading(self) -> None:
         if self.read_thread:
@@ -75,11 +76,7 @@ class ServoController:
         self.completed_cnt = 0
         self.completed_tag = False
         logging.info("Mootion Completed Signal Reading Stopped.")
-
-        for i in range(10):
-            current_pulse = self.read_encoder_before_gear_ratio()
-            logging.info(f"Current Encoder Value: {current_pulse}")
-            self.delay_ms(100)
+            
 
     def _read_continuously(self, interval: float) -> None:
         self.completed_tag = False
@@ -89,6 +86,9 @@ class ServoController:
                 break
             try:
                 self.completed_tag = self.Read_Motion_Completed_Signal()
+                self.delay_ms(100)
+                current_pulse = self.read_encoder_before_gear_ratio()
+                logging.info(f"Current Encoder Value: {current_pulse}")
                 if self.completed_tag:
                     self.completed_cnt += 1
                     if self.completed_cnt > 10:
@@ -110,16 +110,15 @@ class ServoController:
     def read_PA01_Ctrl_Mode(self):
         logging.info(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
         message = self.modbus_client.build_read_message(PA.STY.address, 2)
-        # print(f"Build Read Message: {message}")
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         logging.info(response_object)
     
     def read_PA33_Encoder_ABS_Pos(self):
         message = self.modbus_client.build_read_message(0x0340, 2)
-        # print(f"Build Read Message: {message}")
         response = self.modbus_client.send_and_receive(message)
-        logger.info(response)
+        response_object = ModbusResponse(response)
+        logger.info(response_object)
 
     def write_PA01_Ctrl_Mode(self):
         logger.info(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
@@ -212,9 +211,7 @@ class ServoController:
         logger.info(
             f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
         message = self.modbus_client.build_read_message(PD.ITST.address, 1)
-        #print(f"Build Read Message: {message}")
         response = self.modbus_client.send_and_receive(message)
-        #logger.info(f"Response Message: {response}")
         response_object = ModbusResponse(response)
         logger.info(response_object)
 
@@ -225,9 +222,8 @@ class ServoController:
         message = self.modbus_client.build_write_message(
             PD.ITST.address, config_value)
         self.response = self.modbus_client.send_and_receive(message)
-        # response_object = ModbusResponse(response)
-        # print(response_object)
-        # print("\n")
+        response_object = ModbusResponse(self.response)
+        logging.info(response_object)
 
     def servo_on(self):
         logging.info(
@@ -235,10 +231,10 @@ class ServoController:
         config_value = ServoUtility.config_hex_with(0, 3, 4, 1)
         message = self.modbus_client.build_write_message(
             PD.ITST.address, config_value)
-        self.response = self.modbus_client.send_and_receive(message)
-        # response_object = ModbusResponse(response)
-        # print(response_object)
-        # print("\n")
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+        logging.info(response_object)
+
 
     def clear_alarm_12(self):
         logging.info(
@@ -246,10 +242,9 @@ class ServoController:
         config_value = ServoUtility.config_hex_with(0, 0, 4, 0)
         message = self.modbus_client.build_write_message(
             PD.ITST.address, config_value)
-        self.response = self.modbus_client.send_and_receive(message)
-        # response_object = ModbusResponse(response)
-        # print(response_object)
-        # print("\n")
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+        logging.info(response_object)
 
     def servo_off(self):
         # print(
@@ -258,19 +253,16 @@ class ServoController:
         config_value = ServoUtility.config_hex_with(0, 0, 0, 0)
         message = self.modbus_client.build_write_message(
             PD.ITST.address, config_value)
-        self.response = self.modbus_client.send_and_receive(message)
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+        logger.info(response_object)
         self.delay_ms(100)
-        # response_object = ModbusResponse(response)
-        # print(response_object)
-        # print("\n")
 
     # Pos mode 0x0000 0x0000
     def read_PD_01(self):
         logger.info(f"Address of PD{PD.DIA1.no} {PD.DIA1.name}: {PD.DIA1.address}")
         message = self.modbus_client.build_read_message(PD.DIA1.address, 2)
-        #print(f"Build Read Message: {message}")
         self.response = self.modbus_client.send_and_receive(message)
-        #print(f"Response Message: {response}")
         response_object = ModbusResponse(self.response)
         logging.info(response_object)
 
@@ -280,9 +272,7 @@ class ServoController:
         config_value = ServoUtility.config_hex_with(0, 0, 0, 0)
         message = self.modbus_client.build_write_message(
             PD.DIA1.address, config_value)
-        #print(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
-        #print(f"Response Message: {response}")
         response_object = ModbusResponse(response)
         logging.info(response_object)
 
@@ -313,57 +303,41 @@ class ServoController:
     def read_PD_08(self):
         logging.info(f"Address of PD{PD.DI7.no} {PD.DI7.name}: {PD.DI7.address}")
         message = self.modbus_client.build_read_message(PD.DI7.address, 2)
-        # print(f"Build Read Command: {message}")
         response = self.modbus_client.send_and_receive(message)
-        # print(f"Response Message: {response}")
         response_object = ModbusResponse(response)
         logging.info(response_object)
 
     def write_PD_08(self):
         logging.info(f"Address of PD{PD.DI7.no} {PD.DI7.name}: {PD.DI7.address}")
         message = self.modbus_client.build_write_message(PD.DI7.address, 0x02F)
-        #logging.info(f"Build Write Command: {message}")
         response = self.modbus_client.send_and_receive(message)
-        #logging.info(f"Response Message: {response}")
+        response_object = ModbusResponse(response)
+        logging.info(response_object)
 
     def read_servo_state(self):
-        # print(f"Addres of 0x0200, 1 word")
         message = self.modbus_client.build_read_message(0x0200, 1)
-        # print(f"Build Read Message: {message}")
         response = self.modbus_client.send_and_receive(message)
-        # logging.info(f"Response Message: {response}")
         response_object = ModbusResponse(response)
         logging.info(response_object)
 
     def read_control_mode(self):
-        #print(f"Addres of 0x0201, 1 word")
         message = self.modbus_client.build_read_message(0x0201, 1)
-        #print(f"Build Read Command: {message}")
         response = self.modbus_client.send_and_receive(message)
-        #print(f"Response Message: {response}")
         response_object = ModbusResponse(response)
         logging.info(response_object)
 
     def read_alarm_msg(self):
-        # print(f"Address of 0x0100, 1 word")
-        # print(f"Address of 0x0100, 1 word")
         message = self.modbus_client.build_read_message(0x0100, 11)
-        # print(f"Build Read Command: {message}")
         self.response = self.modbus_client.send_and_receive(message)
         # print(f"Response Message: {response}")
         response_object = ModbusResponse(self.response)
         logging.info(response_object)
-        # print(f"Build Read Command: {message}")
 
     # Select test mode 0x0004 (Pos test mode)
     def read_test_mode_0x0901(self):
-        # print(f"Address of 0x0901, 1 word")
         message = self.modbus_client.build_read_message(0x0901, 1)
-        # print(f"Build Read Command: {message}")
         response = self.modbus_client.send_and_receive(message)
-        # print(f"Response Message: {response}")
         response_object = ModbusResponse(response)
-
         logging.info(response_object)
 
     # PR (procedure) sequence control
@@ -552,6 +526,7 @@ class ServoController:
         message = self.modbus_client.build_read_message(0x0000, 2)
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
+        logging.info(response_object)
         encoder_value = response_object.get_value()
         if encoder_value is not None:
             return int(encoder_value)
@@ -601,13 +576,16 @@ class ServoController:
             logger.info("Running Servo CCW")
             self.pos_step_motion_test(False)
 
+        
+
 
     def post_step_motion_by(self, angle: float = 0.0, acc_dec_time: int = 5000, speed_rpm: int =10):
         # 125829120 pulse/rev
         # 349525 + 1/3 pulse/degree
         # 125829120 pulse/rev
         # 349525 + 1/3 pulse/degree
-        base_pulse_per_degree = 349525.333  
+        base_pulse_per_degree = 349525.3333333333
+        
         self.previous_angle = self.current_angle
         self.current_angle = angle
         diff_angle = self.current_angle - self.previous_angle
@@ -620,7 +598,10 @@ class ServoController:
             fractional_pulse = total_pulse - integer_pulse
 
             # Accumulate fractional part
-            self.float_error -= fractional_pulse
+            if diff_angle > 0:
+                self.float_error += fractional_pulse
+            else:
+                self.float_error -= fractional_pulse
 
             if self.float_error >= 1.0:
                 integer_error = int(self.float_error)
@@ -632,7 +613,7 @@ class ServoController:
             low_byte = integer_pulse & 0xFFFF
             high_byte = (integer_pulse >> 16) & 0xFFFF
 
-            logger.info(f"Motion Pulses: {integer_pulse}")
+            logger.info(f"Motion Pulses: {integer_pulse}, float_error: {self.float_error}")
 
             self._execute_positioning(diff_angle, low_byte, high_byte, acc_dec_time, speed_rpm)
     
@@ -681,8 +662,9 @@ class ServoController:
         self.delay_ms(100)
         address = 0x0904
         message = self.modbus_client.build_write_message(address, action_value)
-        # response = self.modbus_client.send_and_receive(message)
-        self.modbus_client.send(message)
+        response = self.modbus_client.send_and_receive(message)
+        response_object = ModbusResponse(response)
+        logging.info(response_object)
 
     def set_home_position(self):
         self.current_angle = 0.0

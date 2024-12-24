@@ -89,5 +89,5 @@ class ModbusResponse:
     
     def get_value(self) -> Union[int, None]:
         if hasattr(self, 'data_bytes'):
-            return int.from_bytes(self.data_bytes, byteorder='big')
+            return sum(byte << (8 * i) for i, byte in enumerate(reversed(self.data_bytes)))
         return None
