@@ -551,7 +551,7 @@ class ServoController:
         # Get Current Pulse Value
         current_pulse = self.read_encoder_before_gear_ratio()
         # Set Target Pulse Value
-        diff_pulses = target_pulses - current_pulse
+        diff_pulses = current_pulse - target_pulses
 
         low_byte = diff_pulses & 0xFFFF
         high_byte = (diff_pulses >> 16) & 0xFFFF
