@@ -80,14 +80,19 @@ class ModbusResponse:
 
         additional_info += f" LRC: {self.lrc}\n"
         return base_info + additional_info
+    
+    def get_value(self) -> Union[int, None]:
+        if not hasattr(self, 'data_bytes'):
+            raise ValueError("No data available to extract value.")
+        
+        high_byte = self.data_bytes[2:4]
+        low_byte = self.data_bytes[0:2]
+
+        return int.from_bytes(high_byte + low_byte, byteorder='big')
+           
 
     def get_scaled_value(self) -> Union[float, None]:
         if hasattr(self, 'data_bytes'):
             decimal_value = self.get_value()
             return round(decimal_value * 0.0001, 1)
-        return None
-    
-    def get_value(self) -> Union[int, None]:
-        if hasattr(self, 'data_bytes'):
-            return sum(byte << (8 * i) for i, byte in enumerate(reversed(self.data_bytes)))
         return None
