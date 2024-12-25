@@ -34,6 +34,7 @@ class ServoController:
             device_number=1, serial_port_manager=serial_port)
         self.read_thread: Union[Thread, None] = None
         self.read_thread_stop_event = Event()
+        self.stop_event = Event()
         self.response = ""
         self.current_angle = 0.0
         self.previous_angle = 0.0
@@ -77,6 +78,7 @@ class ServoController:
         self.completed_tag = False
         self.initial_home = False
         logging.info("Mootion Completed Signal Reading Stopped.")
+        self.stop_event.set()
             
 
     def _read_continuously(self, interval: float) -> None:
@@ -676,10 +678,31 @@ class ServoController:
         self.accumulate_pulse = 0
         logger.info("home position set!!!")
 
-    def initial_abs_home(self):
-        if self.initial_home == False:
-            self.initial_home = True
-            self.pos_step_motion_by(self.abs_home_pos, 5000, 12)
-            self.set_home_position()
-            self.start_continuous_reading()
+    def initial_abs_home(self) -> bool:
+        if not self.initial_home:
+            try:
+                self.stop_event.clear()
+                self.initial_home = True
+                self.pos_step_motion_by(self.abs_home_pos, 5000, 12)
+                self.set_home_position()
+                self.start_continuous_reading()
+
+                if self.stop_event.wait(timeout=10):
+                    logging.info("Stop process completed successfully.")
+                    return False
+                else:
+                    logging.warning("Timeout while waiting for stop process.")
+                    return False
+            except Exception as e:
+                logging.error(f"Error in initial_abs_home: {e}")
+                return False
+        else:
+            logging.info("Initial absolute home already set.")
+            return False
+
+#        if self.initial_home == False:
+#            self.initial_home = True
+#            self.pos_step_motion_by(self.abs_home_pos, 5000, 12)
+#            self.set_home_position()
+#            self.start_continuous_reading()
 
