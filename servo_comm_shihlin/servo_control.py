@@ -30,12 +30,12 @@ class ServoController:
     def __init__(self, serial_port):
         self.serial_port = serial_port
         self.modbus_client = ModbusASCIIClient.get_instance(
-            device_number=1, serial_port_manager=serial_port)
+            device_number=1, serial_port_manager=serial_port
+            )
         self.read_thread: Union[Thread, None] = None
         self.read_thread_stop_event = threading.Event()
         self.reading_active = False
         self.lock = threading.Lock()
-
         self.stop_event = Event()
         self.response = ""
         self.current_angle = 0.0
@@ -46,7 +46,6 @@ class ServoController:
         self.completed_tag = False
         self.completed_cnt = 0
         self.abs_home_pos = 1184347
-
         self._event_listeners = {"on_motion_completed": []}
 
     def register_event_listener(self, event_name: str, callback: Callable):
@@ -83,6 +82,7 @@ class ServoController:
         with self.lock:
             if self.reading_active:
                 self.stop_continuous_reading()
+                return
 
             self.read_thread_stop_event.clear()
             self.read_thread = threading.Thread(target=self._read_continuously, args=(interval,))
@@ -110,7 +110,6 @@ class ServoController:
             
 
     def _read_continuously(self, interval: float) -> None:
-        self.completed_tag = False
         while not self.read_thread_stop_event.is_set():
             if not self.serial_port.keep_running:
                 logging.info("Reconnection attempts stopped.")
@@ -120,6 +119,7 @@ class ServoController:
                 self.delay_ms(100)
                 current_pulse = self.read_encoder_before_gear_ratio()
                 logging.info(f"Current Encoder Value: {current_pulse}")
+
                 if self.completed_tag:
                     self.completed_cnt += 1
                     if self.completed_cnt > 10:
@@ -442,12 +442,7 @@ class ServoController:
             message = self.modbus_client.build_read_message(PF.PRCM.address, 1)
             self.response = self.modbus_client.send_and_receive(message)
             response_object = ModbusResponse(self.response)
-            if response_object.get_value() != 0:
-                #logger.info("Motion Completed!")
-                return True
-            else:
-                #logger.info("Motion Not Completed!")
-                return False
+            return response_object.get_value() != 0
         except SerialException as e:
             logger.error(f"Serial connection error: {e}")
             return False
@@ -690,25 +685,25 @@ class ServoController:
 
     def initial_abs_home(self) -> bool:
         if not self.initial_home:
-            try:
-                self.stop_event.clear()
-                self.initial_home = True
-                self.pos_step_motion_by(self.abs_home_pos, 5000, 12)
-                self.set_home_position()
-                self.start_continuous_reading()
-
-                if self.stop_event.wait(timeout=10):
-                    logging.info("Stop process completed successfully.")
-                    return False
-                else:
-                    logging.warning("Timeout while waiting for stop process.")
-                    self.stop_continuous_reading()
-                    return False
-            except Exception as e:
-                logging.error(f"Error in initial_abs_home: {e}")
+            logging.info("Initial absolute home already set.")
+            return False
+        
+        try:
+            self.stop_event.clear()
+            self.initial_home = True
+            self.pos_step_motion_by(self.abs_home_pos, 5000, 12)
+            self.set_home_position()
+            self.start_continuous_reading()
+            
+            if self.stop_event.wait(timeout=10):
+                logging.info("Stop process completed successfully.")
+                return False
+            else:
+                logging.warning("Timeout while waiting for stop process.")
                 self.stop_continuous_reading()
                 return False
-        else:
-            logging.info("Initial absolute home already set.")
+        except Exception as e:
+            logging.error(f"Error in initial_abs_home: {e}")
+            self.stop_continuous_reading()
             return False
 
