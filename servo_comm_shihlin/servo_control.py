@@ -101,6 +101,7 @@ class ServoController:
         self.completed_tag = False
         self.initial_home = False
         logging.info("Mootion Completed Signal Reading Stopped.")
+        self._notify_event_listeners("on_motion_completed")
         self.stop_event.set()
             
 
@@ -712,7 +713,6 @@ class ServoController:
 
                 if self.stop_event.wait(timeout=10):
                     logging.info("Stop process completed successfully.")
-                    self._notify_event_listeners("on_motion_completed")
                     return False
                 else:
                     logging.warning("Timeout while waiting for stop process.")
