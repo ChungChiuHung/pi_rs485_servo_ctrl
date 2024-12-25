@@ -2,7 +2,7 @@ import os
 import time
 import argparse
 import logging
-from functiools import wraps
+from functools import wraps
 from threading import Thread, Event
 from pythonosc.dispatcher import Dispatcher
 from pythonosc import osc_server, udp_client
