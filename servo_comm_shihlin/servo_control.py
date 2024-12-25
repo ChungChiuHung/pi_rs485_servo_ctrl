@@ -1,9 +1,8 @@
 import threading
 import time
 import logging
-from typing import Union
+from typing import Union, Callable
 from threading import Thread, Event
-
 from serial import SerialException
 from modbus_ascii_client import ModbusASCIIClient
 from modbus_response import ModbusResponse
@@ -33,7 +32,10 @@ class ServoController:
         self.modbus_client = ModbusASCIIClient.get_instance(
             device_number=1, serial_port_manager=serial_port)
         self.read_thread: Union[Thread, None] = None
-        self.read_thread_stop_event = Event()
+        self.read_thread_stop_event = threading.Event()
+        self.reading_active = False
+        self.lock = threading.Lock()
+
         self.stop_event = Event()
         self.response = ""
         self.current_angle = 0.0
@@ -45,23 +47,24 @@ class ServoController:
         self.completed_cnt = 0
         self.abs_home_pos = 1184347
 
-        self._event_listeners = {
-            "on_motion_completed": []
-        }
+        self._event_listeners = {"on_motion_completed": []}
 
-    def register_event_listener(self, event_name, callback):
+    def register_event_listener(self, event_name: str, callback: Callable):
         """Register a callback for a specific event."""
-        if event_name in self._event_listeners:
-            self._event_listeners[event_name].append(callback)
-        else:
+        if event_name not in self._event_listeners:
             raise ValueError(f"Event {event_name} is not supported.")
+        if not callable(callback):
+            raise ValueError("Callback must be callable.")
+        self._event_listeners[event_name].append(callback)
         
-    def unregister_event_listener(self, event_name, callback):
+    def unregister_event_listener(self, event_name: str, callback: callable):
         """Unregister a callback for a specific event."""
-        if event_name in self._event_listeners:
-            self._event_listeners[event_name].remove(callback)
-        else:
+        if event_name not in self._event_listeners:
             raise ValueError(f"Event {event_name} is not supported.")
+        try:
+            self._event_listeners[event_name].remove(callback)
+        except ValueError:
+            logging.info(f"Callback not found for event {event_name}.")
         
     def _notify_event_listeners(self, event_name, *args, **kwargs):
         """Notify all registered callbacks for a specific event."""
@@ -77,32 +80,33 @@ class ServoController:
 
     # default address = 0x0205
     def start_continuous_reading(self, interval: float = 0.1) -> None:
-        if self.read_thread and self.read_thread.is_alive():
-            self.stop_continuous_reading()
+        with self.lock:
+            if self.reading_active:
+                self.stop_continuous_reading()
 
-        self.read_thread_stop_event.clear()
-        self.read_thread = threading.Thread(target=self._read_continuously, args=(interval,))
-        self.read_thread.start()
-        logging.info("Continuous reading started.")
+            self.read_thread_stop_event.clear()
+            self.read_thread = threading.Thread(target=self._read_continuously, args=(interval,))
+            self.reading_active = True
+            self.read_thread.start()
+            logging.info("Continuous reading started.")
     
     def stop_continuous_reading(self) -> None:
-        if self.read_thread:
-            if threading.current_thread() is self.read_thread:
-                logger.warning("Cannot join the current thread; skipping join.")
-                self.read_thread_stop_event.set()
-                self.read_thread = None
-            else:
-                self.read_thread_stop_event.set()
-                self.read_thread.join()
-                self.read_thread = None
-                logging.info("Continuous reading stopped.")
+        with self.lock:
+            if not self.reading_active:
+                logging.warning("Continuous reading is not active; skipping stop.")
+                return
 
-        self.completed_cnt = 0
-        self.completed_tag = False
-        self.initial_home = False
-        logging.info("Mootion Completed Signal Reading Stopped.")
-        self._notify_event_listeners("on_motion_completed")
-        self.stop_event.set()
+            self.reading_active = False
+            self.read_thread_stop_event.set()
+            if self.read_thread and threading.current_thread() is not self.read_thread:
+                self.read_thread.join()
+
+            self.read_thread = None
+            self.completed_cnt = 0
+            self.completed_tag = False
+            logging.info("Mootion Completed Signal Reading Stopped.")
+            self._notify_event_listeners("on_motion_completed")
+            self.stop_event.set()
             
 
     def _read_continuously(self, interval: float) -> None:
@@ -403,24 +407,6 @@ class ServoController:
         try:
             response_object = ModbusResponse(self.response)
             logging.info(f"Parsed Mobus Response: {response_object}")
-
-            if hasattr(response_object, 'data_bytes'):
-                # Extract the response value
-                response_value = int.from_bytes(response_object.data_bytes, byteorder='big')
-                #logging.info(f"Response value: {response_value}")
-
-                #Handle the response value logic
-                if response_value == execute_PATH_value:
-                    logging.info(f"Command {execute_PATH_value} is still being executed.")
-                elif response_value == (execute_PATH_value + 10000):
-                    logging.info(f"Commnad {execute_PATH_value} has been executed, but motor positioning is not complete.")
-                elif response_value == (execute_PATH_value + 20000):
-                    logging.info(f"Command {execute_PATH_value} has been executed, and motor position is complete.")
-
-            else:
-                logging.info("No data_bytes found in response.")
-        except ValueError as e:
-            logging.info(f"Failed to process response: {e}")
         except Exception as e:
             logging.info(f"An unexpected error occurred: {e}")       
 
@@ -716,17 +702,13 @@ class ServoController:
                     return False
                 else:
                     logging.warning("Timeout while waiting for stop process.")
+                    self.stop_continuous_reading()
                     return False
             except Exception as e:
                 logging.error(f"Error in initial_abs_home: {e}")
+                self.stop_continuous_reading()
                 return False
         else:
             logging.info("Initial absolute home already set.")
             return False
-
-#        if self.initial_home == False:
-#            self.initial_home = True
-#            self.pos_step_motion_by(self.abs_home_pos, 5000, 12)
-#            self.set_home_position()
-#            self.start_continuous_reading()
 
