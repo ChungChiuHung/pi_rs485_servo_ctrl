@@ -122,7 +122,7 @@ def set_home_position_handler(unused_addr, args, state):
     except Exception as e:
         logging.error(f"Error in set_home_position_handler: {e}")
 
-def on_motion_complete():
+def on_motion_completed():
     try:
         send_to_touchdesigner("/motion_complete", "complete")
         logging.info("Motion complete.")
@@ -138,7 +138,7 @@ def main():
         parser.add_argument("--port_receive", type=int, default=5005, help="The port to listen on")
         args = parser.parse_args()
 
-        servo_ctrller.register_event_listener("on_motion_complete", on_motion_complete)
+        servo_ctrller.register_event_listener("on_motion_completed", on_motion_completed)
 
         dispatcher = Dispatcher()
         dispatcher.map("/servo", servo_handler, "data")
