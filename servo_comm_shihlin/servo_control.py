@@ -45,6 +45,29 @@ class ServoController:
         self.completed_cnt = 0
         self.abs_home_pos = 1184347
 
+        self._event_listeners = {
+            "on_motion_completed": []
+        }
+
+    def register_event_listener(self, event_name, callback):
+        """Register a callback for a specific event."""
+        if event_name in self._event_listeners:
+            self._event_listeners[event_name].append(callback)
+        else:
+            raise ValueError(f"Event {event_name} is not supported.")
+        
+    def unregister_event_listener(self, event_name, callback):
+        """Unregister a callback for a specific event."""
+        if event_name in self._event_listeners:
+            self._event_listeners[event_name].remove(callback)
+        else:
+            raise ValueError(f"Event {event_name} is not supported.")
+        
+    def _notify_event_listeners(self, event_name, *args, **kwargs):
+        """Notify all registered callbacks for a specific event."""
+        for callback in self._event_listeners.get(event_name, []):
+            callback(*args, **kwargs)
+
     def delay_ms(self, milliseconds: int) -> None:
         time.sleep(milliseconds / 1000.0)
 
@@ -689,6 +712,7 @@ class ServoController:
 
                 if self.stop_event.wait(timeout=10):
                     logging.info("Stop process completed successfully.")
+                    self._notify_event_listeners("on_motion_completed")
                     return False
                 else:
                     logging.warning("Timeout while waiting for stop process.")
