@@ -116,7 +116,7 @@ def main():
         server = osc_server.ThreadingOSCUDPServer((args.ip, args.port_receive), dispatcher)
         logging.info(f"Serving on {server.server_address}")
 
-        server.server_forever()
+        server.serve_forever()
 
     except KeyboardInterrupt:
         logging.info("Keyboard interrupt received. Exiting...")
