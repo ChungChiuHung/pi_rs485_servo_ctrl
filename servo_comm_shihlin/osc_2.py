@@ -41,6 +41,9 @@ servo_ctrller.write_PD_16_Enable_DI_Control()
 START, STOP = False, False
 RS485_send, RS485_read = "00 00 FF FF", "FF FF 00 00"
 
+# Duplicate message check
+previous_data = None
+
 # Setup OSC Client
 TOUCHDESIGNER_IP = "10.12.1.164"
 TOUCHDESIGNER_PORT = 5008
@@ -70,7 +73,7 @@ def servo_handler(unused_addr, args, data):
         if not check_duplicated(data):
             logging.info(f"Received: {data}")
             if data == 1.0:
-                servo_ctroller.servo_on()
+                servo_ctrller.servo_on()
                 send_to_touchdesigner("/servo_on", "on")
                 logging.info("Servo turned on.")
             elif data == 0.0:
@@ -99,6 +102,26 @@ def set_point_handler(unused_addr, args, angle, acc_time, rpm):
     except Exception as e:
         logging.error(f"Error in set_point_handler: {e}")
 
+def back_home_handler(unused_addr, args, state):
+    try:
+        if not check_duplicated(state):
+            if state == 1.0:
+                servo_ctrller.initial_abs_home()
+                send_to_touchdesigner("/back_home", "back_home")
+                logging.info("Back to home position.")
+    except Exception as e:
+        logging.error(f"Error in back_home_handler: {e}")
+
+def set_home_position_handler(unused_addr, args, state):
+    try:
+        if not check_duplicated(state):
+            if state == 1.0:
+                servo_ctrller.set_home_position()
+                send_to_touchdesigner("/set_home_position", "set_home_position")
+                logging.info("Set home position.")
+    except Exception as e:
+        logging.error(f"Error in set_home_position_handler: {e}")
+
 def main():
     server = None
     try:
@@ -112,6 +135,8 @@ def main():
         dispatcher.map("/servo", servo_handler, "data")
         dispatcher.map("/clear", clear_handler, "clear")
         dispatcher.map("/set_point", set_point_handler, "angle", "acc_time", "rpm")
+        dispatcher.map("/back_home", back_home_handler, "state")
+        dispatcher.map("/set_home", set_home_position_handler, "state")
 
         server = osc_server.ThreadingOSCUDPServer((args.ip, args.port_receive), dispatcher)
         logging.info(f"Serving on {server.server_address}")
