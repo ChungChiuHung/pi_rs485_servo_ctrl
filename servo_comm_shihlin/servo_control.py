@@ -42,7 +42,7 @@ class ServoController:
         self.previous_angle = 0.0
         self.float_error = 0.0
         self.accumulate_pulse = 0
-        self.initial_home = False
+        self.on_initial_home = False
         self.completed_tag = False
         self.completed_cnt = 0
         self.abs_home_pos = 1184347
@@ -104,6 +104,8 @@ class ServoController:
             self.read_thread = None
             self.completed_cnt = 0
             self.completed_tag = False
+            if self.on_initial_home:
+                self.on_initial_home = False
             logging.info("Mootion Completed Signal Reading Stopped.")
             self._notify_event_listeners("on_motion_completed")
             self.stop_event.set()
@@ -684,13 +686,13 @@ class ServoController:
         logger.info("home position set!!!")
 
     def initial_abs_home(self) -> bool:
-        if not self.initial_home:
-            logging.info("Initial absolute home already set.")
+        if self.on_initial_home:
+            logging.info("Initial absolute home now is running.")
             return False
         
         try:
             self.stop_event.clear()
-            self.initial_home = True
+            self.on_initial_home = True
             self.pos_step_motion_by(self.abs_home_pos, 5000, 12)
             self.start_continuous_reading()
             self.set_home_position()
