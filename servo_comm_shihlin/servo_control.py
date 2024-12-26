@@ -106,7 +106,7 @@ class ServoController:
             self.completed_tag = False
             if self.on_initial_home:
                 self.on_initial_home = False
-            logging.info("Mootion Completed Signal Reading Stopped.")
+            logging.info("Motion Completed Signal Reading Stopped.")
             self._notify_event_listeners("on_motion_completed")
             self.stop_event.set()
             
@@ -400,7 +400,7 @@ class ServoController:
         if execute_PATH_value < 0 or execute_PATH_value > 9999:
             raise ValueError("execute_PATH_value must be between 0 and 9999.")
         if execute_PATH_value >= 64 and execute_PATH_value < 1000:
-            logging.info("Value out of acceptable rnage.")
+            logging.info("Value out of acceptable range.")
 
         message = self.modbus_client.build_write_message(PF.PRCM.address, 1)
         self.response = self.modbus_client.send_and_receive(message)
@@ -567,28 +567,7 @@ class ServoController:
         low_byte = abs(diff_pulses) & 0xFFFF
         high_byte = (abs(diff_pulses) >> 16) & 0xFFFF
 
-        # self.stop_continuous_reading()
-        self.Enable_Position_Mode(True)
-        self.delay_ms(50)
-        self.config_acc_dec_0x0902(acc_dec_time)
-        self.delay_ms(50)
-        self.config_speed_0x0903(speed_rpm)
-        self.delay_ms(50)
-        self.config_pulses_0x0905_low_byte(low_byte)
-        self.delay_ms(50)
-        self.config_pulses_0x0906_high_byte(high_byte)
-        self.delay_ms(50)
-
-        # self.delay_ms(60)
-
-        if diff_pulses > 0:
-            logger.info("Running Servo CW")
-            self.pos_step_motion_test(True)
-        else:
-            logger.info("Running Servo CCW")
-            self.pos_step_motion_test(False)
-
-        
+        self._execute_positioning(diff_pulses, low_byte, high_byte, acc_dec_time, speed_rpm)
 
 
     def post_step_motion_by(self, angle: float = 0.0, acc_dec_time: int = 5000, speed_rpm: int =10):
@@ -694,8 +673,6 @@ class ServoController:
             self.stop_event.clear()
             self.on_initial_home = True
             self.pos_step_motion_by(self.abs_home_pos, 5000, 12)
-            self.start_continuous_reading()
-            self.set_home_position()
             
             if self.stop_event.wait(timeout=10):
                 logging.info("Stop process completed successfully.")
