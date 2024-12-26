@@ -116,7 +116,7 @@ class ServoController:
                 break
             try:
                 self.completed_tag = self.Read_Motion_Completed_Signal()
-                self.delay_ms(100)
+                self.delay_ms(50)
                 current_pulse = self.read_encoder_before_gear_ratio()
                 logging.info(f"Current Encoder Value: {current_pulse}")
 
