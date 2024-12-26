@@ -116,13 +116,13 @@ class ServoController:
                 break
             try:
                 self.completed_tag = self.Read_Motion_Completed_Signal()
-                self.delay_ms(50)
+                self.delay_ms(100)
                 current_pulse = self.read_encoder_before_gear_ratio()
                 logging.info(f"Current Encoder Value: {current_pulse}")
 
                 if self.completed_tag:
                     self.completed_cnt += 1
-                    if self.completed_cnt > 10:
+                    if self.completed_cnt > 5:
                         self.stop_continuous_reading()
                         break
             except Exception as e:
@@ -692,9 +692,9 @@ class ServoController:
             self.stop_event.clear()
             self.initial_home = True
             self.pos_step_motion_by(self.abs_home_pos, 5000, 12)
-            self.set_home_position()
             self.start_continuous_reading()
-
+            self.set_home_position()
+            
             if self.stop_event.wait(timeout=10):
                 logging.info("Stop process completed successfully.")
                 return False
