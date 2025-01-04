@@ -129,6 +129,13 @@ def on_motion_completed():
     except Exception as e:
         logging.error(f"Error in on_motion_complete: {e}")
 
+def on_moving(diff_angle):
+    try:
+        send_to_touchdesigner("/moving", diff_angle)
+        logging.info("Moving. Diff Angle: {diff_angle}")
+    except Exception as e:
+        logging.error(f"Error in on_moving: {e}")
+
 def main():
     server = None
     try:
@@ -139,6 +146,7 @@ def main():
         args = parser.parse_args()
 
         servo_ctrller.register_event_listener("on_motion_completed", on_motion_completed)
+        servo_ctrller.register_event_listener("on_moving", on_moving)
 
         dispatcher = Dispatcher()
         dispatcher.map("/servo", servo_handler, "data")

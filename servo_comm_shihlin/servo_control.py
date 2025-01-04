@@ -50,7 +50,7 @@ class ServoController:
         self.completed_cnt = 0
         #self.abs_home_pos = 1184347
         self.abs_home_pos = self.load_abs_home_pos()
-        self._event_listeners = {"on_motion_completed": []}
+        self._event_listeners = {"on_motion_completed": [], "on_moving": []}
 
     def load_abs_home_pos(self) -> int:
         try:
@@ -148,6 +148,7 @@ class ServoController:
                 diff_angle = round((current_pulse - self.abs_home_pos)/base_pulse_per_degree,4)
                 logging.info(f"Current Encoder Value: {current_pulse}")
                 logging.info(f"Diff Angle: {diff_angle}")
+                self._notify_event_listeners("on_moving", diff_angle)
 
                 if self.completed_tag:
                     self.completed_cnt += 1
