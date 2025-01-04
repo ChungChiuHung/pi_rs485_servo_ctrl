@@ -691,13 +691,18 @@ class ServoController:
             self.on_initial_home = True
             self.pos_step_motion_by(self.abs_home_pos, 5000, 12)
             
-            if self.stop_event.wait(timeout=10):
-                logging.info("Stop process completed successfully.")
-                return False
-            else:
-                logging.warning("Timeout while waiting for stop process.")
-                self.stop_continuous_reading()
-                return False
+            start_time = time.time()
+            while time.time() - start_time < 60:
+                if self.stop_event.is_set():
+                    logging.info("Stop process completed successfully.")
+                    self.on_initial_home = False
+                    return True
+                self.delay_ms(100)
+
+            logging.warning("Timeout while waiting for stop process.")
+            self._notify_event_listeners("timeout_occurred")
+            self.on_initial_home = False
+            return False
         except Exception as e:
             logging.error(f"Error in initial_abs_home: {e}")
             self.stop_continuous_reading()
