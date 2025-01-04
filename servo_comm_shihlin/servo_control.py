@@ -149,8 +149,7 @@ class ServoController:
                 if current_pulse is not None:
                     diff_angle = round((current_pulse - self.abs_home_pos)/base_pulse_per_degree,4)
                     logging.info(f"Diff Angle: {diff_angle}")
-                
-                self._notify_event_listeners("on_moving", diff_angle)
+                    self._notify_event_listeners("on_moving", diff_angle)
 
                 if self.completed_tag:
                     self.completed_cnt += 1
