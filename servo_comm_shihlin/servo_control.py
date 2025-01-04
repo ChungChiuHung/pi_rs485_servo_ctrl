@@ -148,6 +148,7 @@ class ServoController:
 
                 if self.completed_tag:
                     self.completed_cnt += 1
+                    logging.info(f"Motion Completed Signal Detected: {self.completed_cnt}")
                     if self.completed_cnt > 6:
                         self.stop_continuous_reading()
                         break
