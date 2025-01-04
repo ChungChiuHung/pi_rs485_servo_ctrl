@@ -136,6 +136,7 @@ class ServoController:
             
 
     def _read_continuously(self, interval: float) -> None:
+        base_pulse_per_degree = 349525.3333333333
         while not self.read_thread_stop_event.is_set():
             if not self.serial_port.keep_running:
                 logging.info("Reconnection attempts stopped.")
@@ -144,7 +145,9 @@ class ServoController:
                 self.completed_tag = self.Read_Motion_Completed_Signal()
                 self.delay_ms(50)
                 current_pulse = self.read_encoder_before_gear_ratio()
+                diff_angle = round((current_pulse - self.abs_home_pos)/base_pulse_per_degree,4)
                 logging.info(f"Current Encoder Value: {current_pulse}")
+                logging.info(f"Diff Angle: {diff_angle}")
 
                 if self.completed_tag:
                     self.completed_cnt += 1
