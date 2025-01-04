@@ -144,10 +144,12 @@ class ServoController:
             try:
                 self.completed_tag = self.Read_Motion_Completed_Signal()
                 self.delay_ms(50)
-                current_pulse = self.read_encoder_before_gear_ratio()
-                diff_angle = round((current_pulse - self.abs_home_pos)/base_pulse_per_degree,4)
+                current_pulse = self.read_encoder_before_gear_ratio() 
                 logging.info(f"Current Encoder Value: {current_pulse}")
-                logging.info(f"Diff Angle: {diff_angle}")
+                if current_pulse is not None:
+                    diff_angle = round((current_pulse - self.abs_home_pos)/base_pulse_per_degree,4)
+                    logging.info(f"Diff Angle: {diff_angle}")
+                
                 self._notify_event_listeners("on_moving", diff_angle)
 
                 if self.completed_tag:
