@@ -574,6 +574,7 @@ class ServoController:
             self.pos_motion_start_0x0907(2)
 
     def pos_step_motion_by(self, target_pulses: int = 0, acc_dec_time=5000, speed_rpm=10):
+        base_pulse_per_degree = 349525.3333333333
         # Get Current Pulse Value
         current_pulse = self.read_encoder_before_gear_ratio()
         logger.info(f"Current Pulse Value: {current_pulse}")
@@ -585,6 +586,11 @@ class ServoController:
         high_byte = (abs(diff_pulses) >> 16) & 0xFFFF
 
         self._execute_positioning(diff_pulses, low_byte, high_byte, acc_dec_time, speed_rpm)
+
+        # Calculate and return the angle rotated
+        angle_rotated = diff_pulses / base_pulse_per_degree
+        logging.info(f"Angle Rotated: {angle_rotated}")
+        return angle_rotated
 
 
     def post_step_motion_by(self, angle: float = 0.0, acc_dec_time: int = 5000, speed_rpm: int =10):
@@ -689,22 +695,32 @@ class ServoController:
         try:
             self.stop_event.clear()
             self.on_initial_home = True
-            self.pos_step_motion_by(self.abs_home_pos, 5000, 12)
             
-            start_time = time.time()
-            while time.time() - start_time < 60:
-                if self.stop_event.is_set():
-                    logging.info("Stop process completed successfully.")
-                    self.on_initial_home = False
-                    return True
-                self.delay_ms(100)
+            speed_rpm = 12
+            angle_rotated = self.pos_step_motion_by(self.abs_home_pos, 5000, speed_rpm)
+            
+            time_per_revolution = 60 / speed_rpm
+            timeout = 1.2 * (angle_rotated / 360) * time_per_revolution
 
-            logging.warning("Timeout while waiting for stop process.")
-            self._notify_event_listeners("timeout_occurred")
-            self.on_initial_home = False
-            return False
+            logging.info(f"Estimate Timeout: {timeout} seconds for angle")
+
+            start_time = time.time()
+            while not self.stop_event.is_set():
+                if time.time() - start_time > timeout:
+                    logging.info("Timeout reached while waiting for stop process.")
+                    break
+                self.delay_ms(100)
+            
+            if self.stop_event.is_set():
+                logging.info("Stop process completed successfully.")
+                self.on_initial_home = False
+                return True
+            else:
+                logging.warning("Operation timed out.")
+                self.on_initial_home = False
+                return False
         except Exception as e:
             logging.error(f"Error in initial_abs_home: {e}")
-            self.stop_continuous_reading()
+            self.on_initial_home = False
             return False
 
