@@ -1,6 +1,7 @@
 import threading
 import time
 import logging
+import json
 from typing import Union, Callable
 from threading import Thread, Event
 from serial import SerialException
@@ -27,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 
 class ServoController:
+    CONFIG_FILE = "config.json"
+
     def __init__(self, serial_port):
         self.serial_port = serial_port
         self.modbus_client = ModbusASCIIClient.get_instance(
@@ -45,8 +48,29 @@ class ServoController:
         self.on_initial_home = False
         self.completed_tag = False
         self.completed_cnt = 0
-        self.abs_home_pos = 1184347
+        #self.abs_home_pos = 1184347
+        self.abs_home_pos = self.load_abs_home_pos()
         self._event_listeners = {"on_motion_completed": []}
+
+    def load_abs_home_pos(self) -> int:
+        try:
+            with open(self.CONFIG_FILE, 'r') as file:
+                config = json.load(file)
+            return config.get("abs_home_pos", 1184347)
+        except FileNotFoundError:
+            logging.warning("Config file not found.")
+            return 1184347
+        except json.JSONDecodeError as e:
+            logging.error(f"Error parsing configuration file: {e}.")
+            return 1184347
+        
+    def save_abs_home_pos(self, abs_home_pos: int):
+        try:
+            with open(self.CONFIG_FILE, 'w') as file:
+                json.dump({"abs_home_pos": abs_home_pos}, file)
+            logging.info(f"Saved abs_home_pos: {abs_home_pos} to {self.CONFIG_FILE}")
+        except Exception as e:
+            logging.error(f"Error saving abs_home_pos: {e}")
 
     def register_event_listener(self, event_name: str, callback: Callable):
         """Register a callback for a specific event."""
@@ -124,21 +148,13 @@ class ServoController:
 
                 if self.completed_tag:
                     self.completed_cnt += 1
-                    if self.completed_cnt > 5:
+                    if self.completed_cnt > 6:
                         self.stop_continuous_reading()
                         break
             except Exception as e:
                 logging.error(f"Error during read: {e}")
                 break
             self.delay_ms(interval * 1000)
-
-    # add completion check
-
-    def is_movement_complete(self, response):
-        completion_pattern = bytearray(
-            b'\xba\xb0\xb1\xb0\xb3\xb0\xb2\xb0\xb0\xb3\xb3\xc3\xb7\x8d\x8a')
-        response_bytes = bytearray(response)
-        return response_bytes == completion_pattern
 
     def read_PA01_Ctrl_Mode(self):
         logging.info(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
