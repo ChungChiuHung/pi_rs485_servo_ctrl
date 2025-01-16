@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 class ServoController:
-    CONFIG_FILE = "config.json"
+    CONFIG_FILE = "servo_config.json"
 
     def __init__(self, serial_port):
         self.serial_port = serial_port
