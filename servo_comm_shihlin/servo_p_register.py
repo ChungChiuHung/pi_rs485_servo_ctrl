@@ -149,7 +149,7 @@ class PD:
 
         cls.MCOK = Register(28, "MCOK", "Motion completion option", 0x0000, cls.calculate_address(28))
 
-        cls.SDI = Register(16, "SDI", "數位書入接點來源控制開關", 0x0000, cls.calculate_address(16))
+        cls.SDI = Register(16, "SDI", "數位輸入接點來源控制開關", 0x0000, cls.calculate_address(16))
         cls.ITST = Register(25, "ITST", "通訊控制數位輸入接點狀態", 0x0000, cls.calculate_address(25))
 
 class PE:
