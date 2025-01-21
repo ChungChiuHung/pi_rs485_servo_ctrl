@@ -100,7 +100,7 @@ def reset_initial_abs_position_handler(unused_addr, *args):
     except Exception as e:
         logging.error(f"Error in reset_initial_abs_position_handler: {e}")
 
-def set_initial_abs_position_handler(unused_addr, args):
+def set_initial_abs_position_handler(unused_addr, *args):
     try:
         servo_ctrller.set_initial_abs_position()
         send_to_touchdesigner("/set_initial_abs_position", "set_initial_abs_position")
@@ -108,7 +108,7 @@ def set_initial_abs_position_handler(unused_addr, args):
     except Exception as e:
         logging.error(f"Error in set_initial_abs_position_handler: {e}")
 
-def back_home_handler(unused_addr, args):
+def back_home_handler(unused_addr, *args):
     try:
         servo_ctrller.initial_abs_home()
         send_to_touchdesigner("/back_home", "back_home")
@@ -116,7 +116,7 @@ def back_home_handler(unused_addr, args):
     except Exception as e:
         logging.error(f"Error in back_home_handler: {e}")
 
-def set_home_position_handler(unused_addr, args):
+def set_home_position_handler(unused_addr, *args):
     try:
         servo_ctrller.set_home_position()
         send_to_touchdesigner("/set_home_position", "set_home_position")
