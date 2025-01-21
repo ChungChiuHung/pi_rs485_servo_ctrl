@@ -19,6 +19,11 @@ gpio_utils = GPIOUtils()
 # Configure the serial port
 serial_manager = SerialPortManager()
 
+TOUCHDESIGNER_IP = "10.12.1.164"
+TOUCHDESIGNER_PORT = 5008
+osc_client = udp_client.SimpleUDPClient(TOUCHDESIGNER_IP, TOUCHDESIGNER_PORT)
+previous_data = None # for duplicate message check
+
 def configure_serial_port():
     try:
         if serial_manager.get_serial_instance():
@@ -27,27 +32,16 @@ def configure_serial_port():
             return ServoController(serial_manager)
         else:
             logging.error("Could not configure any serial port. Exiting...")
-            exit()
+            exit(1)
     except Exception as e:
         logging.error(f"Error in configuring serial port: {e}")
-        exit()
+        exit(1)
 
+# Instantiate ServoController
 servo_ctrller = configure_serial_port()
 
 # Enable the Digital I/O Writable
 servo_ctrller.write_PD_16_Enable_DI_Control()
-
-# Initialize global variables for RS485 messages
-START, STOP = False, False
-RS485_send, RS485_read = "00 00 FF FF", "FF FF 00 00"
-
-# Duplicate message check
-previous_data = None
-
-# Setup OSC Client
-TOUCHDESIGNER_IP = "10.12.1.164"
-TOUCHDESIGNER_PORT = 5008
-osc_client = udp_client.SimpleUDPClient(TOUCHDESIGNER_IP, TOUCHDESIGNER_PORT)
 
 def send_to_touchdesigner(address, *args):
     try:
@@ -58,13 +52,9 @@ def send_to_touchdesigner(address, *args):
 
 def check_duplicated(data):
     global previous_data
-    try:
-        if previous_data != data:
-            previous_data = data
-            return False
-        return True
-    except Exception as e:
-        logging.error(f"Error in checking duplicated data: {e}")
+    if data != previous_data:
+        previous_data = data
+        return False
     return True
 
 # Handlers
@@ -102,23 +92,35 @@ def set_point_handler(unused_addr, args, angle, acc_time, rpm):
     except Exception as e:
         logging.error(f"Error in set_point_handler: {e}")
 
-def back_home_handler(unused_addr, args, state):
+def reset_initial_abs_position_handler(unused_addr, args):
     try:
-        if not check_duplicated(state):
-            if state == 1.0:
-                servo_ctrller.initial_abs_home()
-                send_to_touchdesigner("/back_home", "back_home")
-                logging.info("Back to home position.")
+        servo_ctrller.write_PA29_Initial_Abs_Pos()
+        send_to_touchdesigner("/reset_initial_abs_position", "reset_initial_abs_position")
+        logging.info("Reset initial absolute position.")
+    except Exception as e:
+        logging.error(f"Error in reset_initial_abs_position_handler: {e}")
+
+def set_initial_abs_position_handler(unused_addr, args):
+    try:
+        servo_ctrller.set_initial_abs_position()
+        send_to_touchdesigner("/set_initial_abs_position", "set_initial_abs_position")
+        logging.info("Set initial absolute position.")
+    except Exception as e:
+        logging.error(f"Error in set_initial_abs_position_handler: {e}")
+
+def back_home_handler(unused_addr, args):
+    try:
+        servo_ctrller.initial_abs_home()
+        send_to_touchdesigner("/back_home", "back_home")
+        logging.info("Back to home position.")
     except Exception as e:
         logging.error(f"Error in back_home_handler: {e}")
 
-def set_home_position_handler(unused_addr, args, state):
+def set_home_position_handler(unused_addr, args):
     try:
-        if not check_duplicated(state):
-            if state == 1.0:
-                servo_ctrller.set_home_position()
-                send_to_touchdesigner("/set_home_position", "set_home_position")
-                logging.info("Set home position.")
+        servo_ctrller.set_home_position()
+        send_to_touchdesigner("/set_home_position", "set_home_position")
+        logging.info("Set home position.")
     except Exception as e:
         logging.error(f"Error in set_home_position_handler: {e}")
 
@@ -152,8 +154,9 @@ def main():
         dispatcher.map("/servo", servo_handler, "data")
         dispatcher.map("/clear", clear_handler, "clear")
         dispatcher.map("/set_point", set_point_handler, "angle", "acc_time", "rpm")
-        dispatcher.map("/back_home", back_home_handler, "state")
-        dispatcher.map("/set_home", set_home_position_handler, "state")
+        dispatcher.map("/back_home", back_home_handler)
+        dispatcher.map("/set_home", set_home_position_handler)
+        dispatcher.map("/reset_initial_abs_position", reset_initial_abs_position_handler)
 
         server = osc_server.ThreadingOSCUDPServer((args.ip, args.port_receive), dispatcher)
         logging.info(f"Serving on {server.server_address}")

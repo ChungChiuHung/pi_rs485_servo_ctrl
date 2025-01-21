@@ -189,6 +189,19 @@ class ServoController:
         except Exception as e:
             logger.error(f"Error during Modbus communication: {e}")
 
+    def write_PA29_Initial_Abs_Pos(self):
+        logger.info("Address of PA29: Initial Absolute Position")
+        message = self.modbus_client.build_write_message(0x0338, 1)
+        try:
+            response = self.modbus_client.send_and_receive(message)
+            response_object = ModbusResponse(response)
+            logger.info(response_object)
+        except SerialException as e:
+            logger.error(f"Serial connection error: {e}")
+        except Exception as e:
+            logger.error(f"Error during Modbus communication: {e}")
+        
+
     def write_PD_16_Enable_DI_Control(self):
         logger.info(f"Address of PD{PD.SDI.no} {PD.SDI.name}: {hex(PD.SDI.address)}")
         config_value = ServoUtility.config_hex_with(0, 0xF, 0xF, 0xF)
