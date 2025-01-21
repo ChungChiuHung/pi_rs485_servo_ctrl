@@ -92,7 +92,7 @@ def set_point_handler(unused_addr, args, angle, acc_time, rpm):
     except Exception as e:
         logging.error(f"Error in set_point_handler: {e}")
 
-def reset_initial_abs_position_handler(unused_addr, args):
+def reset_initial_abs_position_handler(unused_addr, *args):
     try:
         servo_ctrller.write_PA29_Initial_Abs_Pos()
         send_to_touchdesigner("/reset_initial_abs_position", "reset")
