@@ -86,9 +86,9 @@ def clear_handler(unused_addr, args, clear):
 def set_point_handler(unused_addr, args, angle, acc_time, rpm):
     try:
         angle = float(angle)
-        acc_time = float(acc_time)
-        rpm = float(rpm)
-        
+        acc_time = int(acc_time)
+        rpm = int(rpm)
+
         if not check_duplicated(angle):
             servo_ctrller.post_step_motion_by(angle, acc_time, rpm)
             send_to_touchdesigner("/set_point", angle, acc_time, rpm)
