@@ -92,7 +92,7 @@ def set_point_handler(unused_addr, args, angle, acc_time, rpm):
     except Exception as e:
         logging.error(f"Error in set_point_handler: {e}")
 
-def reset_initial_abs_position_handler(unused_addr, args, state):
+def reset_initial_abs_position_handler(unused_addr, args):
     try:
         servo_ctrller.write_PA29_Initial_Abs_Pos()
         send_to_touchdesigner("/reset_initial_abs_position", "reset_initial_abs_position")
@@ -100,7 +100,7 @@ def reset_initial_abs_position_handler(unused_addr, args, state):
     except Exception as e:
         logging.error(f"Error in reset_initial_abs_position_handler: {e}")
 
-def set_initial_abs_position_handler(unused_addr, args,state):
+def set_initial_abs_position_handler(unused_addr, args):
     try:
         servo_ctrller.set_initial_abs_position()
         send_to_touchdesigner("/set_initial_abs_position", "set_initial_abs_position")
@@ -108,7 +108,7 @@ def set_initial_abs_position_handler(unused_addr, args,state):
     except Exception as e:
         logging.error(f"Error in set_initial_abs_position_handler: {e}")
 
-def back_home_handler(unused_addr, args,state):
+def back_home_handler(unused_addr, args):
     try:
         servo_ctrller.initial_abs_home()
         send_to_touchdesigner("/back_home", "back_home")
@@ -116,7 +116,7 @@ def back_home_handler(unused_addr, args,state):
     except Exception as e:
         logging.error(f"Error in back_home_handler: {e}")
 
-def set_home_position_handler(unused_addr, args,state):
+def set_home_position_handler(unused_addr, args):
     try:
         servo_ctrller.set_home_position()
         send_to_touchdesigner("/set_home_position", "set_home_position")
@@ -155,8 +155,8 @@ def main():
         dispatcher.map("/clear", clear_handler, "clear")
         dispatcher.map("/set_point", set_point_handler, "angle", "acc_time", "rpm")
         dispatcher.map("/back_home", back_home_handler)
-        dispatcher.map("/set_home", set_home_position_handler, "state")
-        dispatcher.map("/reset_initial_abs_position", reset_initial_abs_position_handler, "state")
+        dispatcher.map("/set_home", set_home_position_handler)
+        dispatcher.map("/reset_initial_abs_position", reset_initial_abs_position_handler)
 
         server = osc_server.ThreadingOSCUDPServer((args.ip, args.port_receive), dispatcher)
         logging.info(f"Serving on {server.server_address}")
