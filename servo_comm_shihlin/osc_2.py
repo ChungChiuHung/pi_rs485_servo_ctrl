@@ -73,13 +73,11 @@ def servo_handler(unused_addr, args, data):
     except Exception as e:
         logging.error(f"Error in servo_handler: {e}")
 
-def clear_handler(unused_addr, args, clear):
+def clear_handler(unused_addr, *args):
     try:
-        if not check_duplicated(clear):
-            if clear == 1.0:
-                servo_ctrller.clear_alarm_12()
-                send_to_touchdesigner("/clear", "cleared")
-                logging.info("Clear Alarm 12.")
+        servo_ctrller.clear_alarm_12()
+        send_to_touchdesigner("/clear", "cleared")
+        logging.info("Clear Alarm 12.")
     except Exception as e:
         logging.error(f"Error in clear_handler: {e}")
 
