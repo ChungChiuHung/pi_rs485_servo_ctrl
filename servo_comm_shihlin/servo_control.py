@@ -43,6 +43,8 @@ class ServoController:
         self.response = ""
         self.current_angle = 0.0
         self.previous_angle = 0.0
+        self.current_encoder = 0
+        self.previous_encoder = 0
         self.float_error = 0.0
         self.accumulate_pulse = 0
         self.on_initial_home = False
@@ -144,17 +146,17 @@ class ServoController:
             try:
                 self.completed_tag = self.Read_Motion_Completed_Signal()
                 self.delay_ms(50)
-                current_pulse = self.read_encoder_before_gear_ratio() 
-                logging.info(f"Current Encoder Value: {current_pulse}")
-                if current_pulse is not None:
-                    diff_angle = round((current_pulse - self.abs_home_pos)/base_pulse_per_degree,4)
+                self.current_encoder = self.read_encoder_before_gear_ratio() 
+                logging.info(f"Current Encoder Value: {self.current_encoder}")
+                if self.current_encoder is not None:
+                    diff_angle = round((self.current_angle - self.abs_home_pos)/base_pulse_per_degree,4)
                     logging.info(f"Diff Angle: {diff_angle}")
                     self._notify_event_listeners("on_moving", diff_angle)
 
                 if self.completed_tag:
                     self.completed_cnt += 1
-                    logging.info(f"Motion Completed Signal Detected: {self.completed_cnt}")
                     if self.completed_cnt > 6:
+                        logging.info(f"Motion Completed Signal Detected: {self.completed_cnt}")
                         self.stop_continuous_reading()
                         break
             except Exception as e:
@@ -194,8 +196,8 @@ class ServoController:
         message = self.modbus_client.build_write_message(0x0338, 1)
         try:
             response = self.modbus_client.send_and_receive(message)
-            response_object = ModbusResponse(response)
-            logger.info(response_object)
+            #response_object = ModbusResponse(response)
+            logger.info(f"Initial Absolute Position Set!:{response}")
         except SerialException as e:
             logger.error(f"Serial connection error: {e}")
         except Exception as e:
@@ -290,8 +292,8 @@ class ServoController:
         message = self.modbus_client.build_write_message(
             PD.ITST.address, config_value)
         self.response = self.modbus_client.send_and_receive(message)
-        response_object = ModbusResponse(self.response)
-        logging.info(response_object)
+        #response_object = ModbusResponse(self.response)
+        logging.info(f"Clear Alarm!:{self.response}")
 
     def servo_on(self):
         logging.info(
@@ -300,8 +302,8 @@ class ServoController:
         message = self.modbus_client.build_write_message(
             PD.ITST.address, config_value)
         response = self.modbus_client.send_and_receive(message)
-        response_object = ModbusResponse(response)
-        logging.info(response_object)
+        #response_object = ModbusResponse(response)
+        logging.info(f"Servo On:{response}")
 
 
     def clear_alarm_12(self):
@@ -311,8 +313,8 @@ class ServoController:
         message = self.modbus_client.build_write_message(
             PD.ITST.address, config_value)
         response = self.modbus_client.send_and_receive(message)
-        response_object = ModbusResponse(response)
-        logging.info(response_object)
+        #response_object = ModbusResponse(response)
+        logging.info(f"Clear Alarm 12:{response}")
 
     def servo_off(self):
         # print(
@@ -322,8 +324,8 @@ class ServoController:
         message = self.modbus_client.build_write_message(
             PD.ITST.address, config_value)
         response = self.modbus_client.send_and_receive(message)
-        response_object = ModbusResponse(response)
-        logger.info(response_object)
+        #response_object = ModbusResponse(response)
+        logger.info(f"Servo Off:{response}")
         self.delay_ms(100)
 
     # Pos mode 0x0000 0x0000
@@ -591,17 +593,22 @@ class ServoController:
         else:
             self.pos_motion_start_0x0907(2)
 
-    def pos_step_motion_by(self, target_pulses: int = 0, acc_dec_time=5000, speed_rpm=10):
+    def pos_step_motion_by(self, target_pos: int = 0, acc_dec_time=5000, speed_rpm=10):
         base_pulse_per_degree = 349525.3333333333
-        # Get Current Pulse Value
-        current_pulse = self.read_encoder_before_gear_ratio()
-        logger.info(f"Current Pulse Value: {current_pulse}")
-        # Set Target Pulse Value
-        diff_pulses = target_pulses - current_pulse
-        logging.info(f"Diff Pulses: {diff_pulses}")
+        # Get Current Encoder Value
+        current_pos = self.read_encoder_before_gear_ratio()
+        logger.info(f"Current Encoder Value: {current_pos}")
+        # Set Target Encoder Value
+        diff_pulses = target_pos - current_pos
+        if diff_pulses >= (base_pulse_per_degree * 180):
+            logging.info("Target position is more than 180 degrees.")
+            return 0.0
 
-        low_byte = abs(diff_pulses) & 0xFFFF
-        high_byte = (abs(diff_pulses) >> 16) & 0xFFFF
+        logging.info(f"Diff Pulses: {diff_pulses}")
+        move_pulses = abs(diff_pulses)
+
+        low_byte = move_pulses & 0xFFFF
+        high_byte = (move_pulses >> 16) & 0xFFFF
 
         self._execute_positioning(diff_pulses, low_byte, high_byte, acc_dec_time, speed_rpm)
 
@@ -635,7 +642,7 @@ class ServoController:
             else:
                 self.float_error -= fractional_pulse
 
-            if self.float_error >= 1.0:
+            if abs(self.float_error) >= 1.0:
                 integer_error = int(self.float_error)
                 integer_pulse += integer_error
                 self.float_error -= integer_error
@@ -652,7 +659,7 @@ class ServoController:
     def _execute_positioning(self, angle, low_byte, high_byte, acc_dec_time, speed_rpm):
         # self.stop_continuous_reading()
         self.Enable_Position_Mode(True)
-        self.delay_ms(50)
+        self.delay_ms(100)
         self.config_acc_dec_0x0902(acc_dec_time)
         self.delay_ms(50)
         self.config_speed_0x0903(speed_rpm)
