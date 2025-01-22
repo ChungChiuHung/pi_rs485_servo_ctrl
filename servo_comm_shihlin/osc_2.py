@@ -138,7 +138,7 @@ def on_motion_completed():
 def on_moving(diff_angle):
     try:
         send_to_touchdesigner("/moving", diff_angle)
-        logging.info("Moving. Diff Angle: {diff_angle}")
+        #logging.info(f"Moving. Diff Angle: {diff_angle}")
     except Exception as e:
         logging.error(f"Error in on_moving: {e}")
 
