@@ -705,10 +705,11 @@ class ServoController:
     def set_home_position(self):
         self.current_angle = 0.0
         self.previous_angle = 0.0
-        self.current_encoder = 0
+        self.current_encoder = self.read_encoder_before_gear_ratio() 
         self.previous_encoder = 0
         self.float_error = 0.0
         self.accumulate_pulse = 0
+        self.save_abs_home_pos(self.current_encoder)
         logger.info("home position set!!!")
 
     def initial_abs_home(self) -> bool:
