@@ -600,9 +600,6 @@ class ServoController:
         logger.info(f"Current Encoder Value: {current_pos}")
         # Set Target Encoder Value
         diff_pulses = target_pos - current_pos
-        if diff_pulses >= (base_pulse_per_degree * 180):
-            logging.info("Target position is more than 180 degrees.")
-            return 0.0
 
         logging.info(f"Diff Pulses: {diff_pulses}")
         move_pulses = abs(diff_pulses)
