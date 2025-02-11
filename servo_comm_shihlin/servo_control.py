@@ -635,10 +635,8 @@ class ServoController:
             fractional_pulse = total_pulse - integer_pulse
 
             # Accumulate fractional part
-            if diff_angle > 0:
-                self.float_error += fractional_pulse
-            else:
-                self.float_error -= fractional_pulse
+            self.float_error += fractional_pulse
+
 
             if abs(self.float_error) >= 1.0:
                 integer_error = int(self.float_error)
