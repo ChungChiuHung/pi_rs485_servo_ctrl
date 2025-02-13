@@ -150,6 +150,7 @@ class ServoController:
                 logging.info(f"Current Encoder Value: {self.current_encoder}")
                 if self.current_encoder is not None:
                     diff_angle = round((self.current_encoder - self.abs_home_pos)/base_pulse_per_degree,4)
+                    self.current_angle = diff_angle
                     logging.info(f"Diff Angle: {diff_angle}")
                     self._notify_event_listeners("on_moving", diff_angle)
 
@@ -157,7 +158,6 @@ class ServoController:
                     self.completed_cnt += 1
                     if self.completed_cnt > 6:
                         logging.info(f"Motion Completed Signal Detected: {self.completed_cnt}")
-                        self.current_angle = self.target_angle
                         self.stop_continuous_reading()
                         break
             except Exception as e:
@@ -634,6 +634,7 @@ class ServoController:
             integer_pulse = int(total_pulse)
             fractional_pulse = total_pulse - integer_pulse
 
+            '''
             # Accumulate fractional part
             self.float_error += fractional_pulse
 
@@ -642,6 +643,7 @@ class ServoController:
                 integer_error = int(self.float_error)
                 integer_pulse += integer_error
                 self.float_error -= integer_error
+            '''
 
             low_byte = integer_pulse & 0xFFFF
             high_byte = (integer_pulse >> 16) & 0xFFFF
