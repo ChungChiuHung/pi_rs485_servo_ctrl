@@ -625,7 +625,7 @@ class ServoController:
         
         self.previous_angle = self.current_angle
         self.target_angle = angle
-        diff_angle = self.target_angle - self.previous_angle
+        diff_angle = self.target_angle - self.current_angle
 
         logger.info(f"Performing motion: Target Angle={self.target_angle}, Previous Angle={self.previous_angle}")
 
@@ -665,9 +665,6 @@ class ServoController:
         self.config_pulses_0x0906_high_byte(high_byte)
         self.delay_ms(50)
         
-        # self.start_continuous_reading(0.2)
-        # self.delay_ms(60)
-
         if angle > 0:
             logger.info("Running Servo CW")
             self.pos_step_motion_test(True)
