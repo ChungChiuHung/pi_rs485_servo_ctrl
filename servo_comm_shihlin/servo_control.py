@@ -703,7 +703,8 @@ class ServoController:
         self.previous_angle = 0.0
         self.target_angle = 0.0
         self.previous_encoder = self.current_encoder
-        self.current_encoder = self.read_encoder_before_gear_ratio() 
+        self.current_encoder = self.read_encoder_before_gear_ratio()
+        self.delay_ms(100)
         self.float_error = 0.0
         self.save_abs_home_pos(self.current_encoder)
         logger.info("home position set!!!")
