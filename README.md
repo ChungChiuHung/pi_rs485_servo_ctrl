@@ -1,16 +1,24 @@
-# rpiWebServer_RS485_ServoCtrl
+This project is desgined to control an AC servo motor using a Raspberry Pi
+3B + with an RS485 communication module.
 
-Raspberry Pi 3B + [RS485 CAN HAT](https://www.waveshare.com/wiki/RS485_CAN_HAT)
+# Hardware Requirements
+1. Raspberry Pi 3B 
+2. [RS485 CAN HAT](https://www.waveshare.com/wiki/RS485_CAN_HAT)
+   [PDF from waveshare.com](https://www.waveshare.com/w/upload/2/29/RS485-CAN-HAT-user-manuakl-en.pdf)
+3. Inustrial USB TO RS485 Bidirectional Converter (Onboard original CH343G, with multi-protection circuits)
 
-[PDF from waveshare.com](https://www.waveshare.com/w/upload/2/29/RS485-CAN-HAT-user-manuakl-en.pdf)
+Either of these modules cna be used to read and write messages via RS485
 
+# AC Servo Motor Information
 - [AC Servo Motor Type 1 Info.](https://amethyst-myrtle-52e.notion.site/Servo-Motor-Driver-2f7c21ac9d024b00933ec2252861ffcf)
-- AC Servo Motor Type 2 Info. [zh[1]](https://www.seec.com.tw/Content/Goods/PdfViwer.aspx?SiteID=10&MmmID=655575436061077370&Msid=2022102818050639313&fd=GoodsDownload_Files&pname=SDE%E4%BC%BA%E6%9C%8D%E9%A9%85%E5%8B%95%E5%99%A8%E8%AA%AA%E6%98%8E%E6%9B%B8_V1.07.pdf) [zh[2]](https://www.seec.com.tw/Content/Goods/PdfViwer.aspx?SiteID=10&MmmID=655575436061077370&Msid=2020082410220029759&fd=GoodsDownload_Files&pname=%E5%A3%AB%E6%9E%97%E9%9B%BB%E6%A9%9FSDE%E7%B0%A1%E6%98%93%E8%AA%AA%E6%98%8E%E6%9B%B8(%E4%B8%AD%E8%8B%B1)LE106D04204.pdf) [en[3]](https://www.manualslib.com/products/Shihlin-Electric-Sde-040a2-10446073.html)
+- AC Servo Motor Type 2 Info.
+  - [zh[1]](https://www.seec.com.tw/Content/Goods/PdfViwer.aspx?SiteID=10&MmmID=655575436061077370&Msid=2022102818050639313&fd=GoodsDownload_Files&pname=SDE%E4%BC%BA%E6%9C%8D%E9%A9%85%E5%8B%95%E5%99%A8%E8%AA%AA%E6%98%8E%E6%9B%B8_V1.07.pdf)
+  - [zh[2]](https://www.seec.com.tw/Content/Goods/PdfViwer.aspx?SiteID=10&MmmID=655575436061077370&Msid=2020082410220029759&fd=GoodsDownload_Files&pname=%E5%A3%AB%E6%9E%97%E9%9B%BB%E6%A9%9FSDE%E7%B0%A1%E6%98%93%E8%AA%AA%E6%98%8E%E6%9B%B8(%E4%B8%AD%E8%8B%B1)LE106D04204.pdf)
+  - [en[3]](https://www.manualslib.com/products/Shihlin-Electric-Sde-040a2-10446073.html)
 
-# Reference
+# Configuring the RS485 CAN HAT
 - [RS485 CAN HAT_ch](https://www.waveshare.net/wiki/RS485_CAN_HAT#.E5.89.8D.E7.BD.AE.E5.B7.A5.E4.BD.9C_2)
 - [RS485 CAN HAT_uk](https://learn.sb-components.co.uk/RS485-CAN-HAT)
-
   ```
   sudo apt-get update
   sudo apt-get upgrade
@@ -49,7 +57,16 @@ Raspberry Pi 3B + [RS485 CAN HAT](https://www.waveshare.com/wiki/RS485_CAN_HAT)
   dmesg | grep -i '\(can\|spi\)'
   ```
   ![image](https://github.com/ChungChiuHung/rpiWebServer_RS485_ServoCtrl/assets/52248840/149436ad-a2ca-4dd2-9fa6-c44bf60b2702)
-  ## Auto-Configuration of a Startup Script with [PM2](https://pm2.keymetrics.io/docs/usage/startup/)
+
+  ## Running the OSC Server
+  Navigate to the project directory and start the server:
+  ```
+  python osc_2.py
+  ```
+  This will boot up an OSC server to handle commands for motor control,
+  allowing it to spin and provide feedback on the current angle.
+  
+  # Auto-Configuration of a Startup Script with [PM2](https://pm2.keymetrics.io/docs/usage/startup/)
   [note: install the npm and specific nodejs version](https://phoenixnap.com/kb/update-node-js-version)
   - config the raspberry pi wireless connection
   ```
@@ -72,7 +89,7 @@ Raspberry Pi 3B + [RS485 CAN HAT](https://www.waveshare.com/wiki/RS485_CAN_HAT)
   pm2 save
   ```
   
-  ## Running a Python Script at Startup on Raspberry Pi
+  # Running a Python Script at Startup on Raspberry Pi
   1. Create a systemd Service File
      ```
      sudo nano /etc/systemd/system/myscript.service
@@ -83,7 +100,7 @@ Raspberry Pi 3B + [RS485 CAN HAT](https://www.waveshare.com/wiki/RS485_CAN_HAT)
       After=network-online.target
       Wants=network-online.target
 
-  ## Config the static IP for Raspberry Pi
+  # Config the static IP for Raspberry Pi
   - Retrieve the currently defined router information
   ```
   ip r | grep default
@@ -110,7 +127,7 @@ Raspberry Pi 3B + [RS485 CAN HAT](https://www.waveshare.com/wiki/RS485_CAN_HAT)
   ```
   sudo reboot
   ```
-  ## Test the static IP
+  # Test the static IP
   ```
   hostname -I
   ```
@@ -143,7 +160,7 @@ Raspberry Pi 3B + [RS485 CAN HAT](https://www.waveshare.com/wiki/RS485_CAN_HAT)
      ```
      journalctl -u myscript.service
      ```
-  ## To Disable the Automatic Startup of the Python script
+  # To Disable the Automatic Startup of the Python script
   1. Disable the Service
      ```
      sudo systemctl disable myscript.service
