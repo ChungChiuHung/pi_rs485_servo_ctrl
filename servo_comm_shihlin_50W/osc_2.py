@@ -145,7 +145,7 @@ def main():
     try:
         gpio_utils.initialize_gpio()
         parser = argparse.ArgumentParser()
-        parser.add_argument("--ip", default="10.12.1.107", help="The ip to listen on")
+        parser.add_argument("--ip", default="127.0.0.1", help="The ip to listen on")
         parser.add_argument("--port_receive", type=int, default=5005, help="The port to listen on")
         args = parser.parse_args()
 
