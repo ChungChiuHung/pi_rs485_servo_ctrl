@@ -43,10 +43,10 @@ class ServoController:
         self.response = ""
         self.current_angle = 0.0
         self.previous_angle = 0.0
+        self.target_angle = 0.0
         self.current_encoder = 0
         self.previous_encoder = 0
         self.float_error = 0.0
-        self.accumulate_pulse = 0
         self.on_initial_home = False
         self.completed_tag = False
         self.completed_cnt = 0
@@ -145,11 +145,12 @@ class ServoController:
                 break
             try:
                 self.completed_tag = self.Read_Motion_Completed_Signal()
-                self.delay_ms(50)
+                self.delay_ms(100)
                 self.current_encoder = self.read_encoder_before_gear_ratio() 
                 logging.info(f"Current Encoder Value: {self.current_encoder}")
                 if self.current_encoder is not None:
                     diff_angle = round((self.current_encoder - self.abs_home_pos)/base_pulse_per_degree,4)
+                    self.current_angle = diff_angle
                     logging.info(f"Diff Angle: {diff_angle}")
                     self._notify_event_listeners("on_moving", diff_angle)
 
@@ -600,9 +601,6 @@ class ServoController:
         logger.info(f"Current Encoder Value: {current_pos}")
         # Set Target Encoder Value
         diff_pulses = target_pos - current_pos
-        if diff_pulses >= (base_pulse_per_degree * 180):
-            logging.info("Target position is more than 180 degrees.")
-            return 0.0
 
         logging.info(f"Diff Pulses: {diff_pulses}")
         move_pulses = abs(diff_pulses)
@@ -626,28 +624,26 @@ class ServoController:
         base_pulse_per_degree = 349525.3333333333
         
         self.previous_angle = self.current_angle
-        self.current_angle = angle
-        diff_angle = self.current_angle - self.previous_angle
+        self.target_angle = angle
+        diff_angle = self.target_angle - self.current_angle
 
-        logger.info(f"Performing motion: Current Angle={self.current_angle}, Previous Angle={self.previous_angle}")
+        logger.info(f"Performing motion: Target Angle={self.target_angle}, Previous Angle={self.previous_angle}")
 
         if diff_angle != 0.0:
             total_pulse = base_pulse_per_degree * abs(diff_angle)
             integer_pulse = int(total_pulse)
             fractional_pulse = total_pulse - integer_pulse
 
+            '''
             # Accumulate fractional part
-            if diff_angle > 0:
-                self.float_error += fractional_pulse
-            else:
-                self.float_error -= fractional_pulse
+            self.float_error += fractional_pulse
+
 
             if abs(self.float_error) >= 1.0:
                 integer_error = int(self.float_error)
                 integer_pulse += integer_error
                 self.float_error -= integer_error
-
-            self.accumulate_pulse += integer_pulse
+            '''
 
             low_byte = integer_pulse & 0xFFFF
             high_byte = (integer_pulse >> 16) & 0xFFFF
@@ -669,9 +665,6 @@ class ServoController:
         self.config_pulses_0x0906_high_byte(high_byte)
         self.delay_ms(50)
         
-        # self.start_continuous_reading(0.2)
-        # self.delay_ms(60)
-
         if angle > 0:
             logger.info("Running Servo CW")
             self.pos_step_motion_test(True)
@@ -708,10 +701,12 @@ class ServoController:
     def set_home_position(self):
         self.current_angle = 0.0
         self.previous_angle = 0.0
-        self.current_encoder = 0
-        self.previous_encoder = 0
+        self.target_angle = 0.0
+        self.previous_encoder = self.current_encoder
+        self.current_encoder = self.read_encoder_before_gear_ratio()
+        self.delay_ms(100)
         self.float_error = 0.0
-        self.accumulate_pulse = 0
+        self.save_abs_home_pos(self.current_encoder)
         logger.info("home position set!!!")
 
     def initial_abs_home(self) -> bool:
