@@ -1,2 +1,2 @@
-Driver Model: SDE-010A2
-Motor Model: SME-L00530 (50W)
+- Driver Model: SDE-010A2
+- Motor Model: SME-L00530 (50W)
