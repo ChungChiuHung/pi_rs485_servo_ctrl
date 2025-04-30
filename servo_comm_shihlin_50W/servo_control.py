@@ -679,10 +679,12 @@ class ServoController:
             logger.info("Running Servo CCW")
             self.pos_step_motion_test(False)
 
-    def enable_speed_ctrl(self, speed_rpm):
-        self.Enable_JOG_Mode(True)
-        self.delay_ms(100)
+    def enable_speed_ctrl(self, speed_rpm = 100, acc_time = 5000):
         self.config_speed_0x0903(speed_rpm)
+        self.delay_ms(100)
+        self.config_acc_dec_0x0902(acc_time)
+        self.delay_ms(100)
+        self.Enable_JOG_Mode(True)
         self.delay_ms(100)
         self.start_continuous_reading(0.1)
 
