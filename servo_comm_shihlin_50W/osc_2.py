@@ -81,11 +81,11 @@ def clear_handler(unused_addr, *args):
     except Exception as e:
         logging.error(f"Error in clear_handler: {e}")
 
-def set_countinuous_motion_handler(unused_addr, args, speed_rpm, acc_time):
+def set_countinuous_motion_handler(unused_addr, args, speed_rpm, acc_time, enable= True):
     try:
         speed_rpm = int(speed_rpm)
         acc_time = int(acc_time)
-        servo_ctrller.enable_speed_ctrl(speed_rpm, acc_time)
+        servo_ctrller.enable_speed_ctrl(speed_rpm, acc_time, enable)
         send_to_touchdesigner("/continuous_mode_start", speed_rpm, acc_time)
         logging.info(f"Continuous motion started with speed: {speed_rpm} RPM, Acc time: {acc_time} ms")
     except Exception as e:
@@ -187,7 +187,7 @@ def main():
         dispatcher.map("/back_home", back_home_handler)
         dispatcher.map("/set_home", set_home_position_handler)
         dispatcher.map("/reset_initial_abs_position", reset_initial_abs_position_handler)
-        dispatcher.map("/start_continuous_motion", set_countinuous_motion_handler, "speed_rpm", "acc_time")
+        dispatcher.map("/set_continous_motion", set_countinuous_motion_handler, "speed_rpm", "acc_time", "enable")
         dispatcher.map("/ctrl_continuous_motion", ctrl_continuous_motion_handler, "action", "CW_CCW")
 
         server = osc_server.ThreadingOSCUDPServer((args.ip, args.port_receive), dispatcher)
