@@ -594,7 +594,7 @@ class ServoController:
             self.pos_motion_start_0x0907(2)
 
     def pos_step_motion_by(self, target_pos: int = 0, acc_dec_time=5000, speed_rpm=10):
-        base_pulse_per_degree = 349525.3333333333
+        base_pulse_per_degree = 116508.444445
         # Get Current Encoder Value
         current_pos = self.read_encoder_before_gear_ratio()
         logger.info(f"Current Encoder Value: {current_pos}")
@@ -619,11 +619,9 @@ class ServoController:
 
 
     def post_step_motion_by(self, angle: float = 0.0, acc_dec_time: int = 5000, speed_rpm: int =10):
-        # 125829120 pulse/rev
-        # 349525 + 1/3 pulse/degree
-        # 125829120 pulse/rev
-        # 349525 + 1/3 pulse/degree
-        base_pulse_per_degree = 349525.3333333333
+        # 41943040 pulse/rev
+        # 116508 + 11/25 pulse/degree
+        base_pulse_per_degree = 116508.444445
         
         self.previous_angle = self.current_angle
         self.current_angle = angle
@@ -679,12 +677,15 @@ class ServoController:
             logger.info("Running Servo CCW")
             self.pos_step_motion_test(False)
 
-    def enable_speed_ctrl(self, speed_rpm = 100, acc_time = 5000):
-        self.config_speed_0x0903(speed_rpm)
-        self.delay_ms(100)
-        self.config_acc_dec_0x0902(acc_time)
-        self.delay_ms(100)
-        self.Enable_JOG_Mode(True)
+    def enable_speed_ctrl(self, speed_rpm = 100, acc_time = 5000, enable=True):
+        if enable == True:
+            self.Enable_Position_Mode(False)
+        else:
+            self.config_speed_0x0903(speed_rpm)
+            self.delay_ms(100)
+            self.config_acc_dec_0x0902(acc_time)
+            self.delay_ms(100)
+            self.Enable_Position_Mode(True)
         self.delay_ms(100)
         self.start_continuous_reading(0.1)
 
