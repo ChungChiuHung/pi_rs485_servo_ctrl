@@ -154,6 +154,15 @@ def set_home_position_handler(unused_addr, *args):
     except Exception as e:
         logging.error(f"Error in set_home_position_handler: {e}")
 
+
+def cancel_loop_handler(unused_addr, *args):
+    try:
+        servo_ctrller.cancel_continuous_reading()
+        send_to_touchdesigner("/cancel_loop", servo_ctrller.current_angle)
+        logging.info(f"Cancel loop. Current angle: {servo_ctrller.current_angle}")
+    except Exception as e:
+        logging.error(f"Error in cancel_loop_handler: {e}")
+
 def on_motion_completed():
     try:
         send_to_touchdesigner("/motion_complete", "complete")
@@ -189,6 +198,7 @@ def main():
         dispatcher.map("/reset_initial_abs_position", reset_initial_abs_position_handler)
         dispatcher.map("/set_continous_motion", set_countinuous_motion_handler, "speed_rpm", "acc_time", "enable")
         dispatcher.map("/ctrl_continuous_motion", ctrl_continuous_motion_handler, "action", "CW_CCW")
+        dispatcher.map("/cancel_loop", cancel_loop_handler)
 
         server = osc_server.ThreadingOSCUDPServer((args.ip, args.port_receive), dispatcher)
         logging.info(f"Serving on {server.server_address}")

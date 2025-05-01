@@ -52,7 +52,7 @@ class ServoController:
         self.completed_cnt = 0
         #self.abs_home_pos = 1184347
         self.abs_home_pos = self.load_abs_home_pos()
-        self._event_listeners = {"on_motion_completed": [], "on_moving": []}
+        self._event_listeners = {"on_motion_completed": [], "on_moving": [], "on_cancel": []}
 
     def load_abs_home_pos(self) -> int:
         try:
@@ -135,10 +135,39 @@ class ServoController:
             logging.info("Motion Completed Signal Reading Stopped.")
             self._notify_event_listeners("on_motion_completed")
             self.stop_event.set()
-            
+
+    def cancel_continuous_reading(self) -> None:
+        with self.lock:
+            if not self.reading_active:
+                logging.warning("Continuous reading is not active; skipping stop.")
+                return
+
+            self.reading_active = False
+            self.read_thread_stop_event.set()
+            if self.read_thread and threading.current_thread() is not self.read_thread:
+                self.read_thread.join()
+
+            self.read_thread = None
+            self.completed_cnt = 0
+            self.completed_tag = False
+            if self.on_initial_home:
+                self.on_initial_home = False
+            logging.info("Motion Completed Signal Reading Stopped.")
+            self._notify_event_listeners("on_motion_completed")
+            self.stop_event.set()
+
+            self.delay_ms(50)
+            self.current_encoder = self.read_encoder_before_gear_ratio() 
+            logging.info(f"Current Encoder Value: {self.current_encoder}")
+            if self.current_encoder is not None:
+                base_pulse_per_degree = 116508.444445
+                self.current_angle = round((self.current_encoder - self.abs_home_pos)/base_pulse_per_degree,4)
+                logging.info(f"Current Angle: {self.current_angle}")
+                self._notify_event_listeners("on_cancel", self.current_angle)
+
 
     def _read_continuously(self, interval: float) -> None:
-        base_pulse_per_degree = 349525.3333333333
+        base_pulse_per_degree = 116508.444445
         while not self.read_thread_stop_event.is_set():
             if not self.serial_port.keep_running:
                 logging.info("Reconnection attempts stopped.")
@@ -155,7 +184,7 @@ class ServoController:
 
                 if self.completed_tag:
                     self.completed_cnt += 1
-                    if self.completed_cnt > 6:
+                    if self.completed_cnt > 3:
                         logging.info(f"Motion Completed Signal Detected: {self.completed_cnt}")
                         self.stop_continuous_reading()
                         break
