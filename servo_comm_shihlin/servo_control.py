@@ -138,53 +138,52 @@ class ServoController:
     def _read_continuously(self, interval: float) -> None:
         base_pulse_per_degree = 349525.3333333333
         while not self.read_thread_stop_event.is_set():
-        # Check connection
-        if not self.serial_port.keep_running:
-            logger.info("Reconnection attempts stopped.")
-            break
-
-        # 1) Read “motion completed” flag
-        try:
-            self.completed_tag = self.Read_Motion_Completed_Signal()
-        except Exception as e:
-            logger.warning(f"Failed to read motion-completed signal ({e}); retrying...")
-            self.delay_ms(interval * 1000)
-            continue
-
-        # small inter-read delay
-        self.delay_ms(100)
-
-        # 2) Read encoder position
-        try:
-            encoder = self.read_encoder_before_gear_ratio()
-        except Exception as e:
-            logger.warning(f"Failed to read encoder ({e}); retrying...")
-            self.delay_ms(interval * 1000)
-            continue
-
-        if encoder is None:
-            logger.warning("Empty encoder response; retrying...")
-            self.delay_ms(interval * 1000)
-            continue
-
-        # 3) Process valid encoder reading
-        self.current_encoder = encoder
-        logger.info(f"Current Encoder Value: {self.current_encoder}")
-        diff_angle = round((self.current_encoder - self.abs_home_pos) / base_pulse_per_degree, 4)
-        self.current_angle = diff_angle
-        logger.info(f"Diff Angle: {diff_angle}")
-        self._notify_event_listeners("on_moving", diff_angle)
-
-        # 4) Check for motion-complete bursts
-        if self.completed_tag:
-            self.completed_cnt += 1
-            if self.completed_cnt > 6:
-                logger.info(f"Motion Completed Signal Detected: {self.completed_cnt}")
-                self.stop_continuous_reading()
+            if not self.serial_port.keep_running:
+                logger.info("Reconnection attempts stopped.")
                 break
 
-        # loop delay
-        self.delay_ms(interval * 1000)
+            # 1) Read “motion completed” flag
+            try:
+                self.completed_tag = self.Read_Motion_Completed_Signal()
+            except Exception as e:
+                logger.warning(f"Failed to read motion-completed signal ({e}); retrying...")
+                self.delay_ms(interval * 1000)
+                continue
+
+            # small inter-read delay
+            self.delay_ms(100)
+
+            # 2) Read encoder position
+            try:
+                encoder = self.read_encoder_before_gear_ratio()
+            except Exception as e:
+                logger.warning(f"Failed to read encoder ({e}); retrying...")
+                self.delay_ms(interval * 1000)
+                continue
+
+            if encoder is None:
+                logger.warning("Empty encoder response; retrying...")
+                self.delay_ms(interval * 1000)
+                continue
+
+            # 3) Process valid encoder reading
+            self.current_encoder = encoder
+            logger.info(f"Current Encoder Value: {self.current_encoder}")
+            diff_angle = round((self.current_encoder - self.abs_home_pos) / base_pulse_per_degree, 4)
+            self.current_angle = diff_angle
+            logger.info(f"Diff Angle: {diff_angle}")
+            self._notify_event_listeners("on_moving", diff_angle)
+
+            # 4) Check for motion-complete bursts
+            if self.completed_tag:
+                self.completed_cnt += 1
+                if self.completed_cnt > 6:
+                    logger.info(f"Motion Completed Signal Detected: {self.completed_cnt}")
+                    self.stop_continuous_reading()
+                    break
+
+            # loop delay
+            self.delay_ms(interval * 1000)
 
     def read_PA01_Ctrl_Mode(self):
         logging.info(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
