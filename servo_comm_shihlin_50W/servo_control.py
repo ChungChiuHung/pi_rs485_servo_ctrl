@@ -94,7 +94,10 @@ class ServoController:
     def _notify_event_listeners(self, event_name, *args, **kwargs):
         """Notify all registered callbacks for a specific event."""
         for callback in self._event_listeners.get(event_name, []):
-            callback(*args, **kwargs)
+            try:
+                callback(*args, **kwargs)
+            except Exception as e:
+                logger.error(f"Error in event listener '{event}': {e}")
 
     def delay_ms(self, milliseconds: int) -> None:
         time.sleep(milliseconds / 1000.0)
@@ -170,27 +173,46 @@ class ServoController:
         base_pulse_per_degree = 116508.444445
         while not self.read_thread_stop_event.is_set():
             if not self.serial_port.keep_running:
-                logging.info("Reconnection attempts stopped.")
+                logger.info("Reconnection attempts stopped.")
                 break
+
+            # Motion completion flag
             try:
                 self.completed_tag = self.Read_Motion_Completed_Signal()
-                self.delay_ms(50)
-                self.current_encoder = self.read_encoder_before_gear_ratio() 
-                logging.info(f"Current Encoder Value: {self.current_encoder}")
-                if self.current_encoder is not None:
-                    diff_angle = round((self.current_encoder - self.abs_home_pos)/base_pulse_per_degree,4)
-                    logging.info(f"Diff Angle: {diff_angle}")
-                    self._notify_event_listeners("on_moving", diff_angle)
-
-                if self.completed_tag:
-                    self.completed_cnt += 1
-                    if self.completed_cnt > 3:
-                        logging.info(f"Motion Completed Signal Detected: {self.completed_cnt}")
-                        self.stop_continuous_reading()
-                        break
             except Exception as e:
-                logging.error(f"Error during read: {e}")
-                break
+                logger.warning(f"Read motion-complete failed: {e}")
+                self.delay_ms(interval * 1000)
+                continue
+
+            self.delay_ms(100)
+
+            # Encoder position
+            try:
+                enc = self.read_encoder_before_gear_ratio()
+            except Exception as e:
+                logger.warning(f"Read encoder failed: {e}")
+                self.delay_ms(interval * 1000)
+                continue
+
+            if enc is None:
+                logger.warning("Empty encoder response.")
+                self.delay_ms(interval * 1000)
+                continue
+
+            self.current_encoder = enc
+            logger.info(f"Current Encoder Value: {enc}")
+            diff_angle = round((enc - self.abs_home_pos) / base_pulse_per_degree, 4)
+            self.current_angle = diff_angle
+            logger.info(f"Diff Angle: {diff_angle}")
+            self._notify_event_listeners("on_moving", diff_angle)
+
+            if self.completed_tag:
+                self.completed_cnt += 1
+                if self.completed_cnt > 6:
+                    logger.info(f"Motion complete detected ({self.completed_cnt}).")
+                    self.stop_continuous_reading()
+                    break
+
             self.delay_ms(interval * 1000)
 
     def read_PA01_Ctrl_Mode(self):
