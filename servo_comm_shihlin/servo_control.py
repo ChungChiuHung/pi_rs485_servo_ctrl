@@ -1,6 +1,7 @@
 import time
 import logging
 import json
+import threading
 from typing import Union, Callable
 from threading import Thread, Event, Lock
 from serial import SerialException
