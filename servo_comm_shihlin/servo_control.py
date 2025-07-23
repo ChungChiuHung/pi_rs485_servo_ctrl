@@ -1,9 +1,8 @@
-import threading
 import time
 import logging
 import json
 from typing import Union, Callable
-from threading import Thread, Event
+from threading import Thread, Event, Lock
 from serial import SerialException
 from modbus_ascii_client import ModbusASCIIClient
 from modbus_response import ModbusResponse
@@ -20,10 +19,6 @@ PF.init_registers()
 
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger(__name__)
 
 
@@ -94,7 +89,10 @@ class ServoController:
     def _notify_event_listeners(self, event_name, *args, **kwargs):
         """Notify all registered callbacks for a specific event."""
         for callback in self._event_listeners.get(event_name, []):
-            callback(*args, **kwargs)
+            try:
+                callback(*args, **kwargs)
+            except Exception as e:
+                logger.error(f"Error in event listener '{event}': {e}")
 
     def delay_ms(self, milliseconds: int) -> None:
         time.sleep(milliseconds / 1000.0)
@@ -140,30 +138,53 @@ class ServoController:
     def _read_continuously(self, interval: float) -> None:
         base_pulse_per_degree = 349525.3333333333
         while not self.read_thread_stop_event.is_set():
-            if not self.serial_port.keep_running:
-                logging.info("Reconnection attempts stopped.")
-                break
-            try:
-                self.completed_tag = self.Read_Motion_Completed_Signal()
-                self.delay_ms(100)
-                self.current_encoder = self.read_encoder_before_gear_ratio() 
-                logging.info(f"Current Encoder Value: {self.current_encoder}")
-                if self.current_encoder is not None:
-                    diff_angle = round((self.current_encoder - self.abs_home_pos)/base_pulse_per_degree,4)
-                    self.current_angle = diff_angle
-                    logging.info(f"Diff Angle: {diff_angle}")
-                    self._notify_event_listeners("on_moving", diff_angle)
+        # Check connection
+        if not self.serial_port.keep_running:
+            logger.info("Reconnection attempts stopped.")
+            break
 
-                if self.completed_tag:
-                    self.completed_cnt += 1
-                    if self.completed_cnt > 6:
-                        logging.info(f"Motion Completed Signal Detected: {self.completed_cnt}")
-                        self.stop_continuous_reading()
-                        break
-            except Exception as e:
-                logging.error(f"Error during read: {e}")
-                break
+        # 1) Read “motion completed” flag
+        try:
+            self.completed_tag = self.Read_Motion_Completed_Signal()
+        except Exception as e:
+            logger.warning(f"Failed to read motion-completed signal ({e}); retrying...")
             self.delay_ms(interval * 1000)
+            continue
+
+        # small inter-read delay
+        self.delay_ms(100)
+
+        # 2) Read encoder position
+        try:
+            encoder = self.read_encoder_before_gear_ratio()
+        except Exception as e:
+            logger.warning(f"Failed to read encoder ({e}); retrying...")
+            self.delay_ms(interval * 1000)
+            continue
+
+        if encoder is None:
+            logger.warning("Empty encoder response; retrying...")
+            self.delay_ms(interval * 1000)
+            continue
+
+        # 3) Process valid encoder reading
+        self.current_encoder = encoder
+        logger.info(f"Current Encoder Value: {self.current_encoder}")
+        diff_angle = round((self.current_encoder - self.abs_home_pos) / base_pulse_per_degree, 4)
+        self.current_angle = diff_angle
+        logger.info(f"Diff Angle: {diff_angle}")
+        self._notify_event_listeners("on_moving", diff_angle)
+
+        # 4) Check for motion-complete bursts
+        if self.completed_tag:
+            self.completed_cnt += 1
+            if self.completed_cnt > 6:
+                logger.info(f"Motion Completed Signal Detected: {self.completed_cnt}")
+                self.stop_continuous_reading()
+                break
+
+        # loop delay
+        self.delay_ms(interval * 1000)
 
     def read_PA01_Ctrl_Mode(self):
         logging.info(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
