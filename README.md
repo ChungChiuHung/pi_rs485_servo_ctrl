@@ -82,7 +82,7 @@ Either of these modules cna be used to read and write messages via RS485
   ```
   3. Start Your Python Script
   ```
-  pm2 start your_secript.py
+  pm2 start your_script.py
   ```
   4. Save the Current PM2 List
   ```
