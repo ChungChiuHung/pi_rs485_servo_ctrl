@@ -67,7 +67,10 @@ Either of these modules cna be used to read and write messages via RS485
   allowing it to spin and provide feedback on the current angle.
   
   # Auto-Configuration of a Startup Script with [PM2](https://pm2.keymetrics.io/docs/usage/startup/)
-  [note: install the npm and specific nodejs version](https://phoenixnap.com/kb/update-node-js-version)
+  - Install PM2
+  ```
+  apt update && apt install sudo curl && curl -sL https://raw.githubusercontent.com/Unitech/pm2/master/packager/setup.deb.sh | sudo -E bash -
+  ```
   - config the raspberry pi wireless connection
   ```
   sudo raspi-config
