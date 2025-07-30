@@ -31,13 +31,13 @@ Either of these modules cna be used to read and write messages via RS485
   - Would you like a login shell to be accessible over serial? No
   - Would you like the serial port hardware to be enable? Yes
 
-  Open file "/boot/config.txt"
+  Open file "/boot/firmware/config.txt"
   Add below line to the end of the file
   ```
   [all]
-  dtparam=spi=on
-  dtoverlay=mcp2515-can0,oscillator=12000000,interrupt=25,spimaxfrequency=2000000
   enable_uart=1
+  dtparam=uart0=on
+  dtoverlay=mcp2515-can0,oscillator=12000000,interrupt=25,spimaxfrequency=2000000
   dtoverlay=disable-bt
   ```
 
