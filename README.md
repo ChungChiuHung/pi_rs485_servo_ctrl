@@ -69,7 +69,9 @@ Either of these modules cna be used to read and write messages via RS485
   # Auto-Configuration of a Startup Script with [PM2](https://pm2.keymetrics.io/docs/usage/startup/)
   - Install PM2
   ```
-  apt update && apt install sudo curl && curl -sL https://raw.githubusercontent.com/Unitech/pm2/master/packager/setup.deb.sh | sudo -E bash -
+  sudo apt-get update
+  sudo apt-get install -y nodejs npm
+  sudo npm install pm2 -g
   ```
   1. Generate Startup Script
   ```
