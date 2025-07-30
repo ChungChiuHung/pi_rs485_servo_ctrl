@@ -71,10 +71,6 @@ Either of these modules cna be used to read and write messages via RS485
   ```
   apt update && apt install sudo curl && curl -sL https://raw.githubusercontent.com/Unitech/pm2/master/packager/setup.deb.sh | sudo -E bash -
   ```
-  - config the raspberry pi wireless connection
-  ```
-  sudo raspi-config
-  ```
   1. Generate Startup Script
   ```
   pm2 startup
