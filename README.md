@@ -116,6 +116,46 @@ python3 app.py
 ```
 Then open `http://<PI_IP>:5000` in a browser.
 
+## HTTP API: `POST /alarm/clear`
+Clears **AL.12 (Emergency stop)** only -- not a general-purpose Modbus
+write endpoint. Available in `servo_comm_shihlin/app.py`.
+
+Request body must include `{"confirm": true}`; without it, the request is
+rejected with `400` and no command is sent to the drive.
+
+```
+curl -X POST http://<PI_IP>:5000/alarm/clear \
+     -H "Content-Type: application/json" \
+     -d '{"confirm": true}'
+```
+
+Response includes the alarm code read before and after the clear attempt
+(`0` = no alarm), which mechanism actually cleared it, the caller's IP, and
+a timestamp. Every call is logged (timestamp, before/after alarm code,
+caller IP) regardless of outcome.
+
+**Safety precondition -- read before using this endpoint.** Per the driver
+manual (`docs/en_manual.txt`, AL.12 entry, ~line 10512), AL.12 means the
+EMG (Emergency Stop) signal is active, and the manual's own remedy is to
+*"Release the trigger after removal of some emergency conditions"* --
+i.e. clear it only after the physical emergency condition has actually
+been resolved.
+
+The endpoint's primary clearing mechanism (`clear_alarm_12()`, the
+existing function reused from `servo_control.py`) works by switching the
+drive's DI input source to communication-control mode (`PD16`) and then
+writing the virtual EMG DI bit to its "released" state (`PD25`/`ITST`).
+**If a physical E-Stop circuit is still engaged when this is called, the
+drive will report EMG as released anyway** -- the software cannot verify
+the physical emergency condition is actually gone. This endpoint does not,
+and cannot, perform that physical check; whoever calls it is responsible
+for confirming the physical E-Stop condition is really resolved first.
+
+If the primary mechanism doesn't bring the alarm code back to `0`, the
+endpoint falls back to the driver's official "Alarm clearance" register
+(`0x0130`, write `0x1EA5`; `docs/en_manual.txt` ~line 10230), which does
+not touch DI control source or the virtual EMG state.
+
 # Running the OSC Server
 `osc_2.py` exists in both Shihlin folders. Pick the folder that matches the
 connected motor (see [Project Structure](#project-structure)):

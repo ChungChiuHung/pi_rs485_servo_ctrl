@@ -1,5 +1,7 @@
 import os
 import time
+import logging
+from datetime import datetime, timezone
 from flask import Flask, render_template, request, jsonify, Response
 from functools import wraps
 import traceback
@@ -11,6 +13,10 @@ from servo_control import ServoController
 
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your keys')
+
+# Dedicated logger for the /alarm/clear endpoint (CLAUDE.md hardware-safety
+# section: every call that can write live state to the motor must be logged).
+alarm_logger = logging.getLogger("alarm_clear")
 
 # Instantiate GPIOUtils for GPIO opeartions
 gpio_utils = GPIOUtils()
@@ -64,6 +70,81 @@ def index():
     return render_template('index.html', title='Servo Control Panel', RS485_read=RS485_read, RS485_send=RS485_send)
     return render_template('index.html', title='Servo Control Panel', RS485_read=RS485_read, RS485_send=RS485_send)
 
+
+
+@app.route('/alarm/clear', methods=['POST'])
+def clear_alarm_12_endpoint():
+    """Clear Alarm 12 (AL.12, Emergency stop) only. Not a general-purpose
+    Modbus write endpoint -- see README for the safety precondition this
+    requires before calling it.
+    """
+    caller_ip = request.remote_addr
+    started_at = datetime.now(timezone.utc).isoformat()
+
+    payload = request.get_json(silent=True) or {}
+    if payload.get('confirm') is not True:
+        alarm_logger.warning(
+            "Rejected /alarm/clear from %s at %s: missing confirm=true.",
+            caller_ip, started_at
+        )
+        return jsonify({
+            "status": "error",
+            "message": 'Missing or false "confirm" field. POST {"confirm": true} to proceed.'
+        }), 400
+
+    before_code = servo_ctrller.read_current_alarm_code()
+    alarm_logger.info(
+        "Alarm-12 clear requested by %s at %s. Alarm code before: %s",
+        caller_ip, started_at, before_code
+    )
+
+    if before_code is None:
+        alarm_logger.error(
+            "Could not read alarm status before clearing (comm failure) -- "
+            "aborting, no clear command was sent."
+        )
+        return jsonify({
+            "status": "error",
+            "message": "Could not read current alarm status (communication failure). No clear command was sent.",
+            "before_alarm_code": None,
+            "caller_ip": caller_ip,
+            "timestamp": started_at,
+        }), 503
+
+    # Primary mechanism: existing clear_alarm_12(). NOTE -- this switches the
+    # drive's DI control source to communication mode (PD16) and writes the
+    # virtual EMG DI bit to its "released" state. If a physical E-Stop
+    # circuit is still engaged, this can make the drive treat EMG as
+    # released without the physical condition actually being resolved.
+    # See README "Alarm 12 clear -- safety precondition" before using this.
+    servo_ctrller.write_PD_16_Enable_DI_Control()
+    servo_ctrller.clear_alarm_12()
+    time.sleep(0.1)
+    after_code = servo_ctrller.read_current_alarm_code()
+    mechanism_used = "clear_alarm_12"
+
+    if after_code != 0:
+        # Fallback: official 0x0130 "Alarm clearance" register (write
+        # 0x1EA5). Does not touch DI control source / virtual EMG state.
+        servo_ctrller.clear_alarm_via_register()
+        time.sleep(0.1)
+        after_code = servo_ctrller.read_current_alarm_code()
+        mechanism_used = "clear_alarm_12+0x0130_fallback"
+
+    success = after_code == 0
+    alarm_logger.info(
+        "Alarm-12 clear result for %s: before=%s after=%s success=%s mechanism=%s",
+        caller_ip, before_code, after_code, success, mechanism_used
+    )
+
+    return jsonify({
+        "status": "success" if success else "failed",
+        "before_alarm_code": before_code,
+        "after_alarm_code": after_code,
+        "mechanism_used": mechanism_used,
+        "caller_ip": caller_ip,
+        "timestamp": started_at,
+    }), (200 if success else 502)
 
 
 @app.route('/action', methods=['POST'])

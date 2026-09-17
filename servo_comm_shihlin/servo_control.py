@@ -338,6 +338,37 @@ class ServoController:
         #response_object = ModbusResponse(response)
         logging.info(f"Clear Alarm 12:{response}")
 
+    def read_current_alarm_code(self):
+        """Read the 'Current alarm' monitor register (0x0100, 1 word,
+        read-only). 0 means no alarm active; nonzero is the active alarm
+        code. See docs/en_manual.txt, "(3) Alarm information" (~line 10220).
+
+        Returns the raw int code, or None on a communication/parse failure
+        (never assume None means "no alarm").
+        """
+        message = self.modbus_client.build_read_message(0x0100, 1)
+        response = self.modbus_client.send_and_receive(message)
+        if response is None:
+            logger.error("No response reading current alarm code (0x0100).")
+            return None
+        try:
+            return ModbusResponse(response).get_value()
+        except Exception as e:
+            logger.error(f"Failed to parse current-alarm response: {e}")
+            return None
+
+    def clear_alarm_via_register(self):
+        """Official 'Alarm clearance' register (0x0130): writing 0x1EA5
+        clears the current alarm directly. Unlike clear_alarm_12(), this
+        does NOT touch the DI control source (PD16) or the virtual EMG
+        DI bit (PD25/ITST) -- see docs/en_manual.txt, "(4) Alarm
+        clearance" (~line 10230).
+        """
+        message = self.modbus_client.build_write_message(0x0130, 0x1EA5)
+        response = self.modbus_client.send_and_receive(message)
+        logging.info(f"Clear alarm via 0x0130 register: {response}")
+        return response
+
     def servo_off(self):
         # print(
         #    f"Address of PD{PD.ITST.no} {PD.ITST.name}: {hex(PD.ITST.address)}")
