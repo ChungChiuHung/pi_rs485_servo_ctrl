@@ -57,10 +57,7 @@ either state — don't guess which one this repo relies on.**
   eMMC/SSD fallback — the SD card is the only storage, and it's the
   most common hardware failure point on long-running Pi deployments.
 
-## 3. Canonical Module — CONFIRMED 2026-07-22, UPDATED 2026-07-22
-=======
-## 2. Canonical Module — CONFIRMED 2026-07-22, UPDATED 2026-09-17
->>>>>>> f563e01 (docs(claude-md): add servo_comm_shihlin_unified to canonical module table)
+## 3. Canonical Module — CONFIRMED 2026-07-22, UPDATED 2026-09-17
 Repo has several parallel module folders. None are duplicates or dead
 code — each serves a distinct, confirmed purpose:
 
