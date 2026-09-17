@@ -38,6 +38,11 @@ class PA:
         cls.POL = Register(39, "POL", "Motor rotary direction option", 0x0000, cls.calculate_address(39))
         #------------Digital I/O setting related parameters-----------
         cls.INP = Register(12, "INP", "In-position range [pulse]", 100, cls.calculate_address(12))
+        #------------Absolute encoder related parameters (manual §8 "Servo absolute system")-----------
+        # PA28 (ABS): 0 = incremental mode, 1 = absolute mode. PA32(APR)/PA33(APP)
+        # are only valid when this is 1 (manual p.88-89) — must be confirmed on real
+        # hardware before relying on PA32/PA33 for encoder-overflow-safe position reads.
+        cls.ABS = Register(28, "ABS", "Absolute encoder settings", 0x0000, cls.calculate_address(28))
 
     @classmethod
     def encode_HMOV(cls, z, y, x):
