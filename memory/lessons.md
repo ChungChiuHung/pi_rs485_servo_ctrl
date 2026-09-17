@@ -129,4 +129,33 @@ items 4/7 are now unblocked in principle (a full-range position source
 exists to redesign them on) but still await final confirmation pending
 the PA28 check. Not yet implemented — still design phase.
 
+## [2026-07-22] PA28 fail-safe check built (TDD, read-only)
+**Relates to:** CLAUDE.md §3 (hardware safety), servo merge design doc §2.4,
+`servo_comm_shihlin_unified/`
+**What happened:** Built the PA28 (absolute-mode) fail-safe check requested
+by the user: copied the communication-layer files (`modbus_ascii_client.py`,
+`modbus_response.py`, `modbus_command_code.py`, `modbus_utils.py`,
+`servo_control_registers.py`, `serial_port_manager.py`, `servo_p_register.py`)
+from `servo_comm_shihlin_50W/` (the decided §2.2 baseline) into the new
+`servo_comm_shihlin_unified/` folder, added a `PA.ABS` (PA28) register
+definition, then wrote `absolute_mode_check.py` (the check function),
+`test_absolute_mode_check.py` (7 unit tests, mocked `ModbusResponse`, all
+passing — verified by actually running `python3 -m unittest`), and
+`check_pa28.py` (a standalone script to run against real hardware). Did NOT
+copy `servo_control.py` yet, since §2.2 items 4/7 and the config-driven
+gear_ratio refactor aren't finalized — copying it now would misrepresent
+progress. This is a read-only status query, so it didn't need the
+hardware-safety confirmation gate (CLAUDE.md §3 exempts read-only paths) —
+proceeded straight to implementation instead of asking first.
+**Lesson:** When a task is explicitly scoped ("just add X check") inside a
+larger paused merge, resist the urge to either (a) do the minimum humanly
+possible (a throwaway script disconnected from the real infrastructure) or
+(b) over-deliver by pulling in the whole pending merge early. The right
+scope was: copy only the infrastructure the one new feature actually
+depends on, skip the files still gated on undecided design questions, and
+make sure what's copied now is reusable by the real merge later (not
+throwaway).
+**Status:** active — waiting on user to run `check_pa28.py` on the Pi and
+report back whether PA28 == 1.
+
 <!-- New verified entries go below this line -->
