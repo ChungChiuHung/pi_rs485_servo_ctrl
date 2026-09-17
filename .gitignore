@@ -2,3 +2,6 @@
 /helloWorld.py
 /helloWorldTemplate.py
 /servo_command.py
+__pycache__/
+.venv/
+venv/
