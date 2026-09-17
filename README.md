@@ -59,9 +59,17 @@ Either of these modules cna be used to read and write messages via RS485
   ![image](https://github.com/ChungChiuHung/rpiWebServer_RS485_ServoCtrl/assets/52248840/149436ad-a2ca-4dd2-9fa6-c44bf60b2702)
 
   ## Running the OSC Server
-  Navigate to the project directory and start the server:
+  Install the Python dependencies (includes `python-osc`, required by `osc_2.py`):
   ```
-  python osc_2.py
+  pip3 install -r requirements.txt
+  ```
+  `osc_2.py` uses relative imports, so it must be run from inside its own folder.
+  Pick the folder that matches the connected motor:
+  - `servo_comm_shihlin/`: 400W motor, 115200 baud
+  - `servo_comm_shihlin_50W/`: SDE-010A2 driver + SME-L00530 (50W) motor, 9600 baud
+  ```
+  cd servo_comm_shihlin/        # or: cd servo_comm_shihlin_50W/
+  python3 osc_2.py
   ```
   This will boot up an OSC server to handle commands for motor control,
   allowing it to spin and provide feedback on the current angle.
@@ -95,50 +103,22 @@ Either of these modules cna be used to read and write messages via RS485
      ```
      sudo nano /etc/systemd/system/myscript.service
      ```
+     `WorkingDirectory` is required: the scripts use relative imports and must
+     run from inside their own folder.
      ```
      [Unit]
-      Description=My Python Script Service
-      After=network-online.target
-      Wants=network-online.target
+     Description=My Python Script Service
+     After=network-online.target
+     Wants=network-online.target
 
-  # Config the static IP for Raspberry Pi
-  - Retrieve the currently defined router information
-  ```
-  ip r | grep default
-  ```
-  Make a note of the first IP:
-  - Retrieve the current DNS server
-  ```
-  sudo nano /etc/resolv.conf
-  ```
-  Make a note of the IP next to "nameserver"
-  - Modify the "dhcpcd.conf"
-  ```
-  sudo nano /etc/dhcpcd.conf
-  ```
-  -Set the static for your "eth0" or "wlan0"
-  Replace <NETWORK> <STATICIP> <ROUTERIP> <DNSIP>
-  ```
-  interface <NETWORK>
-  static ip_address=<STATICIP>/24
-  static routers=<ROUTERIP>
-  static domain_name_servers=<DNSIP>
-  ```
-  -Reboot Raspberry Pi
-  ```
-  sudo reboot
-  ```
-  # Test the static IP
-  ```
-  hostname -I
-  ```
-  ```
-  [Service]
-  Type=simple
-  ExecStart=/usr/bin/python3 /path/to/your/script.py
-  [Install]
-  WantedBy=multi-user.target
-  ```
+     [Service]
+     Type=simple
+     WorkingDirectory=/path/to/pi_rs485_servo_ctrl/servo_comm_shihlin
+     ExecStart=/usr/bin/python3 osc_2.py
+
+     [Install]
+     WantedBy=multi-user.target
+     ```
   2. Enable and Start Your Service
      - Reload systemd to recognize your new service:
      ```
@@ -186,3 +166,35 @@ Either of these modules cna be used to read and write messages via RS485
       ```
       sudo systemctl reset-failed
       ```
+
+  # Config the static IP for Raspberry Pi
+  - Retrieve the currently defined router information
+  ```
+  ip r | grep default
+  ```
+  Make a note of the first IP:
+  - Retrieve the current DNS server
+  ```
+  sudo nano /etc/resolv.conf
+  ```
+  Make a note of the IP next to "nameserver"
+  - Modify the "dhcpcd.conf"
+  ```
+  sudo nano /etc/dhcpcd.conf
+  ```
+  -Set the static for your "eth0" or "wlan0"
+  Replace <NETWORK> <STATICIP> <ROUTERIP> <DNSIP>
+  ```
+  interface <NETWORK>
+  static ip_address=<STATICIP>/24
+  static routers=<ROUTERIP>
+  static domain_name_servers=<DNSIP>
+  ```
+  -Reboot Raspberry Pi
+  ```
+  sudo reboot
+  ```
+  # Test the static IP
+  ```
+  hostname -I
+  ```
