@@ -10,8 +10,12 @@ Controls an AC servo motor (Shihlin SDE-series driver) over RS485 from a
 **Raspberry Pi 3 Model B**. Flask web app + serial/Modbus (RTU and ASCII)
 protocol handling + GPIO. `main.py` boots `web/app.py`.
 
-<<<<<<< HEAD
 ## 2. Hardware Platform — Raspberry Pi 3 B (CRITICAL for serial work)
+> **註記(2026-09-17):** 目前部署使用 USB-RS485 轉接器(`ttyUSB0`),此段
+> GPIO mini-UART/藍牙衝突警告暫不適用,如未來改接 GPIO 腳位的 RS485
+> 模組請重新評估。（`/boot/firmware/config.txt` 目前也確實沒有
+> `core_freq`/`disable-bt`/`enable_uart` 相關設定。）
+
 The Pi 3 B has known quirks that directly affect RS485/Modbus reliability.
 **Verify these against the actual `config.txt` and wiring before assuming
 either state — don't guess which one this repo relies on.**
