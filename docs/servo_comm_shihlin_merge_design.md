@@ -1,7 +1,9 @@
 # servo_comm_shihlin 與 servo_comm_shihlin_50W 合併設計文件（草案）
 
-狀態：**設計討論中，尚未動手改程式碼**。本文件只列出差異與待決策事項，
-待逐項確認後才會進入實作階段。
+狀態：**設計討論中，主控邏輯（`servo_control.py`）尚未動手改**——第 4、7
+項（角度追蹤演算法、180 度保護）與 `motor_profiles.json` config 切換邏輯
+都還在暫緩／待決策。但通訊底層與一個獨立的 PA28 防呆檢查已經先落地在
+`servo_comm_shihlin_unified/`（見 §2.4、§4 第 2、4 項），不是完全零實作。
 
 ## 1. 目標
 把 `servo_comm_shihlin/` 與 `servo_comm_shihlin_50W/` 合併成一份程式碼，
@@ -237,9 +239,11 @@ rotation（單方向持續旋轉）**。而兩個資料夾都有的連續轉動�
    `docs/` 資料夾裡的 SDE 驅動器說明書應該有相關規格表——需要的話我可以
    幫忙對照文件查證，你再確認是否吻合實際量測值。
 2. ~~合併後程式碼放哪裡~~ **✅ 已決定：新資料夾 `servo_comm_shihlin_unified/`**
-   （已建立，目前只有狀態說明的 README，尚未搬入程式碼）。`servo_comm_shihlin/`
-   與 `servo_comm_shihlin_50W/` 會保留到新版本通過兩個 motor profile 的
-   真實硬體驗證後才考慮處理，不會現在就刪除或標記棄用。
+   （已建立。目前已從 `servo_comm_shihlin_50W/` 複製通訊底層並新增 PA28
+   防呆檢查，見 §2.4/§4 第 4 項；`servo_control.py` 主控邏輯本體仍待第
+   4、7 項定案後才搬入）。`servo_comm_shihlin/` 與 `servo_comm_shihlin_50W/`
+   會保留到新版本通過兩個 motor profile 的真實硬體驗證後才考慮處理，
+   不會現在就刪除或標記棄用。
 3. **驗證方式** — 合併後怎麼確認兩個 profile 都還能正確控制對應的馬達？
    （例如：兩個 profile 各自的角度計算、原點回歸都要用真實硬體驗證過
    一輪，才算完成——依 CLAUDE.md §3，這需要你在場確認。）
