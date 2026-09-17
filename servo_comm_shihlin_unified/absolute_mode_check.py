@@ -30,12 +30,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def check_absolute_mode(modbus_client):
+def check_absolute_mode(modbus_client, response_parser=None):
     """Read PA28 and log whether the driver is in absolute-encoder mode.
 
     Args:
         modbus_client: an object exposing build_read_message(address, word_length)
-            and send_and_receive(message), e.g. ModbusASCIIClient.
+            and send_and_receive(message), e.g. ModbusASCIIClient or
+            ModbusRTUClient -- this function doesn't care which serial
+            protocol produced the response, only that response_parser can
+            parse it.
+        response_parser: callable taking the raw response and exposing
+            get_value(), e.g. ModbusResponse (ASCII, the default -- looked
+            up at call time so tests can still patch the module-level name)
+            or ModbusRTUResponse (RTU).
 
     Returns:
         True  -- PA28 == 1. Absolute mode confirmed; PA32/PA33 are safe to use
@@ -53,6 +60,9 @@ def check_absolute_mode(modbus_client):
         PA.ABS.no, PA.ABS.name, hex(PA.ABS.address)
     )
 
+    if response_parser is None:
+        response_parser = ModbusResponse
+
     message = modbus_client.build_read_message(PA.ABS.address, 2)
     response = modbus_client.send_and_receive(message)
 
@@ -64,7 +74,7 @@ def check_absolute_mode(modbus_client):
         return None
 
     try:
-        response_object = ModbusResponse(response)
+        response_object = response_parser(response)
         value = response_object.get_value()
     except Exception as e:
         logger.error(

@@ -21,6 +21,19 @@
   搭配 `test_absolute_mode_check.py`（7 個測試，已跑過、全過）。
 * ✅ 新增 `check_pa28.py`：**可直接在樹莓派上對真實硬體執行**的獨立
   診斷腳本，純讀取、不會啟動/移動/寫入馬達，跑完會印出 PA28 是否為 1。
+* ✅ **新增 Modbus RTU 支援**（`modbus_rtu_client.py`、
+  `modbus_rtu_response.py`）：先前用 Modbus ASCII 對驅動器做的診斷
+  （9600/19200/38400/115200 baud × 站號 1-32 × 7/8-bit，共 82 種組合）
+  全部零回應，懷疑驅動器的 `PC22`（通訊協定選項）實際上被設成 RTU
+  模式（選項 6/7/8），不是這個專案原本假設的 ASCII 模式（選項
+  0-5）——見 `docs/en_manual.txt` §9.2。這兩個新檔案讓 `check_pa28.py`
+  可以改用 RTU 框架（二進位 + CRC16）重新嘗試，介面跟既有的
+  `ModbusASCIIClient`/`ModbusResponse` 對齊（吃原始位址整數，不像
+  `servo_comm_shihlin/modbus_rtu_client.py` 原版那樣要求
+  `ServoControlRegistry` enum），`absolute_mode_check.py` 也改成可以接受
+  `response_parser` 參數，兩種協定共用同一套防呆判斷邏輯，不用維護
+  兩份平行的檢查程式。**只做過純記憶體內的 frame 組裝/CRC/例外解析驗證
+  （沒開過序列埠、沒送過任何 byte 到驅動器）**，還沒在真實硬體上跑過。
 * ✅ §2.2 第 1、2、3、5、6 項：已確認做法
 * ✅ Encoder overflow：已決定採用方案 B（改讀 `PA32`+`PA33`）
 * ⏸ **卡點：需要你在樹莓派上實際執行 `check_pa28.py`，確認 PA28 是否為 1**
@@ -35,7 +48,10 @@
 
 ```bash
 cd servo_comm_shihlin_unified/
-python3 check_pa28.py
+python3 check_pa28.py                                    # 預設：ASCII, 9600 baud, 站號 1
+python3 check_pa28.py --protocol rtu                      # 改試 Modbus RTU
+python3 check_pa28.py --protocol rtu --baud 115200         # 也可以順便換波特率/站號
+python3 check_pa28.py --baud 115200 --device-number 3
 ```
 
 只會讀取，不會對馬達做任何啟動/移動/寫入動作。結果會印在畫面上，
