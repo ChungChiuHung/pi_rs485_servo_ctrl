@@ -257,3 +257,9 @@ main {
 .action-feedback.status-error {
     color: #e74c3c;
 }
+
+.button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+}

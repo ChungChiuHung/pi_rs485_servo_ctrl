@@ -11,6 +11,7 @@ from flask import Flask, render_template, request, jsonify, Response
 from serial_port_manager import SerialPortManager
 from servo_control import ServoController
 from motor_profile import load_profiles, resolve_profile
+from hardware_lock import hardware_serialized
 
 # GPIO only imports successfully on real Raspberry Pi hardware (RPi.GPIO).
 # Made optional so this app can be developed/tested off-Pi (e.g. this
@@ -156,6 +157,7 @@ def get_status():
 
 
 @app.route('/profile', methods=['POST'])
+@hardware_serialized
 def set_profile():
     payload = request.get_json(silent=True) or {}
     requested = payload.get("profile")
@@ -188,6 +190,7 @@ def set_profile():
 
 
 @app.route('/alarm/clear', methods=['POST'])
+@hardware_serialized
 def clear_alarm_12_endpoint():
     """Clear Alarm 12 (AL.12, Emergency stop) only. Not a general-purpose
     Modbus write endpoint -- see README for the safety precondition this
@@ -264,6 +267,7 @@ def clear_alarm_12_endpoint():
 
 @app.route('/action', methods=['POST'])
 @json_response
+@hardware_serialized
 def handle_action():
     data = request.json
     action = data.get('action')

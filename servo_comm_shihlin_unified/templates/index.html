@@ -32,8 +32,25 @@
                         .addClass(ok ? 'status-ok' : 'status-error');
                 }
 
+                // The backend only ever runs one hardware-touching request
+                // at a time (see app.py's hardware_serialized decorator) --
+                // disabling every command button while any request is in
+                // flight matches that constraint and stops a fast
+                // double-click from firing a second command before the
+                // first one's multi-step sequence has finished (a real risk
+                // found via real-hardware timing tests: the driver itself
+                // handles rapid requests fine, but overlapping commands
+                // from this app could still interleave or flip a
+                // toggle-like action, like start_continuous_reading(),
+                // back off before its first click's effect took hold).
+                function setButtonsEnabled(enabled) {
+                    $('.button[data-action]').prop('disabled', !enabled);
+                    $('#clearAlarm12Btn').prop('disabled', !enabled);
+                }
+
                 function sendCommand(action) {
                     clearStatuses(action);
+                    setButtonsEnabled(false);
                     $.ajax({
                         url:'/action',
                         type: 'POST',
@@ -51,6 +68,8 @@
                             const msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Error performing action';
                             setFeedback(action, msg, false);
                         }
+                    }).always(function(){
+                        setButtonsEnabled(true);
                     });
                 }
 
@@ -79,6 +98,7 @@
                         return;
                     }
                     setFeedback('clearAlarm12', 'Clearing...', true);
+                    setButtonsEnabled(false);
                     $.ajax({
                         url: '/alarm/clear',
                         type: 'POST',
@@ -97,6 +117,8 @@
                             const msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Failed to clear alarm';
                             setFeedback('clearAlarm12', msg, false);
                         }
+                    }).always(function(){
+                        setButtonsEnabled(true);
                     });
                 });
 
