@@ -67,20 +67,22 @@ class TestContinuousMotionHandlers(unittest.TestCase):
         ctrl.enable_speed_ctrl.assert_called_once_with(100, 5000, True)
 
     def test_ctrl_continuous_motion_start_cw(self):
+        """Per docs/en_manual.txt:10380-10382 (JOG_OPERATION, 0x0904): 1 =
+        forward rotation (CCW), 2 = reverse rotation (CW)."""
         server, ctrl = make_server()
         server._ctrl_continuous_motion_handler(None, [], "start", "CW")
-        ctrl.speed_ctrl_action.assert_called_once_with(1)
+        ctrl.speed_ctrl_action.assert_called_once_with(2)
 
     def test_ctrl_continuous_motion_start_ccw(self):
         """Regression test for a bug found in the original
         servo_comm_shihlin_50W/osc_2.py: after the if/elif that correctly
-        picked 1 (CW) or 2 (CCW), it unconditionally called
+        picked the direction value, it unconditionally called
         speed_ctrl_action("CW") again -- so a CCW request would send CCW
-        (2) immediately followed by a bogus "CW" string call. Not ported
-        forward; speed_ctrl_action must be called exactly once, with 2."""
+        immediately followed by a bogus "CW" string call. Not ported
+        forward; speed_ctrl_action must be called exactly once, with 1."""
         server, ctrl = make_server()
         server._ctrl_continuous_motion_handler(None, [], "start", "CCW")
-        ctrl.speed_ctrl_action.assert_called_once_with(2)
+        ctrl.speed_ctrl_action.assert_called_once_with(1)
 
     def test_ctrl_continuous_motion_stop(self):
         server, ctrl = make_server()

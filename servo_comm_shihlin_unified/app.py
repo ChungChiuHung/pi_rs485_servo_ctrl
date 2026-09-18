@@ -437,9 +437,11 @@ def handle_action():
     elif action == "enableSpeedCtrlMode":
         servo_ctrller.enable_speed_ctrl(100)
     elif action == "motionStart_CW":
-        servo_ctrller.speed_ctrl_action(1)
-    elif action == "motionStart_CCW":
+        # Per docs/en_manual.txt:10380-10382 (JOG_OPERATION, 0x0904):
+        # 1 = forward rotation (CCW), 2 = reverse rotation (CW).
         servo_ctrller.speed_ctrl_action(2)
+    elif action == "motionStart_CCW":
+        servo_ctrller.speed_ctrl_action(1)
     elif action == "motionPause":
         servo_ctrller.speed_ctrl_action(0)
     elif action == "motionCancel":

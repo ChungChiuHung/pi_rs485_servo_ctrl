@@ -104,12 +104,15 @@ class ArtNetInputServer:
                                 f"(channel 1 = {enable_channel}).")
 
                 if direction_channel != self._last_direction_channel:
+                    # Per docs/en_manual.txt:10380-10382 (JOG_OPERATION,
+                    # 0x0904): 1 = forward rotation (CCW), 2 = reverse
+                    # rotation (CW).
                     if direction_channel == 0:
                         action_value = 0
                     elif direction_channel < 128:
-                        action_value = 2  # CCW
+                        action_value = 1  # CCW
                     else:
-                        action_value = 1  # CW
+                        action_value = 2  # CW
                     self.servo_ctrller.speed_ctrl_action(action_value)
                     logger.info(f"Art-Net: direction channel={direction_channel} -> "
                                 f"action={action_value}")

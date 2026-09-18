@@ -932,6 +932,18 @@ class ServoController:
         # were silently ignored on the enable=True path (the one every
         # caller -- the web UI button, OSC, Art-Net -- actually uses).
         if enable == True:
+            # Manual Step 1 for JOG test (docs/en_manual.txt:10347): the
+            # drive only accepts entering JOG mode "without any alarm
+            # occurrence or Servo ON activated". Deliberately calling
+            # clear_alarm_12() here rather than servo_off() -- servo_off()
+            # zeroes the DI7 bit that keeps Alarm 12 suppressed (see its own
+            # "Alarm 12 ON!" log line), which would trade "Servo ON blocks
+            # JOG mode" for "Alarm 12 blocks JOG mode". clear_alarm_12()
+            # (already used as servoOn's own first step) sets Servo OFF
+            # while keeping that bit set, satisfying both halves of Step 1
+            # at once.
+            self.clear_alarm_12()
+            self.delay_ms(100)
             self.config_speed_0x0903(speed_rpm)
             self.delay_ms(100)
             self.config_acc_dec_0x0902(acc_time)

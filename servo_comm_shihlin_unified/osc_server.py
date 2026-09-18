@@ -107,10 +107,12 @@ class OSCInputServer:
                 self.servo_ctrller.speed_ctrl_action(0)
                 self._send_feedback("/continuous_mode_stop", "stop")
             elif action == "start":
+                # Per docs/en_manual.txt:10380-10382 (JOG_OPERATION, 0x0904):
+                # 1 = forward rotation (CCW), 2 = reverse rotation (CW).
                 if cw_ccw == "CW":
-                    self.servo_ctrller.speed_ctrl_action(1)
-                elif cw_ccw == "CCW":
                     self.servo_ctrller.speed_ctrl_action(2)
+                elif cw_ccw == "CCW":
+                    self.servo_ctrller.speed_ctrl_action(1)
                 self._send_feedback("/continuous_mode_start", cw_ccw)
         except Exception as e:
             logger.error(f"Error in ctrl_continuous_motion_handler: {e}")

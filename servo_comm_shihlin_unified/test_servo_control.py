@@ -653,8 +653,13 @@ class TestEnableSpeedCtrl(unittest.TestCase):
     actually switched the drive into JOG mode before speed_ctrl_action()
     (MOTION START CW/CCW) tried to trigger movement via 0x0904."""
 
-    def test_enable_true_configures_speed_and_accel_then_enters_jog_mode(self):
+    def test_enable_true_clears_alarm_12_then_configures_speed_and_accel_then_enters_jog_mode(self):
+        """clear_alarm_12() (not servo_off()) is what satisfies the manual's
+        Step 1 precondition (no alarm + Servo OFF) without re-triggering
+        Alarm 12 itself -- see the comment on this branch in
+        servo_control.py."""
         ctrl = make_controller()
+        ctrl.clear_alarm_12 = MagicMock()
         ctrl.config_speed_0x0903 = MagicMock()
         ctrl.config_acc_dec_0x0902 = MagicMock()
         ctrl.Enable_JOG_Mode = MagicMock()
@@ -663,6 +668,7 @@ class TestEnableSpeedCtrl(unittest.TestCase):
 
         ctrl.enable_speed_ctrl(speed_rpm=100, acc_time=5000, enable=True)
 
+        ctrl.clear_alarm_12.assert_called_once()
         ctrl.config_speed_0x0903.assert_called_once_with(100)
         ctrl.config_acc_dec_0x0902.assert_called_once_with(5000)
         ctrl.Enable_JOG_Mode.assert_called_once_with(True)
@@ -670,6 +676,7 @@ class TestEnableSpeedCtrl(unittest.TestCase):
 
     def test_enable_false_exits_jog_mode_without_touching_speed_or_accel(self):
         ctrl = make_controller()
+        ctrl.clear_alarm_12 = MagicMock()
         ctrl.config_speed_0x0903 = MagicMock()
         ctrl.config_acc_dec_0x0902 = MagicMock()
         ctrl.Enable_JOG_Mode = MagicMock()
@@ -678,6 +685,7 @@ class TestEnableSpeedCtrl(unittest.TestCase):
 
         ctrl.enable_speed_ctrl(speed_rpm=200, acc_time=3000, enable=False)
 
+        ctrl.clear_alarm_12.assert_not_called()
         ctrl.config_speed_0x0903.assert_not_called()
         ctrl.config_acc_dec_0x0902.assert_not_called()
         ctrl.Enable_JOG_Mode.assert_called_once_with(False)

@@ -109,29 +109,31 @@ class TestEnableChannel(unittest.TestCase):
 
 
 class TestDirectionChannel(unittest.TestCase):
+    """Per docs/en_manual.txt:10380-10382 (JOG_OPERATION, 0x0904): 1 =
+    forward rotation (CCW), 2 = reverse rotation (CW)."""
 
     def test_low_range_is_ccw(self):
         server, ctrl = make_server()
         server._handle_dmx(universe=0, data=bytes([200, 50, 0]))
-        ctrl.speed_ctrl_action.assert_called_with(2)
+        ctrl.speed_ctrl_action.assert_called_with(1)
 
     def test_high_range_is_cw(self):
         server, ctrl = make_server()
         server._handle_dmx(universe=0, data=bytes([200, 200, 0]))
-        ctrl.speed_ctrl_action.assert_called_with(1)
+        ctrl.speed_ctrl_action.assert_called_with(2)
 
     def test_direction_change_only_fires_on_change(self):
         server, ctrl = make_server()
         server._handle_dmx(universe=0, data=bytes([200, 200, 0]))  # CW
         server._handle_dmx(universe=0, data=bytes([200, 200, 0]))  # same CW again
-        ctrl.speed_ctrl_action.assert_called_once_with(1)
+        ctrl.speed_ctrl_action.assert_called_once_with(2)
 
     def test_direction_change_from_cw_to_ccw_fires_again(self):
         server, ctrl = make_server()
         server._handle_dmx(universe=0, data=bytes([200, 200, 0]))  # CW
         server._handle_dmx(universe=0, data=bytes([200, 50, 0]))   # CCW
         self.assertEqual(ctrl.speed_ctrl_action.call_count, 2)
-        ctrl.speed_ctrl_action.assert_called_with(2)
+        ctrl.speed_ctrl_action.assert_called_with(1)
 
 
 class TestCancelChannel(unittest.TestCase):
