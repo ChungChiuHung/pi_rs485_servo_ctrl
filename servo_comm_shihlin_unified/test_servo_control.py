@@ -659,10 +659,11 @@ class TestEnableSpeedCtrl(unittest.TestCase):
         Alarm 12 itself -- see the comment on this branch in
         servo_control.py."""
         ctrl = make_controller()
-        ctrl.clear_alarm_12 = MagicMock()
-        ctrl.config_speed_0x0903 = MagicMock()
-        ctrl.config_acc_dec_0x0902 = MagicMock()
-        ctrl.Enable_JOG_Mode = MagicMock()
+        call_order = []
+        ctrl.clear_alarm_12 = MagicMock(side_effect=lambda: call_order.append("clear_alarm_12"))
+        ctrl.config_speed_0x0903 = MagicMock(side_effect=lambda v: call_order.append("speed"))
+        ctrl.config_acc_dec_0x0902 = MagicMock(side_effect=lambda v: call_order.append("accel"))
+        ctrl.Enable_JOG_Mode = MagicMock(side_effect=lambda v: call_order.append("jog_mode"))
         ctrl.start_continuous_reading = MagicMock()
         ctrl.delay_ms = MagicMock()
 
@@ -672,7 +673,16 @@ class TestEnableSpeedCtrl(unittest.TestCase):
         ctrl.config_speed_0x0903.assert_called_once_with(100)
         ctrl.config_acc_dec_0x0902.assert_called_once_with(5000)
         ctrl.Enable_JOG_Mode.assert_called_once_with(True)
-        ctrl.start_continuous_reading.assert_called_once_with(0.1)
+        # Manual step order (docs/en_manual.txt:10346-10373): enter JOG mode
+        # (Step 2) BEFORE setting accel (Step 3) and speed (Step 4) -- not
+        # after. Getting this backwards was why the typed-in speed never
+        # actually took effect on the drive.
+        self.assertEqual(call_order, ["clear_alarm_12", "jog_mode", "accel", "speed"])
+        # auto_stop_on_stillness=False: JOG mode runs continuously until
+        # explicitly stopped -- a deliberate MOTION PAUSE must not be
+        # mistaken for "the move finished" (see
+        # TestSoftwareMotionCompleteDetection's matching test).
+        ctrl.start_continuous_reading.assert_called_once_with(0.1, auto_stop_on_stillness=False)
 
     def test_enable_false_exits_jog_mode_without_touching_speed_or_accel(self):
         ctrl = make_controller()
@@ -689,7 +699,7 @@ class TestEnableSpeedCtrl(unittest.TestCase):
         ctrl.config_speed_0x0903.assert_not_called()
         ctrl.config_acc_dec_0x0902.assert_not_called()
         ctrl.Enable_JOG_Mode.assert_called_once_with(False)
-        ctrl.start_continuous_reading.assert_called_once_with(0.1)
+        ctrl.start_continuous_reading.assert_called_once_with(0.1, auto_stop_on_stillness=False)
 
 
 class TestIsAlarmActive(unittest.TestCase):
@@ -772,6 +782,39 @@ class TestSoftwareMotionCompleteDetection(unittest.TestCase):
         self.assertFalse(ctrl.reading_active)
         self.assertEqual(completed_events, [True])
         self.assertEqual(ctrl.current_encoder, settled_value)
+
+    def test_auto_stop_on_stillness_false_keeps_reading_active_through_a_pause(self):
+        """Regression coverage for the 2026-09-18 finding: continuous JOG
+        mode (enable_speed_ctrl()) is a continuous-run mode, not a discrete
+        move -- pressing MOTION PAUSE makes the encoder go still on
+        purpose, and that must not be mistaken for "the move finished" the
+        way it legitimately is for pos_step_motion_test(). Without this
+        flag, the auto-stop killed the background poll thread, which is
+        also this mode's <1s drive keep-alive -- so the drive would then
+        silently exit JOG mode, and the next MOTION START CW/CCW needed
+        ENABLE SPEED CONTROL MODE pressed again first."""
+        ctrl = make_controller()
+        settled_value = STILL_THRESHOLD_PULSES + 1
+        # Same "moved, then held still" pattern as the auto-stop test above,
+        # but with far more settled reads than STILL_COUNT_TO_COMPLETE --
+        # if auto-stop still fired here, it would have done so long before
+        # this many iterations ran.
+        sequence = [0, settled_value] + [settled_value] * (STILL_COUNT_TO_COMPLETE * 3)
+
+        completed_events = []
+        ctrl.register_event_listener("on_motion_completed", lambda: completed_events.append(True))
+        ctrl.read_encoder_before_gear_ratio = MagicMock(side_effect=lambda: sequence.pop(0) if sequence else settled_value)
+        ctrl.delay_ms = MagicMock()
+        ctrl.start_continuous_reading(interval=0.001, auto_stop_on_stillness=False)
+        try:
+            deadline = time.time() + 2
+            while sequence and time.time() < deadline:
+                time.sleep(0.001)
+            time.sleep(0.05)  # let a few more post-sequence iterations run
+            self.assertTrue(ctrl.reading_active)
+            self.assertEqual(completed_events, [])
+        finally:
+            ctrl.stop_continuous_reading()
 
     def test_does_not_auto_stop_if_encoder_never_moves(self):
         """This is the exact "ENABLE POS MODE alone" scenario: position

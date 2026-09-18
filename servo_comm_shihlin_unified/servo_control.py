@@ -111,6 +111,7 @@ class ServoController:
         # comment for why this replaced a PF.PRCM-based check.
         self._motion_seen = False
         self._still_count = 0
+        self._auto_stop_on_stillness = True
         self.abs_home_pos = self.load_abs_home_pos()
         self._event_listeners = {
             "on_motion_completed": [],
@@ -172,7 +173,7 @@ class ServoController:
         logger.info(f"{data_name}: {hex_string}")
 
     # default address = 0x0205
-    def start_continuous_reading(self, interval: float = 0.1) -> None:
+    def start_continuous_reading(self, interval: float = 0.1, auto_stop_on_stillness: bool = True) -> None:
         with self.lock:
             if self.reading_active:
                 self.stop_continuous_reading()
@@ -183,6 +184,13 @@ class ServoController:
             # see _read_continuously()'s comment.
             self._motion_seen = False
             self._still_count = 0
+            # False for continuous JOG/speed-control mode (enable_speed_ctrl()):
+            # that mode runs until explicitly stopped/cancelled, so a
+            # deliberate pause (encoder goes still) must not be mistaken for
+            # "the move finished" and tear the session down. True (default)
+            # for discrete positioning-test moves, where stillness really
+            # does mean the move completed.
+            self._auto_stop_on_stillness = auto_stop_on_stillness
             self.read_thread = threading.Thread(target=self._read_continuously, args=(interval,))
             self.reading_active = True
             self.read_thread.start()
@@ -323,7 +331,7 @@ class ServoController:
                     self._still_count += 1
             previous_encoder_for_stillness = self.current_encoder
 
-            if self._motion_seen and self._still_count >= STILL_COUNT_TO_COMPLETE:
+            if self._auto_stop_on_stillness and self._motion_seen and self._still_count >= STILL_COUNT_TO_COMPLETE:
                 logger.info(
                     f"Motion complete: encoder stable for {self._still_count} consecutive reads."
                 )
@@ -944,15 +952,32 @@ class ServoController:
             # at once.
             self.clear_alarm_12()
             self.delay_ms(100)
-            self.config_speed_0x0903(speed_rpm)
+            # Manual step order is mode-entry (Step 2) THEN accel/speed
+            # (Steps 3-4) -- confirmed 2026-09-18 as load-bearing, not just
+            # documentation style, by the Step 1 precondition above (writing
+            # 0x0901 while Servo was still ON was silently accepted at the
+            # wire level but never took effect on the drive). Setting
+            # 0x0903 before the drive is actually in JOG mode risked the
+            # same failure mode -- the speed value never taking hold,
+            # regardless of what was typed into the UI.
+            self.Enable_JOG_Mode(True)
             self.delay_ms(100)
             self.config_acc_dec_0x0902(acc_time)
             self.delay_ms(100)
-            self.Enable_JOG_Mode(True)
+            self.config_speed_0x0903(speed_rpm)
         else:
             self.Enable_JOG_Mode(False)
         self.delay_ms(100)
-        self.start_continuous_reading(0.1)
+        # auto_stop_on_stillness=False: JOG mode is continuous-run, not a
+        # discrete move -- pressing MOTION PAUSE (speed_ctrl_action(0)) is a
+        # deliberate hold, not "the move finished", so the stillness-based
+        # auto-stop built for pos_step_motion_test() must not tear this
+        # session down. If it did, the background poll thread (also this
+        # mode's <1s keep-alive, see _read_continuously()'s comment) would
+        # die, the drive would silently exit JOG mode after the timeout, and
+        # the next MOTION START CW/CCW would need ENABLE SPEED CONTROL MODE
+        # pressed again first to re-enter JOG mode.
+        self.start_continuous_reading(0.1, auto_stop_on_stillness=False)
 
     # 0: Stop
     # 1: CW
