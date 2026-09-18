@@ -109,6 +109,15 @@ cd pi_rs485_servo_ctrl
 pip3 install -r requirements.txt
 ```
 
+> **Pushing changes back:** the HTTPS clone above works fine for pulling, but
+> GitHub no longer accepts password authentication for `git push` over
+> HTTPS. Either set up a [Personal access token](https://github.com/settings/tokens)
+> as your Git credential, or switch the remote to SSH (requires an SSH key
+> added to your GitHub account under Settings → SSH and GPG keys first):
+> ```
+> git remote set-url origin git@github.com:ChungChiuHung/pi_rs485_servo_ctrl.git
+> ```
+
 # Running the Web UI
 ```
 cd servo_comm_shihlin/        # or servo_comm_shihlin_50W/, or servo_communication/
