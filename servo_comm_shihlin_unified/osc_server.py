@@ -61,13 +61,12 @@ class OSCInputServer:
             logger.error(f"Error sending OSC feedback to {address}: {e}")
 
     def _check_duplicated(self, data):
-        """NOTE: mirrors the original's dedup logic exactly, including its
-        pre-existing quirk of sharing one `_previous_data` slot across
-        every handler that calls it (servo_handler and set_point_handler) --
-        so e.g. /servo 1.0 followed by /set_point 1.0 ... would see the
-        angle as "duplicate" of the servo command's data. Not fixed here to
-        keep this port behavior-faithful; flagged for a follow-up if it
-        turns out to matter in practice."""
+        """Only _servo_handler calls this (verified 2026-09-19 -- an
+        earlier comment here incorrectly claimed _set_point_handler shared
+        this same `_previous_data` slot too; it doesn't call
+        _check_duplicated at all, so a repeated /set_point is never
+        suppressed). Dedup exists so a control surface that resends /servo
+        1.0 on every frame doesn't call servo_on() repeatedly."""
         if data != self._previous_data:
             self._previous_data = data
             return False

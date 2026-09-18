@@ -157,6 +157,70 @@ class TestCancelChannel(unittest.TestCase):
         self.assertEqual(ctrl.cancel_continuous_reading.call_count, 2)
 
 
+class TestPositionModeChannels(unittest.TestCase):
+    """Channels 4-7 -- absolute-angle position mode, mirroring OSC's
+    /set_point (ServoController.post_step_motion_by()). Requires a 7-byte
+    (or longer) DMX frame; a sender using only channels 1-3 (continuous
+    mode) never triggers this, so the two modes coexist in one universe."""
+
+    def test_short_frame_without_position_channels_never_triggers(self):
+        """Backward compatible with a sender that only fills channels 1-3."""
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0]))
+        ctrl.post_step_motion_by.assert_not_called()
+
+    def test_rising_edge_triggers_move_with_default_max_angle(self):
+        server, ctrl = make_server(max_speed_rpm=100, acc_time=5000)
+        # channel4=255 (trigger), channels5-6=0xFFFF (max angle), channel7=255 (max speed)
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, 255, 255, 255]))
+        ctrl.post_step_motion_by.assert_called_once_with(360.0, 5000, 100)
+
+    def test_angle_zero_when_channels_5_and_6_are_zero(self):
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, 0, 0, 0]))
+        ctrl.post_step_motion_by.assert_called_once_with(0.0, 5000, 1)
+
+    def test_angle_scales_with_custom_position_mode_max_angle(self):
+        server, ctrl = make_server(position_mode_max_angle=180)
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, 255, 255, 0]))
+        angle_arg = ctrl.post_step_motion_by.call_args[0][0]
+        self.assertAlmostEqual(angle_arg, 180.0, places=2)
+
+    def test_speed_channel_scales_with_max_speed_rpm(self):
+        server, ctrl = make_server(max_speed_rpm=200)
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, 0, 0, 128]))
+        speed_arg = ctrl.post_step_motion_by.call_args[0][2]
+        self.assertEqual(speed_arg, round(128 / 255 * 200))
+
+    def test_zero_speed_channel_is_clamped_to_minimum_1_rpm(self):
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, 0, 0, 0]))
+        speed_arg = ctrl.post_step_motion_by.call_args[0][2]
+        self.assertEqual(speed_arg, 1)
+
+    def test_sustained_high_trigger_does_not_retrigger(self):
+        server, ctrl = make_server()
+        for _ in range(5):
+            server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, 100, 0, 100]))
+        ctrl.post_step_motion_by.assert_called_once()
+
+    def test_trigger_can_fire_again_after_returning_to_zero(self):
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, 100, 0, 100]))
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 0, 100, 0, 100]))
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, 100, 0, 100]))
+        self.assertEqual(ctrl.post_step_motion_by.call_count, 2)
+
+    def test_position_mode_does_not_interfere_with_continuous_mode_channels(self):
+        """Both modes read the same DMX frame -- a position-mode trigger on
+        channel 4 must not also fire continuous-motion methods, and vice
+        versa; they're independent, edge-triggered channels."""
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, 100, 0, 100]))
+        ctrl.enable_speed_ctrl.assert_not_called()
+        ctrl.speed_ctrl_action.assert_not_called()
+
+
 class TestStartStopLifecycle(unittest.TestCase):
 
     def test_start_sets_is_running_and_stop_clears_it(self):

@@ -105,6 +105,74 @@ class TestCancelLoopHandler(unittest.TestCase):
         server._cancel_loop_handler(None)
         ctrl.cancel_continuous_reading.assert_called_once()
 
+    def test_sends_feedback_with_current_angle(self):
+        server, ctrl = make_server(feedback_ip="127.0.0.1", feedback_port=0)
+        server._osc_client = MagicMock()
+        server._cancel_loop_handler(None)
+        server._osc_client.send_message.assert_called_once_with("/cancel_loop", (ctrl.current_angle,))
+
+    def test_exception_is_caught(self):
+        server, ctrl = make_server()
+        ctrl.cancel_continuous_reading.side_effect = Exception("comm failure")
+        server._cancel_loop_handler(None)  # must not raise
+
+
+class TestBackHomeHandler(unittest.TestCase):
+
+    def test_calls_initial_abs_home(self):
+        server, ctrl = make_server()
+        server._back_home_handler(None)
+        ctrl.initial_abs_home.assert_called_once()
+
+    def test_exception_is_caught(self):
+        server, ctrl = make_server()
+        ctrl.initial_abs_home.side_effect = Exception("comm failure")
+        server._back_home_handler(None)  # must not raise
+
+
+class TestSetHomePositionHandler(unittest.TestCase):
+
+    def test_calls_set_home_position(self):
+        server, ctrl = make_server()
+        server._set_home_position_handler(None)
+        ctrl.set_home_position.assert_called_once()
+
+    def test_exception_is_caught(self):
+        server, ctrl = make_server()
+        ctrl.set_home_position.side_effect = Exception("comm failure")
+        server._set_home_position_handler(None)  # must not raise
+
+
+class TestResetInitialAbsPositionHandler(unittest.TestCase):
+
+    def test_calls_write_pa29(self):
+        server, ctrl = make_server()
+        server._reset_initial_abs_position_handler(None)
+        ctrl.write_PA29_Initial_Abs_Pos.assert_called_once()
+
+    def test_exception_is_caught(self):
+        server, ctrl = make_server()
+        ctrl.write_PA29_Initial_Abs_Pos.side_effect = Exception("comm failure")
+        server._reset_initial_abs_position_handler(None)  # must not raise
+
+
+class TestServoControllerEventCallbacks(unittest.TestCase):
+    """register_event_listener("on_motion_completed"/"on_moving", ...) --
+    the two callbacks start()/stop() wire up against the real
+    ServoController event system, forwarded here as OSC feedback."""
+
+    def test_on_motion_completed_sends_feedback(self):
+        server, ctrl = make_server(feedback_ip="127.0.0.1", feedback_port=0)
+        server._osc_client = MagicMock()
+        server._on_motion_completed()
+        server._osc_client.send_message.assert_called_once_with("/motion_complete", ("complete",))
+
+    def test_on_moving_sends_feedback_with_angle(self):
+        server, ctrl = make_server(feedback_ip="127.0.0.1", feedback_port=0)
+        server._osc_client = MagicMock()
+        server._on_moving(45.5)
+        server._osc_client.send_message.assert_called_once_with("/moving", (45.5,))
+
 
 class TestFeedback(unittest.TestCase):
 
@@ -175,6 +243,39 @@ class TestStartStopLifecycle(unittest.TestCase):
                     time.sleep(0.01)
 
                 ctrl.clear_alarm_12.assert_called_once()
+            finally:
+                client._sock.close()
+        finally:
+            server.stop()
+
+    def test_every_registered_address_reaches_its_handler(self):
+        """End-to-end over a real UDP socket for all 9 addresses
+        _build_dispatcher() registers -- servo_ctrller is still a mock (no
+        hardware touched), but this proves the actual network/dispatch
+        wiring for every OSC function this server exposes, not just /clear."""
+        server, ctrl = make_server()
+        server.start()
+        try:
+            actual_port = server._server.server_address[1]
+            client = udp_client.SimpleUDPClient("127.0.0.1", actual_port)
+            cases = [
+                ("/servo", [1.0], lambda: ctrl.servo_on.called),
+                ("/clear", [], lambda: ctrl.clear_alarm_12.called),
+                ("/set_point", [90.0, 3000, 20], lambda: ctrl.post_step_motion_by.called),
+                ("/back_home", [], lambda: ctrl.initial_abs_home.called),
+                ("/set_home", [], lambda: ctrl.set_home_position.called),
+                ("/reset_initial_abs_position", [], lambda: ctrl.write_PA29_Initial_Abs_Pos.called),
+                ("/set_continous_motion", [100, 5000, True], lambda: ctrl.enable_speed_ctrl.called),
+                ("/ctrl_continuous_motion", ["start", "CW"], lambda: ctrl.speed_ctrl_action.called),
+                ("/cancel_loop", [], lambda: ctrl.cancel_continuous_reading.called),
+            ]
+            try:
+                for address, args, reached in cases:
+                    client.send_message(address, args)
+                    deadline = time.time() + 2
+                    while not reached() and time.time() < deadline:
+                        time.sleep(0.01)
+                    self.assertTrue(reached(), f"{address} never reached its handler")
             finally:
                 client._sock.close()
         finally:

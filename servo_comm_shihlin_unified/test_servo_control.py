@@ -220,6 +220,24 @@ class TestCancelContinuousReading(unittest.TestCase):
 
         ctrl.stop_continuous_reading.assert_called_once()
 
+    def test_explicitly_exits_test_mode(self):
+        """Regression coverage for a gap found via live OSC testing
+        (2026-09-19): OSC/Art-Net's cancel path only stopped the keep-alive
+        poll thread, relying on the drive's own ~1s communication-timeout
+        to fall out of test mode on its own instead of exiting immediately
+        -- unlike the web UI's MOTION CANCEL, which calls
+        Enable_Position_Mode(False) explicitly. Enable_Position_Mode(False)
+        is the documented generic "quit test mode" write regardless of
+        whether JOG or Positioning test mode was active."""
+        ctrl = make_controller()
+        ctrl.reading_active = True
+        ctrl.Enable_Position_Mode = MagicMock()
+        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=1000)
+
+        ctrl.cancel_continuous_reading()
+
+        ctrl.Enable_Position_Mode.assert_called_once_with(False)
+
     def test_updates_tracker_and_fires_on_cancel(self):
         ctrl = make_controller()
         ctrl.reading_active = True
@@ -777,6 +795,7 @@ class TestEnableSpeedCtrl(unittest.TestCase):
         ctrl.config_acc_dec_0x0902 = MagicMock()
         ctrl.Enable_JOG_Mode = MagicMock()
         ctrl.start_continuous_reading = MagicMock()
+        ctrl.stop_continuous_reading = MagicMock()
         ctrl.delay_ms = MagicMock()
 
         ctrl.enable_speed_ctrl(speed_rpm=200, acc_time=3000, enable=False)
@@ -785,7 +804,41 @@ class TestEnableSpeedCtrl(unittest.TestCase):
         ctrl.config_speed_0x0903.assert_not_called()
         ctrl.config_acc_dec_0x0902.assert_not_called()
         ctrl.Enable_JOG_Mode.assert_called_once_with(False)
-        ctrl.start_continuous_reading.assert_called_once_with(0.1, auto_stop_on_stillness=False)
+        # Regression coverage for a bug found via live OSC testing
+        # (2026-09-19): this used to fall through to the same
+        # start_continuous_reading() call as enable=True, leaving
+        # reading_active=True (background poll thread running) forever
+        # after an explicit "disable" request.
+        ctrl.start_continuous_reading.assert_not_called()
+        ctrl.stop_continuous_reading.assert_called_once()
+
+    def test_enable_as_string_true_is_coerced(self):
+        """Regression coverage for a bug found via live OSC testing
+        (2026-09-19): /set_continous_motion sent enable as the string
+        "True" (not a native OSC boolean) -- `"True" == True` is False in
+        Python, so this silently took the disable branch instead."""
+        ctrl = make_controller()
+        ctrl.clear_alarm_12 = MagicMock()
+        ctrl.config_speed_0x0903 = MagicMock()
+        ctrl.config_acc_dec_0x0902 = MagicMock()
+        ctrl.Enable_JOG_Mode = MagicMock()
+        ctrl.start_continuous_reading = MagicMock()
+        ctrl.delay_ms = MagicMock()
+
+        ctrl.enable_speed_ctrl(speed_rpm=100, acc_time=5000, enable="True")
+
+        ctrl.Enable_JOG_Mode.assert_called_once_with(True)
+        ctrl.config_speed_0x0903.assert_called_once_with(100)
+
+    def test_enable_as_string_false_is_coerced(self):
+        ctrl = make_controller()
+        ctrl.Enable_JOG_Mode = MagicMock()
+        ctrl.stop_continuous_reading = MagicMock()
+        ctrl.delay_ms = MagicMock()
+
+        ctrl.enable_speed_ctrl(speed_rpm=100, acc_time=5000, enable="False")
+
+        ctrl.Enable_JOG_Mode.assert_called_once_with(False)
 
 
 class TestIsAlarmActive(unittest.TestCase):

@@ -270,11 +270,13 @@ def start_input_server():
         universe = int(payload.get("universe", 0))
         max_speed_rpm = int(payload.get("max_speed_rpm", 100))
         acc_time = int(payload.get("acc_time", 5000))
+        position_mode_max_angle = float(payload.get("position_mode_max_angle", 360))
 
         with _state_lock:
             server = ArtNetInputServer(
                 servo_ctrller, listen_ip=listen_ip, listen_port=listen_port,
                 universe=universe, max_speed_rpm=max_speed_rpm, acc_time=acc_time,
+                position_mode_max_angle=position_mode_max_angle,
             )
             try:
                 server.start()

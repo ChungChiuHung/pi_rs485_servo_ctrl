@@ -17,14 +17,21 @@ a standard):
   Channel 2 (direction): 0 = stop; 1-127 = CCW; 128-255 = CW.
   Channel 3 (cancel): 0 = normal; a 0->nonzero transition triggers the same
       cancel behavior as OSC's /cancel_loop.
+  Channel 4 (position-mode trigger): 0 = idle; a 0->nonzero transition
+      triggers a single absolute-angle move (ServoController.post_step_motion_by(),
+      the same call OSC's /set_point makes) using whatever channels 5-7
+      currently hold. Optional -- a sender that only ever fills channels
+      1-3 (continuous mode only) still works, this is just never triggered.
+  Channel 5-6 (target angle, high byte/low byte): a 16-bit big-endian value
+      0-65535, linearly mapped to 0..`position_mode_max_angle` degrees.
+  Channel 7 (position move speed): 1-255 linearly maps to speed_rpm (scaled
+      by `max_speed_rpm`, minimum 1 rpm -- same scaling as channel 1).
 
-All three channels are edge-triggered against the previously-seen frame,
-not re-sent on every DMX refresh (a real Art-Net source typically resends
-the full frame 30-44 times/second even when nothing changed) -- otherwise
-e.g. enable_speed_ctrl()/start_continuous_reading() would be invoked on
-every single frame, and since start_continuous_reading() toggles off if
-called while already active, that would flip continuous reading on and
-off every ~25ms instead of just once per real state change.
+All channels are edge-triggered against the previously-seen frame, not
+re-sent on every DMX refresh (a real Art-Net source typically resends the
+full frame 30-44 times/second even when nothing changed) -- otherwise e.g.
+enable_speed_ctrl() or post_step_motion_by() would fire on every single
+frame instead of once per real state change.
 
 No external Art-Net library dependency: ArtDMX's binary header is small
 and stable, so it's parsed by hand rather than adding a new
@@ -44,13 +51,14 @@ OP_OUTPUT_DMX = 0x5000
 
 class ArtNetInputServer:
     def __init__(self, servo_ctrller, listen_ip="0.0.0.0", listen_port=ARTNET_PORT,
-                 universe=0, max_speed_rpm=100, acc_time=5000):
+                 universe=0, max_speed_rpm=100, acc_time=5000, position_mode_max_angle=360):
         self.servo_ctrller = servo_ctrller
         self.listen_ip = listen_ip
         self.listen_port = listen_port
         self.universe = universe
         self.max_speed_rpm = max_speed_rpm
         self.acc_time = acc_time
+        self.position_mode_max_angle = position_mode_max_angle
 
         self._sock = None
         self._thread = None
@@ -59,6 +67,7 @@ class ArtNetInputServer:
         self._last_enable_channel = None
         self._last_direction_channel = None
         self._last_cancel_channel = 0
+        self._last_position_trigger_channel = 0
 
     @property
     def is_running(self) -> bool:
@@ -92,6 +101,9 @@ class ArtNetInputServer:
                 logger.info("Art-Net: cancel triggered (channel 3 rising edge).")
             self._last_cancel_channel = cancel_channel
 
+            if len(data) >= 7:
+                self._handle_position_mode_channels(data)
+
             if enable_channel == 0:
                 if self._last_enable_channel not in (None, 0):
                     self.servo_ctrller.speed_ctrl_action(0)
@@ -122,6 +134,24 @@ class ArtNetInputServer:
         except Exception as e:
             logger.error(f"Error handling Art-Net DMX frame: {e}")
 
+    def _handle_position_mode_channels(self, data: bytes) -> None:
+        """Channels 4-7 -- absolute-angle position mode, the same call
+        OSC's /set_point makes. Requires len(data) >= 7 (checked by the
+        caller); a sender using only channels 1-3 never triggers this."""
+        position_trigger_channel = data[3]
+        angle_high_byte, angle_low_byte, speed_channel = data[4], data[5], data[6]
+
+        if position_trigger_channel > 0 and self._last_position_trigger_channel == 0:
+            angle_raw = (angle_high_byte << 8) | angle_low_byte
+            angle = angle_raw / 65535 * self.position_mode_max_angle
+            speed_rpm = max(1, round(speed_channel / 255 * self.max_speed_rpm))
+            self.servo_ctrller.post_step_motion_by(angle, self.acc_time, speed_rpm)
+            logger.info(
+                f"Art-Net: position-mode move to {angle:.2f} deg at {speed_rpm} rpm "
+                f"(channel 4 rising edge, channels 5-6 = {angle_raw}, channel 7 = {speed_channel})."
+            )
+        self._last_position_trigger_channel = position_trigger_channel
+
     def _serve(self) -> None:
         self._sock.settimeout(0.5)
         while not self._stop_event.is_set():
@@ -144,6 +174,7 @@ class ArtNetInputServer:
         self._last_enable_channel = None
         self._last_direction_channel = None
         self._last_cancel_channel = 0
+        self._last_position_trigger_channel = 0
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._sock.bind((self.listen_ip, self.listen_port))

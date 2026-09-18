@@ -249,6 +249,7 @@
                     } else {
                         payload.listen_port = parseInt($('#artnet_listen_port').val(), 10) || 6454;
                         payload.universe = parseInt($('#artnet_universe').val(), 10) || 0;
+                        payload.position_mode_max_angle = parseFloat($('#artnet_position_max_angle').val()) || 360;
                     }
                     $('#input_server_action_status').text('Starting ' + type + '...');
                     $.ajax({
@@ -403,6 +404,10 @@
                 <div class="form-group artnet-only">
                     <label for="artnet_universe">Art-Net universe:</label>
                     <input type="number" id="artnet_universe" value="0">
+                </div>
+                <div class="form-group artnet-only">
+                    <label for="artnet_position_max_angle">Art-Net position-mode max angle (deg):</label>
+                    <input type="number" id="artnet_position_max_angle" value="360">
                 </div>
                 <div class="button-container">
                     <button class="button" id="startInputServerBtn">Start</button>

@@ -36,10 +36,19 @@ NO_ALARM_CODES = frozenset({0, 0xFF})
 
 
 # Software motion-complete detection (see _read_continuously()). A per-poll
-# encoder delta at or below this many pulses counts as "not moving" -- set
-# comfortably above the ~1-2 pulse jitter observed on a stationary encoder
-# in real-hardware testing, so sensor noise alone never registers as motion.
-STILL_THRESHOLD_PULSES = 10
+# encoder delta at or below this many pulses counts as "not moving". The
+# original value (10) was calibrated against a stationary, torque-off
+# encoder's ~1-2 pulse noise floor -- but a real positioning-test move,
+# once it arrives and HOLDS the target under active closed-loop torque,
+# dithers considerably more than that (confirmed live 2026-09-19: a real
+# completed +90deg move sat at up to +/-45 pulses/poll indefinitely). With
+# the old threshold, that hold-dither was misread as continuous "motion",
+# _still_count never reached STILL_COUNT_TO_COMPLETE, and the auto-stop
+# never fired -- reading_active (and the drive's test mode/Servo-on state)
+# stayed on forever after every real move. Raised well above the observed
+# dither, and still far below any real intended move (the smallest
+# practical move, ~1 degree, is on the order of 1000 pulses).
+STILL_THRESHOLD_PULSES = 200
 # Consecutive "not moving" polls required before declaring motion complete.
 # At the loop's ~100-150ms per-iteration pace this is roughly 1-1.5 seconds
 # of confirmed stillness -- long enough that the brief pause between
@@ -252,8 +261,22 @@ class ServoController:
         reading afterward and fires on_cancel with the resulting angle.
         Used by the OSC/Art-Net "cancel loop" control (design doc §2.2 #1).
         Calls stop_continuous_reading() instead of duplicating its body
-        (servo_comm_shihlin_50W's version was a copy-paste of it)."""
+        (servo_comm_shihlin_50W's version was a copy-paste of it).
+
+        Also explicitly exits whatever test mode is active (CTRL_MODE_SEL ->
+        0x0000), matching the web UI's MOTION CANCEL (stop_continuous_reading()
+        + Enable_Position_Mode(False)) -- without this, OSC/Art-Net's cancel
+        only stopped the keep-alive poll thread and relied on the drive's own
+        ~1s communication-timeout to fall out of test mode on its own,
+        instead of exiting immediately and deterministically. Confirmed live
+        via OSC 2026-09-19: /cancel_loop left CTRL_MODE_SEL in its prior
+        state (e.g. still 3, JOG test) until the timeout caught up a moment
+        later. Enable_Position_Mode(False) is the documented generic "quit
+        test mode" write regardless of which mode (JOG or Positioning) was
+        active -- see docs/en_manual.txt's Step 6/Step 7 for each.
+        """
         self.stop_continuous_reading()
+        self.Enable_Position_Mode(False)
         with self.lock:
             self.delay_ms(50)
             raw_encoder = self.read_encoder_before_gear_ratio()
@@ -988,7 +1011,16 @@ class ServoController:
         # was never actually switched into JOG mode and speed_rpm/acc_time
         # were silently ignored on the enable=True path (the one every
         # caller -- the web UI button, OSC, Art-Net -- actually uses).
-        if enable == True:
+        # OSC clients can send `enable` as a plain string ("True"/"False")
+        # rather than a native OSC boolean -- "True" == True is False in
+        # Python, so without this coercion a string "True" silently took
+        # the wrong (disable) branch with zero error/warning. Confirmed
+        # live via OSC 2026-09-19: /set_continous_motion 100,5000,"True"
+        # armed nothing.
+        if isinstance(enable, str):
+            enable = enable.strip().lower() in ("true", "1", "on", "yes")
+
+        if enable:
             # Manual Step 1 for JOG test (docs/en_manual.txt:10347): the
             # drive only accepts entering JOG mode "without any alarm
             # occurrence or Servo ON activated". Deliberately calling
@@ -1014,19 +1046,29 @@ class ServoController:
             self.config_acc_dec_0x0902(acc_time)
             self.delay_ms(100)
             self.config_speed_0x0903(speed_rpm)
+            self.delay_ms(100)
+            # auto_stop_on_stillness=False: JOG mode is continuous-run, not
+            # a discrete move -- pressing MOTION PAUSE (speed_ctrl_action(0))
+            # is a deliberate hold, not "the move finished", so the
+            # stillness-based auto-stop built for pos_step_motion_test()
+            # must not tear this session down. If it did, the background
+            # poll thread (also this mode's <1s keep-alive, see
+            # _read_continuously()'s comment) would die, the drive would
+            # silently exit JOG mode after the timeout, and the next MOTION
+            # START CW/CCW would need ENABLE SPEED CONTROL MODE pressed
+            # again first to re-enter JOG mode.
+            self.start_continuous_reading(0.1, auto_stop_on_stillness=False)
         else:
             self.Enable_JOG_Mode(False)
-        self.delay_ms(100)
-        # auto_stop_on_stillness=False: JOG mode is continuous-run, not a
-        # discrete move -- pressing MOTION PAUSE (speed_ctrl_action(0)) is a
-        # deliberate hold, not "the move finished", so the stillness-based
-        # auto-stop built for pos_step_motion_test() must not tear this
-        # session down. If it did, the background poll thread (also this
-        # mode's <1s keep-alive, see _read_continuously()'s comment) would
-        # die, the drive would silently exit JOG mode after the timeout, and
-        # the next MOTION START CW/CCW would need ENABLE SPEED CONTROL MODE
-        # pressed again first to re-enter JOG mode.
-        self.start_continuous_reading(0.1, auto_stop_on_stillness=False)
+            self.delay_ms(100)
+            # Disabling continuous motion must stop the keep-alive polling
+            # too -- this previously fell through to the same
+            # start_continuous_reading() call as the enable=True branch,
+            # leaving reading_active=True (and the background thread
+            # running indefinitely) even after an explicit "disable"
+            # request. Confirmed live via OSC 2026-09-19: /set_continous_motion
+            # ...,False left reading_active=True.
+            self.stop_continuous_reading()
 
     # 0: Stop
     # 1: CW
