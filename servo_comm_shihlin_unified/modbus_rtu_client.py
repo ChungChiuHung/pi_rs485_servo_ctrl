@@ -53,10 +53,47 @@ class ModbusRTUClient:
         """addr(1) + func(1) + byte_count(1) + data(word_length*2) + crc(2)."""
         return 5 + word_length * 2
 
+    @staticmethod
+    def expected_write_response_length() -> int:
+        """A write-single-register echo mirrors the request's shape:
+        addr(1) + func(1) + address(2) + data(2) + crc(2)."""
+        return 8
+
+    def _infer_expected_length(self, message: bytes) -> Union[int, None]:
+        """Works out how many bytes a response to `message` should be, from
+        the message itself (function code, and for reads, the word_length
+        already encoded in it) -- so callers don't have to compute and pass
+        expected_length by hand at each of the ~40 call sites in
+        servo_control.py. Returns None if the message is too short to
+        contain a function code (caller falls back to timeout-based
+        receive()).
+
+        This matters beyond convenience: without a known expected_length,
+        receive() has no way to tell "this response is complete" from "more
+        bytes might still be coming", so it just keeps accumulating
+        whatever arrives until the line goes quiet. If an earlier
+        transaction left an unread response sitting in the input buffer
+        (e.g. a write whose driver-echo was never drained), that leftover
+        gets silently concatenated onto this transaction's real response --
+        see docs/servo_comm_shihlin_merge_design.md's note on the
+        concatenated-frame bug this was written to fix.
+        """
+        if len(message) < 6:
+            return None
+        command_code = message[1]
+        if command_code == CmdCode.READ_DATA.value:
+            word_length = struct.unpack('>H', message[4:6])[0]
+            return self.expected_read_response_length(word_length)
+        if command_code in (CmdCode.WRITE_DATA.value, CmdCode.WRITE_MULTI_DATA.value):
+            return self.expected_write_response_length()
+        return None
+
     def send_and_receive(self, message: bytes, expected_length: int = None,
                           timeout: float = 0.5) -> Union[bytes, None]:
         try:
             self.send(message)
+            if expected_length is None:
+                expected_length = self._infer_expected_length(message)
             return self.receive(expected_length, timeout)
         except Exception as e:
             logger.error(f"Error in send_and_receive: {e}")
@@ -65,8 +102,15 @@ class ModbusRTUClient:
     def send(self, message: bytes) -> None:
         if self.ensure_connection():
             try:
+                serial_instance = self.serial_port_manager.get_serial_instance()
+                # Defensive: discard any bytes still sitting unread from an
+                # earlier transaction (e.g. a fire-and-forget write whose
+                # echo was never drained) before this new request's
+                # response can arrive and get concatenated onto that
+                # leftover data.
+                serial_instance.reset_input_buffer()
                 logger.debug(f"Message sent: {message.hex()}")
-                self.serial_port_manager.get_serial_instance().write(message)
+                serial_instance.write(message)
             except serial.SerialException as e:
                 logger.error(f"Failed to send message due to serial error: {e}")
             except Exception as e:
@@ -87,6 +131,18 @@ class ModbusRTUClient:
                         break
                 bytes_to_read = self.serial_port_manager.get_serial_instance().in_waiting
                 if bytes_to_read:
+                    # Cap the read at what's still needed for THIS response
+                    # when the length is known -- in_waiting can already
+                    # hold more than one frame's worth of bytes (e.g. if
+                    # this call was scheduled late and a subsequent,
+                    # unrelated response had time to arrive too), and
+                    # reading all of in_waiting unconditionally would pull
+                    # that next frame's bytes into this one's response
+                    # even though len(response) >= expected_length gets
+                    # checked right after -- by then it's already too late,
+                    # the extra bytes are already mixed in.
+                    if expected_length:
+                        bytes_to_read = min(bytes_to_read, expected_length - len(response))
                     response.extend(self.serial_port_manager.get_serial_instance().read(bytes_to_read or 1))
                     if expected_length and len(response) >= expected_length:
                         break

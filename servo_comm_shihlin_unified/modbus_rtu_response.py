@@ -17,7 +17,17 @@ class ModbusRTUResponse:
 
     def __init__(self, response: Union[bytes, bytearray]):
         if not isinstance(response, (bytes, bytearray)):
-            raise ValueError("RTU response must be bytes/bytearray, not ASCII text")
+            # Most commonly hit with response=None, i.e. send_and_receive()
+            # timed out with no reply -- callers that don't check for None
+            # before constructing this end up here. The old wording ("not
+            # ASCII text") was written to flag ASCII-vs-RTU mixups, but in a
+            # pure-RTU codebase it just reads as a confusing non sequitur
+            # for the much more common "no response" case.
+            raise ValueError(
+                f"RTU response must be bytes/bytearray, got "
+                f"{type(response).__name__} ({response!r}) -- likely no "
+                f"response was received."
+            )
         if len(response) < 5:
             raise ValueError(f"RTU response too short ({len(response)} bytes)")
 

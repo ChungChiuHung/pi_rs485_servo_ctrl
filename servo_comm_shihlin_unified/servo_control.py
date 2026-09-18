@@ -562,7 +562,12 @@ class ServoController:
         if enable == True:
             config_value = 0x0004
         message = self.modbus_client.build_write_message(address, config_value)
-        self.modbus_client.send(message)
+        # send_and_receive (not the old fire-and-forget send()) so the
+        # driver's write-echo gets drained here instead of sitting unread
+        # in the input buffer, where it would silently concatenate onto a
+        # later, unrelated response -- see modbus_rtu_client.py's
+        # _infer_expected_length() docstring for the bug this fixes.
+        self.modbus_client.send_and_receive(message)
 
     def Enable_JOG_Mode(self, enable=True):
         address = ServoControlRegistry.CTRL_MODE_SEL.value
@@ -575,24 +580,26 @@ class ServoController:
     def config_acc_dec_0x0902(self, acc_dec_time):
         config_value = acc_dec_time
         message = self.modbus_client.build_write_message(0x0902, config_value)
-        self.modbus_client.send(message)
+        # See Enable_Position_Mode()'s comment: drains the write echo
+        # instead of leaving it unread for a later transaction to inherit.
+        self.modbus_client.send_and_receive(message)
 
     def config_speed_0x0903(self, speed_rpm):
         config_value = speed_rpm
         message = self.modbus_client.build_write_message(0x0903, config_value)
-        self.modbus_client.send(message)
+        self.modbus_client.send_and_receive(message)
 
     def config_pulses_0x0905_low_byte(self, low_byte):
         address = ServoControlRegistry.POS_PULSES_CMD_L.value
         config_value = low_byte
         message = self.modbus_client.build_write_message(address, config_value)
-        self.modbus_client.send(message)
+        self.modbus_client.send_and_receive(message)
 
     def config_pulses_0x0906_high_byte(self, high_byte):
         address = ServoControlRegistry.POS_PULSES_CMD_H.value
         config_value = high_byte
         message = self.modbus_client.build_write_message(address, config_value)
-        self.modbus_client.send(message)
+        self.modbus_client.send_and_receive(message)
 
     def read_0x0905_low_byte(self):
         message = self.modbus_client.build_read_message(0x0905, 1)
@@ -607,7 +614,7 @@ class ServoController:
     def pos_motion_start_0x0907(self, value):
         config_value = value
         message = self.modbus_client.build_write_message(0x0907, config_value)
-        self.modbus_client.send(message)
+        self.modbus_client.send_and_receive(message)
 
     def read_encoder_before_gear_ratio(self):
         message = self.modbus_client.build_read_message(0x0000, 2)

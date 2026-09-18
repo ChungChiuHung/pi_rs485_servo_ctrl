@@ -439,7 +439,11 @@ class TestConfigAndModeMethods(unittest.TestCase):
         ctrl.modbus_client.build_write_message.assert_called_once_with(
             ServoControlRegistry.CTRL_MODE_SEL.value, 0x0004
         )
-        ctrl.modbus_client.send.assert_called_once()
+        # send_and_receive (not the old fire-and-forget send()) -- the
+        # driver's write echo must be drained here, or it sits unread and
+        # concatenates onto a later, unrelated transaction's response. See
+        # modbus_rtu_client.py's _infer_expected_length() docstring.
+        ctrl.modbus_client.send_and_receive.assert_called_once()
 
     def test_enable_position_mode_false_writes_0x0000(self):
         ctrl = make_controller()
