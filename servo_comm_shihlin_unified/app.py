@@ -153,6 +153,9 @@ def get_status():
         "connected_port": serial_manager.get_connected_port(),
         "baud_rate": serial_manager.get_baud_rate(),
         "reading_active": servo_ctrller.reading_active,
+        # None means "communication failure, unknown" -- never assume it
+        # means "off". See ServoController.read_servo_state()'s docstring.
+        "servo_on": servo_ctrller.read_servo_state(),
         "current_angle": servo_ctrller.current_angle,
         "current_encoder": servo_ctrller.current_encoder,
         "alarm_code": alarm_code,

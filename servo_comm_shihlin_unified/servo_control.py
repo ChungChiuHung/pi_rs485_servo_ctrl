@@ -10,7 +10,7 @@ from modbus_rtu_response import ModbusRTUResponse
 from encoder_pulse_tracker import EncoderPulseTracker
 from servo_utility import ServoUtility
 from servo_control_registers import ServoControlRegistry
-from status_bit_map import DI_Function_Code
+from status_bit_map import DI_Function_Code, BitMapOutput
 from servo_p_register import PA, PC, PD, PE, PF
 
 PA.init_registers()
@@ -261,6 +261,14 @@ class ServoController:
         # move via 0x0907), reading is deliberately left running rather
         # than auto-stopped -- stop it explicitly (MOTION CANCEL /
         # stop_continuous_reading()) instead.
+        #
+        # This loop's poll cadence (`interval`, plus the fixed 100ms retry
+        # delay on a failed read) also does double duty as the drive's
+        # required test-mode keep-alive: 0x0907 puts the drive into
+        # "positioning test operation" mode, which the manual documents as
+        # auto Servo-Off + force-exiting test mode after any communication
+        # gap over 1 second -- see pos_step_motion_test()'s comment. Keep
+        # this loop's timing well under that 1s ceiling.
         previous_encoder_for_stillness = None
 
         while not self.read_thread_stop_event.is_set():
@@ -319,6 +327,17 @@ class ServoController:
                 logger.info(
                     f"Motion complete: encoder stable for {self._still_count} consecutive reads."
                 )
+                # Diagnostic cross-check only -- does the driver's own
+                # official MC_OK signal agree with our software-only
+                # detection? Doesn't affect the stop decision either way;
+                # None (comm failure, or INP/CMDOK not currently assigned
+                # to any DO) just gets logged as "unknown", not treated as
+                # a disagreement.
+                try:
+                    mc_ok = self.read_mc_ok_status()
+                    logger.info(f"MC_OK cross-check at auto-stop: {mc_ok}")
+                except Exception as e:
+                    logger.warning(f"MC_OK cross-check failed (non-fatal): {e}")
                 self.stop_continuous_reading()
                 break
 
@@ -481,6 +500,72 @@ class ServoController:
             logger.error(f"Failed to parse current-alarm response: {e}")
             return None
 
+    def read_mc_ok_status(self):
+        """Cross-check for the software-only motion-complete detection in
+        _read_continuously(): reconstructs the official MC_OK signal
+        (CMDOK AND INP -- docs/en_manual.txt ~line 1598, 8447-8450) by
+        reading which DO pins currently have those two functions assigned
+        (0x020C/0x020D, the DO1-6 function-assignment registers -- see
+        manual ~line 10177-10192) and checking those bits in DO_STATUS
+        (0x0205). Confirmed 2026-09-18 that this unit's DO1-DO6 are still
+        at Pt-mode factory defaults (DO1=INP, DO3=CMDOK among others --
+        manual ~line 1790-1809), but this reads the assignment dynamically
+        rather than hardcoding DO1/DO3, so it keeps working if that's ever
+        reconfigured.
+
+        Returns True/False, or None if either function currently isn't
+        assigned to any DO pin, or on a communication/parse failure (never
+        assume None means "not complete" -- this is a cross-check only,
+        the real auto-stop decision in _read_continuously() does not
+        depend on this method).
+        """
+        with self.lock:
+            assignments = {}
+            for addr in (0x020C, 0x020D):
+                message = self.modbus_client.build_read_message(addr, 1)
+                response = self.modbus_client.send_and_receive(message)
+                if response is None:
+                    logger.error(f"No response reading DO function assignment ({hex(addr)}).")
+                    return None
+                try:
+                    value = ModbusRTUResponse(response).get_value()
+                except Exception as e:
+                    logger.error(f"Failed to parse DO function assignment response: {e}")
+                    return None
+                do_base = 1 if addr == 0x020C else 4
+                assignments[do_base] = value & 0x1F
+                assignments[do_base + 1] = (value >> 5) & 0x1F
+                assignments[do_base + 2] = (value >> 10) & 0x1F
+
+            inp_pin = next(
+                (pin for pin, fn in assignments.items() if fn == BitMapOutput.INP_SA.value), None
+            )
+            cmdok_pin = next(
+                (pin for pin, fn in assignments.items() if fn == BitMapOutput.CMDOK.value), None
+            )
+            if inp_pin is None or cmdok_pin is None:
+                logger.warning(
+                    f"Cannot compute MC_OK: INP assigned to DO{inp_pin}, CMDOK assigned to "
+                    f"DO{cmdok_pin} (need both assigned to some DO pin)."
+                )
+                return None
+
+            message = self.modbus_client.build_read_message(ServoControlRegistry.DO_STATUS.address, 1)
+            response = self.modbus_client.send_and_receive(message)
+            if response is None:
+                logger.error("No response reading DO status (0x0205).")
+                return None
+            try:
+                do_status_value = ModbusRTUResponse(response).get_value()
+            except Exception as e:
+                logger.error(f"Failed to parse DO status response: {e}")
+                return None
+
+        decoded = ServoUtility.decode_do_status(do_status_value)
+        inp_on = decoded[f"DO{inp_pin}"]["status"]
+        cmdok_on = decoded[f"DO{cmdok_pin}"]["status"]
+        return inp_on and cmdok_on
+
     def clear_alarm_via_register(self):
         """Official 'Alarm clearance' register (0x0130): writing 0x1EA5
         clears the current alarm directly. Unlike clear_alarm_12(), this
@@ -549,10 +634,22 @@ class ServoController:
         logging.info(response_object)
 
     def read_servo_state(self):
-        message = self.modbus_client.build_read_message(0x0200, 1)
-        response = self.modbus_client.send_and_receive(message)
-        response_object = ModbusRTUResponse(response)
-        logging.info(response_object)
+        """Read the 'Servo ready status' bit (0x0200, bit0; docs/en_manual.txt
+        ~line 10201): 0 = Servo OFF, 1 = Servo ON. Returns bool, or None on
+        a communication/parse failure (never assume None means "off").
+        """
+        with self.lock:
+            message = self.modbus_client.build_read_message(0x0200, 1)
+            response = self.modbus_client.send_and_receive(message)
+        if response is None:
+            logger.error("No response reading servo state (0x0200).")
+            return None
+        try:
+            value = ModbusRTUResponse(response).get_value()
+        except Exception as e:
+            logger.error(f"Failed to parse servo-state response: {e}")
+            return None
+        return bool(value & 0x01)
 
     def read_control_mode(self):
         message = self.modbus_client.build_read_message(0x0201, 1)
@@ -702,6 +799,18 @@ class ServoController:
         logging.info(response_object)
 
     def pos_step_motion_test(self, CW=True):
+        # pos_motion_start_0x0907 (0x0907, "Positioning test operation") is
+        # a TEST-MODE trigger. Per the SDE manual (confirmed 2026-09-18):
+        # while the drive is in Forced-DO / JOG-test / positioning-test
+        # mode, ANY communication gap over 1 second makes it auto Servo-Off
+        # and force-exit test mode -- mid-motion if that's when the gap
+        # happens. This is why start_continuous_reading() is called BEFORE
+        # triggering 0x0907, not after: its ~100-150ms poll cycle (well
+        # under the 1s limit) is what keeps the drive from timing out for
+        # as long as continuous reading stays active. If anything ever
+        # changes _read_continuously()'s poll interval or retry/backoff
+        # timing, it must stay well under 1s or real in-progress moves can
+        # get cut off by the drive itself, not just by our own software.
         self.start_continuous_reading()
         self.delay_ms(100)
         if CW == True:

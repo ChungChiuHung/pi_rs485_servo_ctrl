@@ -800,5 +800,118 @@ class TestSoftwareMotionCompleteDetection(unittest.TestCase):
         ctrl.stop_continuous_reading()
 
 
+class TestReadServoState(unittest.TestCase):
+
+    def test_bit0_set_returns_true(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+        with patch("servo_control.ModbusRTUResponse") as mock_cls:
+            mock_cls.return_value.get_value.return_value = 0x01
+            self.assertTrue(ctrl.read_servo_state())
+        ctrl.modbus_client.build_read_message.assert_called_once_with(0x0200, 1)
+
+    def test_bit0_clear_returns_false(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+        with patch("servo_control.ModbusRTUResponse") as mock_cls:
+            mock_cls.return_value.get_value.return_value = 0x00
+            self.assertFalse(ctrl.read_servo_state())
+
+    def test_other_bits_set_but_bit0_clear_is_still_false(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+        with patch("servo_control.ModbusRTUResponse") as mock_cls:
+            mock_cls.return_value.get_value.return_value = 0b1110
+            self.assertFalse(ctrl.read_servo_state())
+
+    def test_no_response_returns_none(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = None
+        self.assertIsNone(ctrl.read_servo_state())
+
+
+class TestReadMcOkStatus(unittest.TestCase):
+    """MC_OK (CMDOK AND INP) reconstructed from the DO function-assignment
+    registers (0x020C/0x020D) + DO_STATUS (0x0205), per the 2026-09-18
+    manual research: this unit's DO1=INP, DO3=CMDOK at factory default, but
+    the lookup is dynamic rather than hardcoded to those pins."""
+
+    def _mock_reads(self, ctrl, do1_2_3_assignment, do4_5_6_assignment, do_status_value):
+        """assignment values are already the packed 16-bit register value
+        (as read from 0x020C/0x020D); do_status_value is DO_STATUS's raw
+        value."""
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+        patcher = patch("servo_control.ModbusRTUResponse")
+        mock_cls = patcher.start()
+        self.addCleanup(patcher.stop)
+        mock_cls.return_value.get_value.side_effect = [
+            do1_2_3_assignment, do4_5_6_assignment, do_status_value,
+        ]
+        return ctrl
+
+    def _pack(self, fn1, fn2, fn3):
+        return (fn1 & 0x1F) | ((fn2 & 0x1F) << 5) | ((fn3 & 0x1F) << 10)
+
+    def test_factory_default_do1_inp_do3_cmdok_both_on(self):
+        ctrl = make_controller()
+        # DO1=INP(0x03), DO2=ZSP(0x08), DO3=CMDOK(0x09) -- factory default
+        do1_2_3 = self._pack(0x03, 0x08, 0x09)
+        # DO4=TLC(0x05), DO5=RD(0x01), DO6=ALM(0x02) -- factory default
+        do4_5_6 = self._pack(0x05, 0x01, 0x02)
+        # DO_STATUS: DO1 (bit0) and DO3 (bit2) both on
+        do_status = (1 << 0) | (1 << 2)
+        self._mock_reads(ctrl, do1_2_3, do4_5_6, do_status)
+
+        self.assertTrue(ctrl.read_mc_ok_status())
+
+    def test_inp_on_but_cmdok_off_is_false(self):
+        ctrl = make_controller()
+        do1_2_3 = self._pack(0x03, 0x08, 0x09)
+        do4_5_6 = self._pack(0x05, 0x01, 0x02)
+        do_status = (1 << 0)  # only DO1/INP on, DO3/CMDOK off
+        self._mock_reads(ctrl, do1_2_3, do4_5_6, do_status)
+
+        self.assertFalse(ctrl.read_mc_ok_status())
+
+    def test_neither_on_is_false(self):
+        ctrl = make_controller()
+        do1_2_3 = self._pack(0x03, 0x08, 0x09)
+        do4_5_6 = self._pack(0x05, 0x01, 0x02)
+        self._mock_reads(ctrl, do1_2_3, do4_5_6, do_status_value=0)
+
+        self.assertFalse(ctrl.read_mc_ok_status())
+
+    def test_works_regardless_of_which_do_pins_inp_cmdok_are_assigned_to(self):
+        """Must not hardcode DO1/DO3 -- if someone reassigns these to
+        different pins, the lookup should follow."""
+        ctrl = make_controller()
+        # INP moved to DO4, CMDOK moved to DO6 this time.
+        do1_2_3 = self._pack(0x01, 0x02, 0x08)  # RD, ALM, ZSP
+        do4_5_6 = self._pack(0x03, 0x05, 0x09)  # INP, TLC, CMDOK
+        do_status = (1 << 3) | (1 << 5)  # DO4 (bit3) and DO6 (bit5) on
+        self._mock_reads(ctrl, do1_2_3, do4_5_6, do_status)
+
+        self.assertTrue(ctrl.read_mc_ok_status())
+
+    def test_inp_not_assigned_anywhere_returns_none(self):
+        ctrl = make_controller()
+        do1_2_3 = self._pack(0x01, 0x02, 0x09)  # RD, ALM, CMDOK -- no INP
+        do4_5_6 = self._pack(0x05, 0x08, 0x0A)
+        self._mock_reads(ctrl, do1_2_3, do4_5_6, do_status_value=0xFF)
+
+        self.assertIsNone(ctrl.read_mc_ok_status())
+
+    def test_no_response_on_first_read_returns_none(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = None
+        self.assertIsNone(ctrl.read_mc_ok_status())
+
+
 if __name__ == "__main__":
     unittest.main()

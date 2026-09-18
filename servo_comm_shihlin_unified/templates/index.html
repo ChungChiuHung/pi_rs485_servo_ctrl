@@ -241,6 +241,21 @@
                         $('#status_current_angle').text(response.current_angle.toFixed(4) + ' deg');
                         $('#status_current_encoder').text(response.current_encoder);
 
+                        // servo_on is read fresh from the drive (0x0200
+                        // bit0), not inferred -- null means "communication
+                        // failure, unknown", never treated as "off".
+                        const servoOnTile = $('#status_servo_on_tile');
+                        if (response.servo_on === null) {
+                            $('#status_servo_on').text('unknown');
+                            servoOnTile.addClass('alarm-active');
+                        } else if (response.servo_on) {
+                            $('#status_servo_on').text('Yes');
+                            servoOnTile.removeClass('alarm-active');
+                        } else {
+                            $('#status_servo_on').text('No');
+                            servoOnTile.removeClass('alarm-active');
+                        }
+
                         // Use the backend's alarm_active flag, not a raw
                         // alarm_code != 0 check -- this driver reports 0xFF
                         // (255), not 0, for "no alarm" (confirmed against
@@ -288,6 +303,10 @@
                     <div class="status-tile" id="status_alarm_tile">
                         <span class="label">Alarm Code</span>
                         <span class="value" id="status_alarm_code">-</span>
+                    </div>
+                    <div class="status-tile" id="status_servo_on_tile">
+                        <span class="label">Servo ON</span>
+                        <span class="value" id="status_servo_on">-</span>
                     </div>
                     <div class="status-tile">
                         <span class="label">Continuous Reading</span>
