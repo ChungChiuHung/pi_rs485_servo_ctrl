@@ -922,14 +922,23 @@ class ServoController:
             self.pos_step_motion_test(False)
 
     def enable_speed_ctrl(self, speed_rpm=100, acc_time=5000, enable=True):
+        # Per the SDE manual's "JOG test" procedure (docs/en_manual.txt,
+        # confirmed 2026-09-18): entering JOG mode means writing 0x0003 to
+        # CTRL_MODE_SEL (0x0901), THEN setting accel/decel (0x0902) and
+        # speed (0x0903) -- only then is 0x0904 (JOG_OPERATION, written by
+        # speed_ctrl_action()) meaningful. This previously called
+        # Enable_Position_Mode() instead of Enable_JOG_Mode(), so the drive
+        # was never actually switched into JOG mode and speed_rpm/acc_time
+        # were silently ignored on the enable=True path (the one every
+        # caller -- the web UI button, OSC, Art-Net -- actually uses).
         if enable == True:
-            self.Enable_Position_Mode(False)
-        else:
             self.config_speed_0x0903(speed_rpm)
             self.delay_ms(100)
             self.config_acc_dec_0x0902(acc_time)
             self.delay_ms(100)
-            self.Enable_Position_Mode(True)
+            self.Enable_JOG_Mode(True)
+        else:
+            self.Enable_JOG_Mode(False)
         self.delay_ms(100)
         self.start_continuous_reading(0.1)
 

@@ -643,31 +643,45 @@ class TestPosStepMotionTestAndExecutePositioning(unittest.TestCase):
 
 
 class TestEnableSpeedCtrl(unittest.TestCase):
+    """Regression coverage for the 2026-09-18 real-hardware finding: per the
+    SDE manual's JOG-test procedure, entering JOG mode requires writing
+    0x0003 to CTRL_MODE_SEL (0x0901) via Enable_JOG_Mode(), not
+    Enable_Position_Mode() (0x0004). The old enable=True branch called
+    Enable_Position_Mode(False) and never configured speed/accel or entered
+    JOG mode at all -- meaning the "ENABLE SPEED CONTROL MODE" button (which
+    calls enable_speed_ctrl(100), leaving enable at its True default) never
+    actually switched the drive into JOG mode before speed_ctrl_action()
+    (MOTION START CW/CCW) tried to trigger movement via 0x0904."""
 
-    def test_enable_true_disables_position_mode_then_starts_reading(self):
+    def test_enable_true_configures_speed_and_accel_then_enters_jog_mode(self):
         ctrl = make_controller()
-        ctrl.Enable_Position_Mode = MagicMock()
+        ctrl.config_speed_0x0903 = MagicMock()
+        ctrl.config_acc_dec_0x0902 = MagicMock()
+        ctrl.Enable_JOG_Mode = MagicMock()
         ctrl.start_continuous_reading = MagicMock()
         ctrl.delay_ms = MagicMock()
 
         ctrl.enable_speed_ctrl(speed_rpm=100, acc_time=5000, enable=True)
 
-        ctrl.Enable_Position_Mode.assert_called_once_with(False)
+        ctrl.config_speed_0x0903.assert_called_once_with(100)
+        ctrl.config_acc_dec_0x0902.assert_called_once_with(5000)
+        ctrl.Enable_JOG_Mode.assert_called_once_with(True)
         ctrl.start_continuous_reading.assert_called_once_with(0.1)
 
-    def test_enable_false_configures_speed_and_accel_then_enables_position_mode(self):
+    def test_enable_false_exits_jog_mode_without_touching_speed_or_accel(self):
         ctrl = make_controller()
         ctrl.config_speed_0x0903 = MagicMock()
         ctrl.config_acc_dec_0x0902 = MagicMock()
-        ctrl.Enable_Position_Mode = MagicMock()
+        ctrl.Enable_JOG_Mode = MagicMock()
         ctrl.start_continuous_reading = MagicMock()
         ctrl.delay_ms = MagicMock()
 
         ctrl.enable_speed_ctrl(speed_rpm=200, acc_time=3000, enable=False)
 
-        ctrl.config_speed_0x0903.assert_called_once_with(200)
-        ctrl.config_acc_dec_0x0902.assert_called_once_with(3000)
-        ctrl.Enable_Position_Mode.assert_called_once_with(True)
+        ctrl.config_speed_0x0903.assert_not_called()
+        ctrl.config_acc_dec_0x0902.assert_not_called()
+        ctrl.Enable_JOG_Mode.assert_called_once_with(False)
+        ctrl.start_continuous_reading.assert_called_once_with(0.1)
 
 
 class TestIsAlarmActive(unittest.TestCase):
