@@ -510,6 +510,68 @@ class TestSpeedCtrlAction(unittest.TestCase):
             ctrl.speed_ctrl_action(1)
         ctrl.modbus_client.build_write_message.assert_called_once_with(0x0904, 1)
 
+    def test_returns_true_on_a_normal_write(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+        with patch("servo_control.ModbusRTUResponse"):
+            self.assertTrue(ctrl.speed_ctrl_action(1))
+
+
+class TestSpeedCtrlActionDirectionReversalGuard(unittest.TestCase):
+    """Regression coverage for the user-requested fail-safe (2026-09-18):
+    reversing direction while the motor is still running the other way,
+    without an intervening MOTION PAUSE, could shock the mechanism."""
+
+    def _controller_with_mocked_wire(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+        return ctrl
+
+    def test_fresh_controller_allows_either_direction_first(self):
+        ctrl = self._controller_with_mocked_wire()
+        with patch("servo_control.ModbusRTUResponse"):
+            self.assertTrue(ctrl.speed_ctrl_action(2))  # CW, no prior direction
+
+    def test_repeating_the_same_direction_is_allowed(self):
+        ctrl = self._controller_with_mocked_wire()
+        with patch("servo_control.ModbusRTUResponse"):
+            ctrl.speed_ctrl_action(2)
+            self.assertTrue(ctrl.speed_ctrl_action(2))
+        self.assertEqual(ctrl.modbus_client.build_write_message.call_count, 2)
+
+    def test_direct_reversal_without_pause_is_refused(self):
+        ctrl = self._controller_with_mocked_wire()
+        with patch("servo_control.ModbusRTUResponse"):
+            ctrl.speed_ctrl_action(2)  # CW
+            ctrl.modbus_client.build_write_message.reset_mock()
+            result = ctrl.speed_ctrl_action(1)  # CCW, no pause in between
+        self.assertFalse(result)
+        ctrl.modbus_client.build_write_message.assert_not_called()
+
+    def test_reversal_is_allowed_after_an_explicit_pause(self):
+        ctrl = self._controller_with_mocked_wire()
+        with patch("servo_control.ModbusRTUResponse"):
+            ctrl.speed_ctrl_action(2)  # CW
+            ctrl.speed_ctrl_action(0)  # MOTION PAUSE
+            result = ctrl.speed_ctrl_action(1)  # CCW now allowed
+        self.assertTrue(result)
+
+    def test_stop_continuous_reading_clears_the_guard(self):
+        """A full stop (e.g. MOTION CANCEL) means no direction is active
+        any more -- the next action shouldn't be refused as a "reversal"
+        just because it doesn't match whatever was running before."""
+        ctrl = self._controller_with_mocked_wire()
+        with patch("servo_control.ModbusRTUResponse"):
+            ctrl.speed_ctrl_action(2)  # CW
+        ctrl.read_thread = None
+        ctrl.reading_active = True
+        ctrl.stop_continuous_reading()
+        with patch("servo_control.ModbusRTUResponse"):
+            result = ctrl.speed_ctrl_action(1)  # CCW, no pause, but state was reset
+        self.assertTrue(result)
+
 
 class TestReadMotionCompletedSignal(unittest.TestCase):
 

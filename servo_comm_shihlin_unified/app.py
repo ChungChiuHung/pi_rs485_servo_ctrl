@@ -447,9 +447,19 @@ def handle_action():
     elif action == "motionStart_CW":
         # Per docs/en_manual.txt:10380-10382 (JOG_OPERATION, 0x0904):
         # 1 = forward rotation (CCW), 2 = reverse rotation (CW).
-        servo_ctrller.speed_ctrl_action(2)
+        # speed_ctrl_action() refuses (returns False) a direct reversal
+        # while still running the other direction -- see its own comment.
+        if not servo_ctrller.speed_ctrl_action(2):
+            return jsonify({
+                "status": "error", "action": action,
+                "message": "Press MOTION PAUSE before switching direction.",
+            }), 409
     elif action == "motionStart_CCW":
-        servo_ctrller.speed_ctrl_action(1)
+        if not servo_ctrller.speed_ctrl_action(1):
+            return jsonify({
+                "status": "error", "action": action,
+                "message": "Press MOTION PAUSE before switching direction.",
+            }), 409
     elif action == "motionPause":
         servo_ctrller.speed_ctrl_action(0)
     elif action == "motionCancel":

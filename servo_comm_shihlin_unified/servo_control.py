@@ -111,6 +111,11 @@ class ServoController:
         # comment for why this replaced a PF.PRCM-based check.
         self._motion_seen = False
         self._still_count = 0
+        # None/0 = not currently running in either direction (reversal
+        # guard in speed_ctrl_action() allows the next action freely); 1/2 =
+        # currently commanded CW/CCW (only a matching repeat or an explicit
+        # stop is allowed next -- see speed_ctrl_action()'s comment).
+        self._last_motion_direction = None
         self._auto_stop_on_stillness = True
         self.abs_home_pos = self.load_abs_home_pos()
         self._event_listeners = {
@@ -208,6 +213,7 @@ class ServoController:
             self.read_thread = None
             self._motion_seen = False
             self._still_count = 0
+            self._last_motion_direction = None
             if self.on_initial_home:
                 self.on_initial_home = False
 
@@ -983,6 +989,21 @@ class ServoController:
     # 1: CW
     # 2: CCW
     def speed_ctrl_action(self, action_value):
+        # Fail-safe: refuse to jump straight from one direction to the
+        # other while the motor is still running that way -- an abrupt
+        # reversal without stopping first can shock the mechanism. Requires
+        # an explicit action_value=0 (MOTION PAUSE) in between. Only guards
+        # a direct 1<->2 switch; 0 (stop) and repeating the same direction
+        # are always allowed.
+        if action_value in (1, 2) and self._last_motion_direction in (1, 2) \
+                and action_value != self._last_motion_direction:
+            logging.warning(
+                f"Refusing direct direction reversal (currently "
+                f"{self._last_motion_direction}, requested {action_value}) "
+                "-- send MOTION PAUSE (action_value=0) first."
+            )
+            return False
+
         if action_value == 0:
             logging.info("Servo Stop!")
         elif action_value == 1:
@@ -997,6 +1018,10 @@ class ServoController:
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusRTUResponse(response)
         logging.info(response_object)
+
+        if action_value in (0, 1, 2):
+            self._last_motion_direction = action_value
+        return True
 
     def set_home_position(self):
         with self.lock:
