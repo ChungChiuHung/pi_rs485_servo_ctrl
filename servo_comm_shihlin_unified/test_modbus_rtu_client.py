@@ -14,6 +14,8 @@ up together with its own real response. Fixed two ways, both covered here:
 No real hardware -- a fake serial object simulates in_waiting/read/write.
 """
 import struct
+import threading
+import time
 import unittest
 from unittest.mock import MagicMock
 
@@ -137,6 +139,97 @@ class TestSendFlushesInputBufferFirst(unittest.TestCase):
         self.assertEqual(fake_serial.reset_input_buffer_call_count, 1)
         # the stale bytes were discarded, not left for the next receive()
         self.assertEqual(len(fake_serial._incoming), 0)
+
+
+class RequestEchoingFakeSerial:
+    """Answers every write() with a response tailored to THAT specific
+    request (encodes the requested address into the reply), unlike a fixed
+    canned response -- if two threads' transactions interleave, a thread
+    can end up reading bytes that actually belong to a DIFFERENT thread's
+    response, and an identical-for-everyone canned reply couldn't tell that
+    apart from a clean one. Deliberately has NO internal locking of its
+    own: any interleaving between threads' write()/read()/
+    reset_input_buffer() calls should only be prevented by
+    ModbusRTUClient's own _transaction_lock, so this fake can actually
+    expose a real race if that lock were missing."""
+
+    def __init__(self, write_delay: float = 0.0):
+        self._incoming = bytearray()
+        self._write_delay = write_delay
+        self.write_count = 0
+
+    @property
+    def in_waiting(self):
+        return len(self._incoming)
+
+    def read(self, n):
+        n = min(n, len(self._incoming))
+        chunk = bytes(self._incoming[:n])
+        del self._incoming[:n]
+        return chunk
+
+    def write(self, data):
+        if self._write_delay:
+            time.sleep(self._write_delay)
+        self.write_count += 1
+        address = struct.unpack('>H', data[2:4])[0]
+        response = build_frame(1, CmdCode.READ_DATA.value, b'\x02' + struct.pack('>H', address))
+        self._incoming.extend(response)
+
+    def reset_input_buffer(self):
+        self._incoming.clear()
+
+
+class TestSendAndReceiveIsThreadSafe(unittest.TestCase):
+    """Regression coverage for the 2026-09-18 real-hardware finding: the web
+    UI's periodic /status poll (reads) and an in-progress /action handler's
+    own sequence of writes both call send_and_receive() on the SAME
+    ModbusRTUClient from different threads (ServoController.lock doesn't
+    cover most write methods, e.g. Enable_Position_Mode/config_*/
+    clear_alarm_12 never acquire it). Without serializing at this level,
+    one thread's send() -- which calls reset_input_buffer() -- can run
+    concurrently with another thread's write-then-wait-for-response window,
+    wiping or corrupting that other transaction's response. Confirmed via
+    real CRC-mismatch errors in production logs during exactly this
+    collision (an ENABLE POS MODE action running while /status polled)."""
+
+    def test_concurrent_calls_each_get_their_own_clean_response(self):
+        # A real delay inside write() -- without _transaction_lock, this is
+        # exactly the window where another thread's send() could call
+        # reset_input_buffer() and wipe out, or splice into, a response
+        # that's about to "arrive" for the thread currently in write().
+        fake_serial = RequestEchoingFakeSerial(write_delay=0.02)
+        port_manager = MagicMock()
+        port_manager.get_serial_instance.return_value = fake_serial
+        client = ModbusRTUClient(device_number=1, serial_port_manager=port_manager)
+
+        results = {}
+        results_lock = threading.Lock()
+        addresses = list(range(0x0100, 0x0108))
+        barrier = threading.Barrier(len(addresses))
+
+        def worker(address):
+            message = client.build_read_message(address, 1)
+            barrier.wait(timeout=5)  # force all threads to call send_and_receive at once
+            response = client.send_and_receive(message)
+            with results_lock:
+                results[address] = response
+
+        threads = [threading.Thread(target=worker, args=(addr,)) for addr in addresses]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+
+        self.assertEqual(len(results), len(addresses))
+        for addr in addresses:
+            expected = build_frame(1, CmdCode.READ_DATA.value, b'\x02' + struct.pack('>H', addr))
+            self.assertEqual(
+                results[addr], expected,
+                f"address 0x{addr:04X} got a missing/corrupted response -- "
+                "likely interleaved with another thread's transaction"
+            )
+        self.assertEqual(fake_serial.write_count, len(addresses))
 
 
 if __name__ == "__main__":

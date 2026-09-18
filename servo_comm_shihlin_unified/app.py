@@ -160,6 +160,11 @@ def get_status():
         # None means "communication failure, unknown" -- never assume it
         # means "off". See ServoController.read_servo_state()'s docstring.
         "servo_on": servo_ctrller.read_servo_state(),
+        # Diagnostic: what CTRL_MODE_SEL (0x0901) actually reads back as
+        # right now -- 0=idle, 3=JOG test, 4=Positioning test. Confirms
+        # whether the drive is really latched into a mode a button just
+        # tried to enter (see read_test_mode_0x0901()'s docstring).
+        "ctrl_mode_sel": servo_ctrller.read_test_mode_0x0901(),
         "current_angle": servo_ctrller.current_angle,
         "current_encoder": servo_ctrller.current_encoder,
         "alarm_code": alarm_code,

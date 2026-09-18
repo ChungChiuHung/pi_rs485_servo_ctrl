@@ -181,7 +181,23 @@ class ServoController:
     def start_continuous_reading(self, interval: float = 0.1, auto_stop_on_stillness: bool = True) -> None:
         with self.lock:
             if self.reading_active:
-                self.stop_continuous_reading()
+                # Already running -- e.g. enable_speed_ctrl() left it active
+                # (auto_stop_on_stillness=False keeps it running through a
+                # pause), and enablePosMode/pos_step_motion_test() then also
+                # call this expecting reading to be active afterward.
+                # Previously this stopped the existing session and RETURNED
+                # instead of ensuring one was running -- pos_step_motion_test()
+                # would go on to trigger 0x0907 immediately after, with the
+                # keep-alive poll thread just killed, so the drive's own
+                # 1-second communication timeout could silently exit test
+                # mode (and Servo-off) right as the move was supposed to
+                # start. Refresh this call's session state in place instead
+                # of tearing down and restarting the thread -- reading stays
+                # active throughout, no gap for the drive to time out in.
+                self._motion_seen = False
+                self._still_count = 0
+                self._auto_stop_on_stillness = auto_stop_on_stillness
+                logging.info("Continuous reading already active; refreshed session state.")
                 return
 
             self.read_thread_stop_event.clear()
@@ -678,10 +694,25 @@ class ServoController:
         logging.info(response_object)
 
     def read_test_mode_0x0901(self):
+        """Read CTRL_MODE_SEL (0x0901): 0=idle/normal, 2=DO forced output,
+        3=JOG test, 4=Positioning test. Returns the raw int, or None on a
+        communication/parse failure. Diagnostic only -- lets /status show
+        whether the drive is actually latched into the mode a caller just
+        tried to enter, instead of trusting the write alone (this driver
+        has twice now been found to silently accept a 0x0901 write at the
+        wire level without it taking effect, when its precondition wasn't
+        met -- see enable_speed_ctrl()/_execute_positioning()'s comments).
+        """
         message = self.modbus_client.build_read_message(0x0901, 1)
         response = self.modbus_client.send_and_receive(message)
-        response_object = ModbusRTUResponse(response)
-        logging.info(response_object)
+        if response is None:
+            logger.error("No response reading CTRL_MODE_SEL (0x0901).")
+            return None
+        try:
+            return ModbusRTUResponse(response).get_value()
+        except Exception as e:
+            logger.error(f"Failed to parse CTRL_MODE_SEL response: {e}")
+            return None
 
     def read_PF82(self):
         logging.info(f"Address of P{PF.PRCM.no}, {PF.PRCM.name}: {PF.PRCM.address}")

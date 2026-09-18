@@ -950,6 +950,50 @@ class TestSoftwareMotionCompleteDetection(unittest.TestCase):
         self.assertEqual(ctrl._still_count, 0)
         ctrl.stop_continuous_reading()
 
+    def test_calling_start_while_already_active_leaves_it_active(self):
+        """Regression coverage for the 2026-09-18 finding: this used to
+        stop the existing session and return, instead of ensuring reading
+        was active for the caller that just asked to start it.
+        pos_step_motion_test() calls start_continuous_reading() right
+        before triggering the actual move (0x0907) -- if that killed the
+        keep-alive poll thread instead of leaving it running, the drive's
+        own 1-second communication timeout could silently exit test mode
+        (and Servo-off) right as the move was supposed to start, i.e. the
+        motor just wouldn't move."""
+        ctrl = make_controller()
+        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=1)
+        ctrl.delay_ms = MagicMock(side_effect=lambda ms: time.sleep(0.001))
+        ctrl.start_continuous_reading(interval=0.001, auto_stop_on_stillness=False)
+        try:
+            time.sleep(0.02)
+            thread_before = ctrl.read_thread
+            self.assertTrue(ctrl.reading_active)
+
+            # A second start_continuous_reading() call, as
+            # pos_step_motion_test() makes -- must leave reading active
+            # (same thread, not stopped), not stop it.
+            ctrl.start_continuous_reading(interval=0.001)
+            self.assertTrue(ctrl.reading_active)
+            self.assertIs(ctrl.read_thread, thread_before)
+        finally:
+            ctrl.stop_continuous_reading()
+
+    def test_second_call_refreshes_auto_stop_on_stillness_flag(self):
+        """The second call's auto_stop_on_stillness must take effect even
+        though the thread isn't restarted -- e.g. enable_speed_ctrl() (False)
+        left reading active, and a later pos_step_motion_test() call
+        (default True) needs its own move's completion to actually
+        auto-stop."""
+        ctrl = make_controller()
+        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=1)
+        ctrl.delay_ms = MagicMock(side_effect=lambda ms: time.sleep(0.001))
+        ctrl.start_continuous_reading(interval=0.001, auto_stop_on_stillness=False)
+        try:
+            ctrl.start_continuous_reading(interval=0.001, auto_stop_on_stillness=True)
+            self.assertTrue(ctrl._auto_stop_on_stillness)
+        finally:
+            ctrl.stop_continuous_reading()
+
 
 class TestReadServoState(unittest.TestCase):
 

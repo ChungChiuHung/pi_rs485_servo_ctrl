@@ -1,4 +1,5 @@
 import struct
+import threading
 import time
 import logging
 from typing import Union
@@ -31,6 +32,23 @@ class ModbusRTUClient:
         self.device_number = device_number
         self.serial_port_manager = serial_port_manager
         self.crc = ModbusUtils()
+        # Serializes send_and_receive() across threads. RS-485 is a shared
+        # half-duplex bus and Flask handles requests concurrently -- e.g.
+        # the web UI's /status poll (every 2s) landing while an /action
+        # handler is mid-sequence through several writes. ServoController's
+        # own self.lock doesn't cover most write methods (Enable_Position_Mode,
+        # config_*, clear_alarm_12, etc. never acquire it), so two threads'
+        # send()/receive() calls could interleave on the wire: one thread's
+        # reset_input_buffer() (in send()) could wipe out a response another
+        # thread was still waiting for, or a response could be read by the
+        # wrong thread's receive() entirely. Confirmed 2026-09-18 via real
+        # production logs showing CRC mismatches during exactly this
+        # collision (an /action sequence running concurrently with /status's
+        # polling reads). Locking here, at the lowest level every call site
+        # funnels through, fixes it everywhere at once rather than requiring
+        # every current and future ServoController method to remember to
+        # take a lock itself.
+        self._transaction_lock = threading.Lock()
 
     def build_read_message(self, address: int, word_length: int) -> bytes:
         data = struct.pack('>H', word_length)
@@ -90,14 +108,15 @@ class ModbusRTUClient:
 
     def send_and_receive(self, message: bytes, expected_length: int = None,
                           timeout: float = 0.5) -> Union[bytes, None]:
-        try:
-            self.send(message)
-            if expected_length is None:
-                expected_length = self._infer_expected_length(message)
-            return self.receive(expected_length, timeout)
-        except Exception as e:
-            logger.error(f"Error in send_and_receive: {e}")
-            return None
+        with self._transaction_lock:
+            try:
+                self.send(message)
+                if expected_length is None:
+                    expected_length = self._infer_expected_length(message)
+                return self.receive(expected_length, timeout)
+            except Exception as e:
+                logger.error(f"Error in send_and_receive: {e}")
+                return None
 
     def send(self, message: bytes) -> None:
         if self.ensure_connection():
