@@ -221,6 +221,106 @@ class TestPositionModeChannels(unittest.TestCase):
         ctrl.speed_ctrl_action.assert_not_called()
 
 
+def frame12(servo=0, clear=0, back_home=0, set_home=0, reset_abs=0):
+    """Builds a 12-channel frame with channels 1-7 at their idle/inert
+    values and channels 8-12 set to the given values."""
+    return bytes([0, 0, 0, 0, 0, 0, 0, servo, clear, back_home, set_home, reset_abs])
+
+
+class TestExtendedChannels(unittest.TestCase):
+    """Channels 8-12 -- servo on/off, clear alarm, back home, set home,
+    reset initial absolute position. Mirrors OSC's /servo, /clear,
+    /back_home, /set_home, /reset_initial_abs_position respectively, giving
+    Art-Net feature parity with OSC's non-continuous-motion functions."""
+
+    def test_short_frame_without_extended_channels_never_triggers(self):
+        """Backward compatible with a sender that only fills channels 1-7."""
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 0, 0, 0, 0]))
+        ctrl.servo_on.assert_not_called()
+        ctrl.clear_alarm_12.assert_not_called()
+        ctrl.initial_abs_home.assert_not_called()
+        ctrl.set_home_position.assert_not_called()
+        ctrl.write_PA29_Initial_Abs_Pos.assert_not_called()
+
+    def test_channel8_nonzero_turns_servo_on(self):
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=frame12(servo=200))
+        ctrl.servo_on.assert_called_once()
+        ctrl.servo_off.assert_not_called()
+
+    def test_channel8_zero_after_nonzero_turns_servo_off(self):
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=frame12(servo=200))
+        server._handle_dmx(universe=0, data=frame12(servo=0))
+        ctrl.servo_off.assert_called_once()
+
+    def test_channel8_zero_at_start_does_not_call_off_spuriously(self):
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=frame12(servo=0))
+        ctrl.servo_off.assert_not_called()
+
+    def test_channel8_repeated_same_value_does_not_retrigger(self):
+        server, ctrl = make_server()
+        for _ in range(5):
+            server._handle_dmx(universe=0, data=frame12(servo=200))
+        ctrl.servo_on.assert_called_once()
+
+    def test_channel9_rising_edge_clears_alarm(self):
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=frame12(clear=255))
+        ctrl.clear_alarm_12.assert_called_once()
+
+    def test_channel9_sustained_high_does_not_retrigger(self):
+        server, ctrl = make_server()
+        for _ in range(5):
+            server._handle_dmx(universe=0, data=frame12(clear=255))
+        ctrl.clear_alarm_12.assert_called_once()
+
+    def test_channel10_rising_edge_triggers_back_home(self):
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=frame12(back_home=255))
+        ctrl.initial_abs_home.assert_called_once()
+
+    def test_channel10_sustained_high_does_not_retrigger(self):
+        server, ctrl = make_server()
+        for _ in range(5):
+            server._handle_dmx(universe=0, data=frame12(back_home=255))
+        ctrl.initial_abs_home.assert_called_once()
+
+    def test_channel11_rising_edge_triggers_set_home(self):
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=frame12(set_home=255))
+        ctrl.set_home_position.assert_called_once()
+
+    def test_channel12_rising_edge_triggers_reset_initial_abs_position(self):
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=frame12(reset_abs=255))
+        ctrl.write_PA29_Initial_Abs_Pos.assert_called_once()
+
+    def test_channels_can_fire_again_after_returning_to_zero(self):
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=frame12(clear=255))
+        server._handle_dmx(universe=0, data=frame12(clear=0))
+        server._handle_dmx(universe=0, data=frame12(clear=255))
+        self.assertEqual(ctrl.clear_alarm_12.call_count, 2)
+
+    def test_extended_channels_do_not_interfere_with_other_channels(self):
+        """All four groups (continuous motion, position mode, cancel,
+        extended) read the same DMX frame -- triggering one must not fire
+        methods belonging to the others."""
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=frame12(back_home=255))
+        ctrl.enable_speed_ctrl.assert_not_called()
+        ctrl.speed_ctrl_action.assert_not_called()
+        ctrl.post_step_motion_by.assert_not_called()
+        ctrl.cancel_continuous_reading.assert_not_called()
+        ctrl.servo_on.assert_not_called()
+        ctrl.clear_alarm_12.assert_not_called()
+        ctrl.set_home_position.assert_not_called()
+        ctrl.write_PA29_Initial_Abs_Pos.assert_not_called()
+
+
 class TestStartStopLifecycle(unittest.TestCase):
 
     def test_start_sets_is_running_and_stop_clears_it(self):

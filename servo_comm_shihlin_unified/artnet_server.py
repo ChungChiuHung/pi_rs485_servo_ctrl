@@ -26,6 +26,22 @@ a standard):
       0-65535, linearly mapped to 0..`position_mode_max_angle` degrees.
   Channel 7 (position move speed): 1-255 linearly maps to speed_rpm (scaled
       by `max_speed_rpm`, minimum 1 rpm -- same scaling as channel 1).
+  Channel 8 (servo on/off): 0 = Servo off; 1-255 = Servo on (level-based
+      like channel 1, not edge-triggered -- mirrors OSC's /servo).
+  Channel 9 (clear alarm 12): 0 = normal; a 0->nonzero transition clears
+      Alarm 12, mirroring OSC's /clear.
+  Channel 10 (back home): 0 = idle; a 0->nonzero transition triggers
+      ServoController.initial_abs_home() (a real move back to the saved
+      home position), mirroring OSC's /back_home.
+  Channel 11 (set home): 0 = idle; a 0->nonzero transition triggers
+      ServoController.set_home_position() -- persists the CURRENT position
+      as the new home reference (see its own docstring), mirroring OSC's
+      /set_home.
+  Channel 12 (reset initial absolute position): 0 = idle; a 0->nonzero
+      transition triggers ServoController.write_PA29_Initial_Abs_Pos(),
+      mirroring OSC's /reset_initial_abs_position.
+  Channels 8-12 are optional, like 4-7 -- a sender filling only channels
+  1-3 (or 1-7) still works, these are just never triggered.
 
 All channels are edge-triggered against the previously-seen frame, not
 re-sent on every DMX refresh (a real Art-Net source typically resends the
@@ -68,6 +84,11 @@ class ArtNetInputServer:
         self._last_direction_channel = None
         self._last_cancel_channel = 0
         self._last_position_trigger_channel = 0
+        self._last_servo_channel = None
+        self._last_clear_alarm_channel = 0
+        self._last_back_home_channel = 0
+        self._last_set_home_channel = 0
+        self._last_reset_initial_abs_pos_channel = 0
 
     @property
     def is_running(self) -> bool:
@@ -103,6 +124,9 @@ class ArtNetInputServer:
 
             if len(data) >= 7:
                 self._handle_position_mode_channels(data)
+
+            if len(data) >= 12:
+                self._handle_extended_channels(data)
 
             if enable_channel == 0:
                 if self._last_enable_channel not in (None, 0):
@@ -152,6 +176,48 @@ class ArtNetInputServer:
             )
         self._last_position_trigger_channel = position_trigger_channel
 
+    def _handle_extended_channels(self, data: bytes) -> None:
+        """Channels 8-12 -- servo on/off, clear alarm, back home, set home,
+        reset initial absolute position. Requires len(data) >= 12 (checked
+        by the caller); a sender using only channels 1-7 never triggers
+        this. Mirrors OSC's /servo, /clear, /back_home, /set_home,
+        /reset_initial_abs_position respectively."""
+        servo_channel = data[7]
+        clear_alarm_channel = data[8]
+        back_home_channel = data[9]
+        set_home_channel = data[10]
+        reset_initial_abs_pos_channel = data[11]
+
+        if servo_channel != self._last_servo_channel:
+            if servo_channel == 0:
+                if self._last_servo_channel not in (None, 0):
+                    self.servo_ctrller.servo_off()
+                    logger.info("Art-Net: servo off (channel 8 -> 0).")
+            else:
+                self.servo_ctrller.servo_on()
+                logger.info(f"Art-Net: servo on (channel 8 = {servo_channel}).")
+        self._last_servo_channel = servo_channel
+
+        if clear_alarm_channel > 0 and self._last_clear_alarm_channel == 0:
+            self.servo_ctrller.clear_alarm_12()
+            logger.info("Art-Net: clear alarm 12 triggered (channel 9 rising edge).")
+        self._last_clear_alarm_channel = clear_alarm_channel
+
+        if back_home_channel > 0 and self._last_back_home_channel == 0:
+            self.servo_ctrller.initial_abs_home()
+            logger.info("Art-Net: back home triggered (channel 10 rising edge).")
+        self._last_back_home_channel = back_home_channel
+
+        if set_home_channel > 0 and self._last_set_home_channel == 0:
+            self.servo_ctrller.set_home_position()
+            logger.info("Art-Net: set home triggered (channel 11 rising edge).")
+        self._last_set_home_channel = set_home_channel
+
+        if reset_initial_abs_pos_channel > 0 and self._last_reset_initial_abs_pos_channel == 0:
+            self.servo_ctrller.write_PA29_Initial_Abs_Pos()
+            logger.info("Art-Net: reset initial absolute position triggered (channel 12 rising edge).")
+        self._last_reset_initial_abs_pos_channel = reset_initial_abs_pos_channel
+
     def _serve(self) -> None:
         self._sock.settimeout(0.5)
         while not self._stop_event.is_set():
@@ -175,6 +241,11 @@ class ArtNetInputServer:
         self._last_direction_channel = None
         self._last_cancel_channel = 0
         self._last_position_trigger_channel = 0
+        self._last_servo_channel = None
+        self._last_clear_alarm_channel = 0
+        self._last_back_home_channel = 0
+        self._last_set_home_channel = 0
+        self._last_reset_initial_abs_pos_channel = 0
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._sock.bind((self.listen_ip, self.listen_port))
