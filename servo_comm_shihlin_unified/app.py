@@ -12,6 +12,8 @@ from serial_port_manager import SerialPortManager
 from servo_control import ServoController
 from motor_profile import load_profiles, resolve_profile
 from hardware_lock import hardware_serialized
+from osc_server import OSCInputServer
+from artnet_server import ArtNetInputServer
 
 # GPIO only imports successfully on real Raspberry Pi hardware (RPi.GPIO).
 # Made optional so this app can be developed/tested off-Pi (e.g. this
@@ -47,10 +49,11 @@ _profiles_data = load_profiles()
 current_profile_name = _profiles_data["active_profile"]
 serial_manager = None
 servo_ctrller = None
-# None | "osc" | "artnet" -- set by the Milestone 3/4 server-lifecycle
-# endpoints. Declared here so /profile's mutual-exclusion check already
-# works correctly once those endpoints exist, without revisiting this file.
+# None | "osc" | "artnet" -- guards /profile's mutual-exclusion check and
+# reports which input source (if any) is live.
 active_input_server = None
+# The actual running OSCInputServer/ArtNetInputServer object, or None.
+_input_server_instance = None
 
 
 def _connect_profile(profile_name: str) -> None:
@@ -187,6 +190,116 @@ def set_profile():
             return jsonify({"status": "error", "message": str(e)}), 503
 
     return jsonify({"status": "success", "active_profile": current_profile_name})
+
+
+@app.route('/server/status', methods=['GET'])
+def get_input_server_status():
+    return jsonify({
+        "active_input_server": active_input_server,
+        "is_running": _input_server_instance.is_running if _input_server_instance else False,
+    })
+
+
+@app.route('/server/start', methods=['POST'])
+def start_input_server():
+    """Starts OSC or Art-Net as the live continuous-motion input source.
+    Only one may run at a time -- both would otherwise be able to issue
+    conflicting motion commands to the same ServoController concurrently.
+    Does not itself send anything to the driver; it only registers event
+    listeners and starts a UDP listener thread. Real hardware I/O only
+    happens later, if and when a message actually arrives and a handler
+    calls a ServoController method -- same as any /action button click.
+    """
+    global active_input_server, _input_server_instance
+
+    if active_input_server is not None:
+        return jsonify({
+            "status": "error",
+            "message": f"'{active_input_server}' server is already running. Stop it first.",
+        }), 409
+
+    payload = request.get_json(silent=True) or {}
+    server_type = payload.get("type")
+
+    if server_type == "osc":
+        listen_ip = payload.get("listen_ip", "0.0.0.0")
+        listen_port = int(payload.get("listen_port", 5005))
+        feedback_ip = payload.get("feedback_ip")
+        feedback_port = payload.get("feedback_port")
+        feedback_port = int(feedback_port) if feedback_port else None
+
+        with _state_lock:
+            server = OSCInputServer(
+                servo_ctrller, listen_ip=listen_ip, listen_port=listen_port,
+                feedback_ip=feedback_ip, feedback_port=feedback_port,
+            )
+            try:
+                server.start()
+            except Exception as e:
+                logging.error(f"Failed to start OSC server: {e}")
+                return jsonify({"status": "error", "message": str(e)}), 503
+            _input_server_instance = server
+            active_input_server = "osc"
+
+        return jsonify({
+            "status": "success",
+            "active_input_server": "osc",
+            "listen_ip": listen_ip,
+            "listen_port": listen_port,
+        })
+
+    elif server_type == "artnet":
+        listen_ip = payload.get("listen_ip", "0.0.0.0")
+        listen_port = int(payload.get("listen_port", 6454))
+        universe = int(payload.get("universe", 0))
+        max_speed_rpm = int(payload.get("max_speed_rpm", 100))
+        acc_time = int(payload.get("acc_time", 5000))
+
+        with _state_lock:
+            server = ArtNetInputServer(
+                servo_ctrller, listen_ip=listen_ip, listen_port=listen_port,
+                universe=universe, max_speed_rpm=max_speed_rpm, acc_time=acc_time,
+            )
+            try:
+                server.start()
+            except Exception as e:
+                logging.error(f"Failed to start Art-Net server: {e}")
+                return jsonify({"status": "error", "message": str(e)}), 503
+            _input_server_instance = server
+            active_input_server = "artnet"
+
+        return jsonify({
+            "status": "success",
+            "active_input_server": "artnet",
+            "listen_ip": listen_ip,
+            "listen_port": listen_port,
+            "universe": universe,
+        })
+
+    else:
+        return jsonify({
+            "status": "error",
+            "message": f"Unknown server type: {server_type!r}. Expected 'osc' or 'artnet'.",
+        }), 400
+
+
+@app.route('/server/stop', methods=['POST'])
+def stop_input_server():
+    global active_input_server, _input_server_instance
+
+    if active_input_server is None:
+        return jsonify({"status": "error", "message": "No input server is currently running."}), 400
+
+    with _state_lock:
+        stopped_type = active_input_server
+        try:
+            _input_server_instance.stop()
+        except Exception as e:
+            logging.error(f"Error stopping {stopped_type} server: {e}")
+        _input_server_instance = None
+        active_input_server = None
+
+    return jsonify({"status": "success", "stopped": stopped_type})
 
 
 @app.route('/alarm/clear', methods=['POST'])

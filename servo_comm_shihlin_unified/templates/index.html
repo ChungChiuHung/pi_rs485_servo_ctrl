@@ -159,6 +159,78 @@
 
                 loadProfile();
 
+                // Continuous-motion input server (OSC / Art-Net) control.
+                // Starting/stopping itself never sends anything to the
+                // driver (see app.py's /server/start docstring) -- real
+                // hardware I/O only happens later, if and when a message
+                // actually arrives on whichever protocol is running.
+                function updateInputServerFieldsVisibility() {
+                    const type = $('#input_server_type').val();
+                    $('.osc-only').toggle(type === 'osc');
+                    $('.artnet-only').toggle(type === 'artnet');
+                }
+
+                $('#input_server_type').change(updateInputServerFieldsVisibility);
+                updateInputServerFieldsVisibility();
+
+                function pollInputServerStatus() {
+                    $.get('/server/status', function(response) {
+                        const label = response.active_input_server
+                            ? response.active_input_server.toUpperCase() + (response.is_running ? ' (running)' : ' (starting...)')
+                            : 'None';
+                        $('#input_server_status_label').text(label);
+                        $('#startInputServerBtn').prop('disabled', !!response.active_input_server);
+                        $('#stopInputServerBtn').prop('disabled', !response.active_input_server);
+                    });
+                }
+
+                $('#startInputServerBtn').click(function(){
+                    const type = $('#input_server_type').val();
+                    const payload = {type: type};
+                    if (type === 'osc') {
+                        payload.listen_port = parseInt($('#osc_listen_port').val(), 10) || 5005;
+                    } else {
+                        payload.listen_port = parseInt($('#artnet_listen_port').val(), 10) || 6454;
+                        payload.universe = parseInt($('#artnet_universe').val(), 10) || 0;
+                    }
+                    $('#input_server_action_status').text('Starting ' + type + '...');
+                    $.ajax({
+                        url: '/server/start',
+                        type: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify(payload),
+                        success: function(response) {
+                            $('#input_server_action_status').text(
+                                'Started ' + response.active_input_server + ' on port ' + response.listen_port
+                            );
+                            pollInputServerStatus();
+                        },
+                        error: function(xhr) {
+                            const msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Failed to start server';
+                            $('#input_server_action_status').text('Error: ' + msg);
+                        }
+                    });
+                });
+
+                $('#stopInputServerBtn').click(function(){
+                    $('#input_server_action_status').text('Stopping...');
+                    $.ajax({
+                        url: '/server/stop',
+                        type: 'POST',
+                        success: function(response) {
+                            $('#input_server_action_status').text('Stopped ' + response.stopped);
+                            pollInputServerStatus();
+                        },
+                        error: function(xhr) {
+                            const msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Failed to stop server';
+                            $('#input_server_action_status').text('Error: ' + msg);
+                        }
+                    });
+                });
+
+                pollInputServerStatus();
+                setInterval(pollInputServerStatus, 2000);
+
                 // Live status panel -- read-only, polled on an interval.
                 // Never sends a write/motion command; see GET /status.
                 function pollStatus() {
@@ -233,6 +305,34 @@
                     <select id="profile_select"></select>
                     <span id="profile_status"></span>
                 </div>
+            </section>
+            <section class="input-server">
+                <h2>Continuous Motion Input</h2>
+                <div class="form-group">
+                    <label for="input_server_type">Protocol:</label>
+                    <select id="input_server_type">
+                        <option value="osc">OSC</option>
+                        <option value="artnet">Art-Net</option>
+                    </select>
+                </div>
+                <div class="form-group osc-only">
+                    <label for="osc_listen_port">OSC listen port:</label>
+                    <input type="number" id="osc_listen_port" value="5005">
+                </div>
+                <div class="form-group artnet-only">
+                    <label for="artnet_listen_port">Art-Net listen port:</label>
+                    <input type="number" id="artnet_listen_port" value="6454">
+                </div>
+                <div class="form-group artnet-only">
+                    <label for="artnet_universe">Art-Net universe:</label>
+                    <input type="number" id="artnet_universe" value="0">
+                </div>
+                <div class="button-container">
+                    <button class="button" id="startInputServerBtn">Start</button>
+                    <button class="button" id="stopInputServerBtn">Stop</button>
+                </div>
+                <p>Active: <span id="input_server_status_label">-</span></p>
+                <span id="input_server_action_status"></span>
             </section>
             <section class="Servo Amplifier Controller(RS485)">
                 <div class="rs485">
