@@ -326,11 +326,15 @@ class ServoController:
             response_object = ModbusRTUResponse(response)
             logger.info(response_object)
 
+            # ModbusRTUResponse exposes raw data_bytes (no hex-string .data
+            # list like ModbusResponse/ASCII does) -- decode word-by-word.
             cnt = 1
-            for data in response_object.data:
-                logger.info(f"Original data value: {data}")
+            data_bytes = response_object.data_bytes
+            for i in range(0, len(data_bytes), 2):
+                word_value = int.from_bytes(data_bytes[i:i + 2], byteorder='big')
+                logger.info(f"Original data value: {word_value}")
                 for code in DI_Function_Code:
-                    if code.value == int(data, 16):
+                    if code.value == word_value:
                         logger.info(f"DI{cnt} :{code.name}")
                         cnt += 1
         except SerialException as e:

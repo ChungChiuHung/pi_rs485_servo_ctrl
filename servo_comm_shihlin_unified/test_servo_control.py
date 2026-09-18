@@ -1,16 +1,20 @@
 """
-Unit tests for the new logic introduced by the servo_comm_shihlin_unified
-merge -- NOT a re-test of everything servo_control.py does. Mocks the
-ServoController's own read/write helpers (read_encoder_before_gear_ratio,
-_execute_positioning, the modbus client) rather than raw wire bytes, since
-those wire-level behaviors are already covered by test_encoder_pulse_tracker.py
-and the ModbusRTUClient/ModbusRTUResponse tests.
+Unit tests for servo_control.py.
 
-Covers (per the merge plan): EncoderPulseTracker integration in
-pos_step_motion_by()/set_home_position()/cancel_continuous_reading(), the
-closed-loop diff_angle basis in post_step_motion_by(), the abs()-based
-180-degree guard in both motion functions, and directional float_error
-accumulation.
+Two groups:
+1. New logic introduced by the servo_comm_shihlin_unified merge: closed-loop
+   diff_angle basis, EncoderPulseTracker integration, the abs()-based
+   180-degree guard, directional float_error accumulation.
+2. Register/address-correctness coverage for every read_*/write_*/config_*
+   method ported from servo_comm_shihlin -- these were mechanically switched
+   from ModbusASCIIClient to ModbusRTUClient (see design doc §0), and a
+   mechanical port across ~50 methods is exactly the kind of change where a
+   copy-paste address/word-length mistake is easy to introduce and easy to
+   miss by eye. These tests mock the modbus client (or patch
+   ModbusRTUResponse, mirroring test_absolute_mode_check.py's convention)
+   rather than crafting real wire bytes -- wire-level framing/CRC is already
+   covered elsewhere (test_encoder_pulse_tracker.py, the ModbusRTUClient
+   tests). None of this touches real hardware.
 """
 import os
 import tempfile
@@ -18,6 +22,9 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from servo_control import ServoController
+from servo_utility import ServoUtility
+from servo_control_registers import ServoControlRegistry
+from servo_p_register import PA, PD, PF
 
 PROFILE_400W = {
     "name": "test_400W",
@@ -291,6 +298,368 @@ class TestLockIsReentrant(unittest.TestCase):
         with ctrl.lock:
             with ctrl.lock:
                 pass  # must not deadlock/raise
+
+
+# --- Register/address correctness for every read_*/write_*/config_* method ---
+#
+# (method_name, expected_address, expected_word_length, extra_kwargs)
+# One row per simple "build_read_message(address, word_length)" method.
+READ_METHOD_CASES = [
+    ("read_PA01_Ctrl_Mode", PA.STY.address, 2),
+    ("read_PA33_Encoder_ABS_Pos", 0x0340, 2),
+    ("read_PD_16", PD.SDI.address, 1),
+    ("read_PD_25", PD.ITST.address, 1),
+    ("read_PD_01", PD.DIA1.address, 2),
+    ("read_PD_02", PD.DI1.address, 2),
+    ("read_PD_08", PD.DI7.address, 2),
+    ("read_servo_state", 0x0200, 1),
+    ("read_control_mode", 0x0201, 1),
+    ("read_alarm_msg", 0x0100, 11),
+    ("read_test_mode_0x0901", 0x0901, 1),
+    ("read_0x0905_low_byte", 0x0905, 1),
+    ("read_0x0906_high_byte", 0x0906, 1),
+    ("read_PF82", PF.PRCM.address, 1),
+    ("read_encoder_before_gear_ratio", 0x0000, 2),
+    ("read_encoder_after_gear_ratio", 0x0024, 2),
+]
+
+# (method_name, expected_address, expected_value)
+WRITE_METHOD_CASES = [
+    ("write_PA01_Ctrl_Mode", PA.STY.address, ServoUtility.config_hex_with(0, 0, 1, 0)),
+    ("write_PA29_Initial_Abs_Pos", 0x0338, 1),
+    ("write_PD_16_Enable_DI_Control", PD.SDI.address, ServoUtility.config_hex_with(0, 0xF, 0xF, 0xF)),
+    ("write_PD_25", PD.ITST.address, ServoUtility.config_hex_with(0, 0, 4, 1)),
+    ("clear_alarm", PD.ITST.address, ServoUtility.config_hex_with(0, 3, 4, 0)),
+    ("servo_on", PD.ITST.address, ServoUtility.config_hex_with(0, 3, 4, 1)),
+    ("clear_alarm_12", PD.ITST.address, ServoUtility.config_hex_with(0, 0, 4, 0)),
+    ("servo_off", PD.ITST.address, ServoUtility.config_hex_with(0, 0, 0, 0)),
+    ("clear_alarm_via_register", 0x0130, 0x1EA5),
+]
+
+
+class TestReadMethodAddresses(unittest.TestCase):
+    """Every simple read_* method must build_read_message() with the
+    documented address/word_length -- catches address typos from the
+    ASCII -> RTU mechanical port."""
+
+    @patch("servo_control.ModbusRTUResponse")
+    def test_all_read_methods_use_correct_address_and_word_length(self, mock_response_cls):
+        mock_response_cls.return_value.get_value.return_value = 0
+        mock_response_cls.return_value.data_bytes = b'\x00' * 12
+
+        for method_name, expected_address, expected_word_length in READ_METHOD_CASES:
+            with self.subTest(method=method_name):
+                ctrl = make_controller()
+                ctrl.modbus_client = MagicMock()
+                ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+
+                getattr(ctrl, method_name)()
+
+                ctrl.modbus_client.build_read_message.assert_called_once_with(
+                    expected_address, expected_word_length
+                )
+
+    def test_read_encoder_before_gear_ratio_returns_none_on_empty_response(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = None
+        with patch("servo_control.ModbusRTUResponse") as mock_cls:
+            mock_cls.return_value.get_value.return_value = None
+            result = ctrl.read_encoder_before_gear_ratio()
+        self.assertIsNone(result)
+
+    def test_read_encoder_before_gear_ratio_returns_int(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+        with patch("servo_control.ModbusRTUResponse") as mock_cls:
+            mock_cls.return_value.get_value.return_value = 12345
+            result = ctrl.read_encoder_before_gear_ratio()
+        self.assertEqual(result, 12345)
+        self.assertIsInstance(result, int)
+
+
+class TestWriteMethodAddressesAndValues(unittest.TestCase):
+    """Every simple write_* method must build_write_message() with the
+    documented address/value."""
+
+    @patch("servo_control.ModbusRTUResponse")
+    def test_all_write_methods_use_correct_address_and_value(self, mock_response_cls):
+        mock_response_cls.return_value.get_value.return_value = 0
+
+        for method_name, expected_address, expected_value in WRITE_METHOD_CASES:
+            with self.subTest(method=method_name):
+                ctrl = make_controller()
+                ctrl.modbus_client = MagicMock()
+                ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+
+                getattr(ctrl, method_name)()
+
+                ctrl.modbus_client.build_write_message.assert_called_once_with(
+                    expected_address, expected_value
+                )
+
+    @patch("servo_control.ModbusRTUResponse")
+    def test_write_PD_02_writes_value_1(self, mock_response_cls):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+        ctrl.write_PD_02()
+        ctrl.modbus_client.build_write_message.assert_called_once_with(PD.DI1.address, 1)
+
+    @patch("servo_control.ModbusRTUResponse")
+    def test_write_PD_08_writes_0x02F(self, mock_response_cls):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+        ctrl.write_PD_08()
+        ctrl.modbus_client.build_write_message.assert_called_once_with(PD.DI7.address, 0x02F)
+
+    @patch("servo_control.ModbusRTUResponse")
+    def test_write_PD_01_writes_all_zero_config(self, mock_response_cls):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+        ctrl.write_PD_01()
+        ctrl.modbus_client.build_write_message.assert_called_once_with(
+            PD.DIA1.address, ServoUtility.config_hex_with(0, 0, 0, 0)
+        )
+
+
+class TestConfigAndModeMethods(unittest.TestCase):
+    """Position/JOG mode toggles and motion-parameter config writes --
+    these use modbus_client.send()/send_and_receive() directly rather than
+    a response_object, so there's nothing to parse, just the right
+    address/value pair."""
+
+    def test_enable_position_mode_true_writes_0x0004(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.Enable_Position_Mode(True)
+        ctrl.modbus_client.build_write_message.assert_called_once_with(
+            ServoControlRegistry.CTRL_MODE_SEL.value, 0x0004
+        )
+        ctrl.modbus_client.send.assert_called_once()
+
+    def test_enable_position_mode_false_writes_0x0000(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.Enable_Position_Mode(False)
+        ctrl.modbus_client.build_write_message.assert_called_once_with(
+            ServoControlRegistry.CTRL_MODE_SEL.value, 0x0000
+        )
+
+    def test_enable_jog_mode_true_writes_0x0003(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.Enable_JOG_Mode(True)
+        ctrl.modbus_client.build_write_message.assert_called_once_with(
+            ServoControlRegistry.CTRL_MODE_SEL.value, 0x0003
+        )
+
+    def test_config_acc_dec_passes_value_through(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.config_acc_dec_0x0902(5000)
+        ctrl.modbus_client.build_write_message.assert_called_once_with(0x0902, 5000)
+
+    def test_config_speed_passes_value_through(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.config_speed_0x0903(42)
+        ctrl.modbus_client.build_write_message.assert_called_once_with(0x0903, 42)
+
+    def test_config_pulses_low_byte_uses_registry_address(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.config_pulses_0x0905_low_byte(0x1234)
+        ctrl.modbus_client.build_write_message.assert_called_once_with(
+            ServoControlRegistry.POS_PULSES_CMD_L.value, 0x1234
+        )
+
+    def test_config_pulses_high_byte_uses_registry_address(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.config_pulses_0x0906_high_byte(0x5678)
+        ctrl.modbus_client.build_write_message.assert_called_once_with(
+            ServoControlRegistry.POS_PULSES_CMD_H.value, 0x5678
+        )
+
+    def test_pos_motion_start_writes_value_to_0x0907(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.pos_motion_start_0x0907(2)
+        ctrl.modbus_client.build_write_message.assert_called_once_with(0x0907, 2)
+
+
+class TestSpeedCtrlAction(unittest.TestCase):
+
+    def test_writes_action_value_to_0x0904(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+        with patch("servo_control.ModbusRTUResponse"):
+            ctrl.speed_ctrl_action(1)
+        ctrl.modbus_client.build_write_message.assert_called_once_with(0x0904, 1)
+
+
+class TestReadMotionCompletedSignal(unittest.TestCase):
+
+    def test_returns_true_when_value_nonzero(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+        with patch("servo_control.ModbusRTUResponse") as mock_cls:
+            mock_cls.return_value.get_value.return_value = 1
+            self.assertTrue(ctrl.Read_Motion_Completed_Signal())
+
+    def test_returns_false_when_value_zero(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+        with patch("servo_control.ModbusRTUResponse") as mock_cls:
+            mock_cls.return_value.get_value.return_value = 0
+            self.assertFalse(ctrl.Read_Motion_Completed_Signal())
+
+    def test_returns_false_on_communication_error_not_raise(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.side_effect = Exception("boom")
+        self.assertFalse(ctrl.Read_Motion_Completed_Signal())
+
+
+class TestReadPD16ToPD11DecodeFix(unittest.TestCase):
+    """read_0x0206_To_0x020B() was ported from a version that iterated
+    ModbusResponse's ASCII-only `.data` (hex-string chunks). ModbusRTUResponse
+    has no such attribute -- only data_bytes (raw bytes) -- so the ported
+    version must decode from data_bytes instead, or it silently never
+    matches any DI_Function_Code (caught by the surrounding try/except, so
+    it wouldn't crash, but would never work)."""
+
+    def test_decodes_di_function_codes_from_raw_data_bytes(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+        with patch("servo_control.ModbusRTUResponse") as mock_cls:
+            # SON = 0x01 (see status_bit_map.DI_Function_Code) as the first word.
+            mock_cls.return_value.data_bytes = (0x0001).to_bytes(2, "big") + b'\x00\x00' * 5
+            # Must not raise (this used to hit AttributeError: no `.data`).
+            ctrl.read_0x0206_To_0x020B()
+
+        ctrl.modbus_client.build_read_message.assert_called_once_with(0x0206, 6)
+
+
+class TestWritePF82Validation(unittest.TestCase):
+
+    def test_rejects_negative_value(self):
+        ctrl = make_controller()
+        with self.assertRaises(ValueError):
+            ctrl.write_PF82(-1)
+
+    def test_rejects_value_over_9999(self):
+        ctrl = make_controller()
+        with self.assertRaises(ValueError):
+            ctrl.write_PF82(10000)
+
+    def test_accepts_in_range_value(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+        with patch("servo_control.ModbusRTUResponse"):
+            ctrl.write_PF82(5)  # must not raise
+        ctrl.modbus_client.build_write_message.assert_called_once_with(PF.PRCM.address, 1)
+
+
+class TestReadPosRelatedParameters(unittest.TestCase):
+
+    def test_reads_each_expected_register_once(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+        ctrl.delay_ms = MagicMock()  # skip the real 100ms sleep per register
+
+        ctrl.Read_Pos_Related_Paremters()
+
+        self.assertEqual(ctrl.modbus_client.build_read_message.call_count, 9)
+
+
+class TestPosStepMotionTestAndExecutePositioning(unittest.TestCase):
+
+    def test_pos_step_motion_test_cw_sends_1(self):
+        ctrl = make_controller()
+        ctrl.start_continuous_reading = MagicMock()
+        ctrl.pos_motion_start_0x0907 = MagicMock()
+        ctrl.delay_ms = MagicMock()
+
+        ctrl.pos_step_motion_test(CW=True)
+
+        ctrl.pos_motion_start_0x0907.assert_called_once_with(1)
+
+    def test_pos_step_motion_test_ccw_sends_2(self):
+        ctrl = make_controller()
+        ctrl.start_continuous_reading = MagicMock()
+        ctrl.pos_motion_start_0x0907 = MagicMock()
+        ctrl.delay_ms = MagicMock()
+
+        ctrl.pos_step_motion_test(CW=False)
+
+        ctrl.pos_motion_start_0x0907.assert_called_once_with(2)
+
+    def test_execute_positioning_positive_angle_runs_cw(self):
+        ctrl = make_controller()
+        ctrl.Enable_Position_Mode = MagicMock()
+        ctrl.config_acc_dec_0x0902 = MagicMock()
+        ctrl.config_speed_0x0903 = MagicMock()
+        ctrl.config_pulses_0x0905_low_byte = MagicMock()
+        ctrl.config_pulses_0x0906_high_byte = MagicMock()
+        ctrl.pos_step_motion_test = MagicMock()
+        ctrl.delay_ms = MagicMock()
+
+        ctrl._execute_positioning(angle=10, low_byte=1, high_byte=0, acc_dec_time=100, speed_rpm=5)
+
+        ctrl.pos_step_motion_test.assert_called_once_with(True)
+
+    def test_execute_positioning_negative_angle_runs_ccw(self):
+        ctrl = make_controller()
+        ctrl.Enable_Position_Mode = MagicMock()
+        ctrl.config_acc_dec_0x0902 = MagicMock()
+        ctrl.config_speed_0x0903 = MagicMock()
+        ctrl.config_pulses_0x0905_low_byte = MagicMock()
+        ctrl.config_pulses_0x0906_high_byte = MagicMock()
+        ctrl.pos_step_motion_test = MagicMock()
+        ctrl.delay_ms = MagicMock()
+
+        ctrl._execute_positioning(angle=-10, low_byte=1, high_byte=0, acc_dec_time=100, speed_rpm=5)
+
+        ctrl.pos_step_motion_test.assert_called_once_with(False)
+
+
+class TestEnableSpeedCtrl(unittest.TestCase):
+
+    def test_enable_true_disables_position_mode_then_starts_reading(self):
+        ctrl = make_controller()
+        ctrl.Enable_Position_Mode = MagicMock()
+        ctrl.start_continuous_reading = MagicMock()
+        ctrl.delay_ms = MagicMock()
+
+        ctrl.enable_speed_ctrl(speed_rpm=100, acc_time=5000, enable=True)
+
+        ctrl.Enable_Position_Mode.assert_called_once_with(False)
+        ctrl.start_continuous_reading.assert_called_once_with(0.1)
+
+    def test_enable_false_configures_speed_and_accel_then_enables_position_mode(self):
+        ctrl = make_controller()
+        ctrl.config_speed_0x0903 = MagicMock()
+        ctrl.config_acc_dec_0x0902 = MagicMock()
+        ctrl.Enable_Position_Mode = MagicMock()
+        ctrl.start_continuous_reading = MagicMock()
+        ctrl.delay_ms = MagicMock()
+
+        ctrl.enable_speed_ctrl(speed_rpm=200, acc_time=3000, enable=False)
+
+        ctrl.config_speed_0x0903.assert_called_once_with(200)
+        ctrl.config_acc_dec_0x0902.assert_called_once_with(3000)
+        ctrl.Enable_Position_Mode.assert_called_once_with(True)
 
 
 if __name__ == "__main__":
