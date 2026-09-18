@@ -1,7 +1,8 @@
 # pi_rs485_servo_ctrl
 
 This project is designed to control an AC servo motor from a Raspberry Pi 3B+
-over RS485, using either a Web UI (Flask) or an OSC server.
+over RS485, using either a Web UI (Flask), an OSC server, or an Art-Net
+(DMX-over-Ethernet) server.
 
 > **Safety:** this code sends real commands to a physical servo motor. Make
 > sure the motor and its load are clear of people and obstacles before
@@ -15,7 +16,7 @@ over RS485, using either a Web UI (Flask) or an OSC server.
 |---|---|
 | `servo_comm_shihlin/` | Type 2 motor (Shihlin SDE-series driver), 400W motor variant. Web UI (`app.py`) and OSC server (`osc_2.py`). |
 | `servo_comm_shihlin_50W/` | Same as above, for the SDE-010A2 driver + SME-L00530 (50W) motor. |
-| `servo_comm_shihlin_unified/` | Work in progress: merges the two Shihlin folders into one config-driven package. See its `README.md`. |
+| `servo_comm_shihlin_unified/` | **Recommended for the Shihlin driver.** Merges the two Shihlin folders into one config-driven package (JSON motor-profile switch instead of two hand-synced folders), using Modbus RTU (confirmed against real hardware) rather than the ASCII protocol the two legacy folders below assume. Adds an Art-Net server alongside OSC. See its `README.md` and `OSC_ARTNET_GUIDE.md`. |
 | `servo_communication/` | Type 1 motor (different brand). Web UI (`app.py`). |
 | `web/` + `main.py` | Legacy entrypoint for the Type 1 Web UI; `servo_communication/app.py` supersedes it. `main.py` is a placeholder for a planned config-driven motor selector. |
 | `examples/`, `tests/`, `tools/` | Development scratch code, tests and helper scripts. Not deployed. |
@@ -166,6 +167,13 @@ endpoint falls back to the driver's official "Alarm clearance" register
 not touch DI control source or the virtual EMG state.
 
 # Running the OSC Server
+
+> **Using `servo_comm_shihlin_unified/`?** Its OSC server (and Art-Net
+> server) are started from the web UI or its own HTTP API, not as a
+> separate script — see `servo_comm_shihlin_unified/OSC_ARTNET_GUIDE.md`.
+> The section below describes the legacy `osc_2.py`, which only exists
+> in the two folders it names.
+
 `osc_2.py` exists in both Shihlin folders. Pick the folder that matches the
 connected motor (see [Project Structure](#project-structure)):
 ```

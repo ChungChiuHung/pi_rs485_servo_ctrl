@@ -61,26 +61,25 @@ either state — don't guess which one this repo relies on.**
   eMMC/SSD fallback — the SD card is the only storage, and it's the
   most common hardware failure point on long-running Pi deployments.
 
-## 3. Canonical Module — CONFIRMED 2026-07-22, UPDATED 2026-09-17
+## 3. Canonical Module — CONFIRMED 2026-07-22, UPDATED 2026-09-19
 Repo has several parallel module folders. None are duplicates or dead
 code — each serves a distinct, confirmed purpose:
 
 | Folder | Purpose | Status |
 |---|---|---|
-| `servo_comm_shihlin/` | Type 2 motor (Shihlin SDE-series driver). See README "AC Servo Motor Type 2 Info." | **Actively developed** (404 commits). Self-contained Flask UI in its own `app.py` (full action-route set). Also run via `python osc_2.py` (OSC server), per README. |
-| `servo_comm_shihlin_50W/` | Hardware-variant fork of `servo_comm_shihlin/`, for the SDE-010A2 driver + SME-L00530 (50W) motor specifically. | Active. Only motor-specific files differ (`servo_config.json`, `servo_control.py`, `servo_p_register.py`, `serial_port_manager.py`, `osc_2.py`) — **but `app.py` is now identical between the two folders too** (both have the full Shihlin action-route set), so `app.py` joins the "kept in sync manually" list below. |
-| `servo_comm_shihlin_unified/` | In-progress merge of `servo_comm_shihlin/` + `servo_comm_shihlin_50W/` into one codebase, switching motors via a JSON config (`motor_profiles.json`) instead of manual copy-sync. Design doc: `docs/servo_comm_shihlin_merge_design.md`. | **Design/build phase, not runnable — no `app.py`/`osc_2.py`/`servo_control.py` yet.** Only the communication layer (copied from `servo_comm_shihlin_50W`, the decided baseline) plus a read-only PA28 (absolute-mode) fail-safe check (`absolute_mode_check.py`, `check_pa28.py`) exist so far; tests pass (verified 2026-09-17). Blocked on the user running `check_pa28.py` on real Pi hardware to confirm PA28==1 before `servo_control.py` is migrated/rewritten. Not referenced by `main.py` or any entrypoint. Per its own README, `servo_comm_shihlin/`/`servo_comm_shihlin_50W/` stay in place — not deleted or deprecated — until this passes real-hardware validation on both motor profiles. |
-| `servo_communication/` | Type 1 motor (different brand). See README "AC Servo Motor Type 1 Info." | **Active, and now the real entrypoint** — `app.py` is self-contained with its own full action-route set and local imports; it can run standalone without `web/`. |
+| `servo_comm_shihlin_unified/` | Merge of `servo_comm_shihlin/` + `servo_comm_shihlin_50W/` into one codebase, switching motors via a JSON config (`motor_profiles.json`) instead of manual copy-sync. Design history: `docs/servo_comm_shihlin_merge_design.md`. User guide: its own `README.md` + `OSC_ARTNET_GUIDE.md`. | **Functional and tested — this is the recommended target for Shihlin/Type 2 work now.** Uses Modbus **RTU** (115200 baud, station 1 — confirmed against real hardware 2026-09-18, not the ASCII protocol the two legacy folders below assume; PA28 confirmed 0/incremental-mode, so the merge uses software-side wraparound tracking, not PA32/PA33). Full `app.py` (Flask web UI), `osc_server.py` (9 addresses), `artnet_server.py` (12 DMX channels), `servo_control.py`. 198 unit tests, all passing. Real-hardware-verified through 2026-09-19: alarm handling, JOG continuous rotation, absolute-angle positioning moves (OSC and Art-Net), and back-home — all confirmed via actual motor rotation, not just mocked tests. |
+| `servo_comm_shihlin/` | Type 2 motor (Shihlin SDE-series driver), legacy pre-merge version. See README "AC Servo Motor Type 2 Info." | **Legacy — superseded by `servo_comm_shihlin_unified/` for active work.** Kept in place (not deleted) per the design doc's own bar (real-hardware validation on both motor profiles before removal) — that bar has been met for the `shihlin_400W` profile; the `shihlin_50W` profile's real-hardware validation under the unified codebase specifically hasn't been separately confirmed. Don't build new features here. Uses Modbus ASCII, which real-hardware testing found this driver doesn't actually speak (see unified's row) — treat this folder's own claimed working state with that in mind. |
+| `servo_comm_shihlin_50W/` | Hardware-variant fork of `servo_comm_shihlin/`, for the SDE-010A2 driver + SME-L00530 (50W) motor specifically. | **Legacy — superseded by `servo_comm_shihlin_unified/`'s `shihlin_50W` profile for active work.** Same ASCII-vs-RTU caveat as above. Only motor-specific files differ (`servo_config.json`, `servo_control.py`, `servo_p_register.py`, `serial_port_manager.py`, `osc_2.py`) from `servo_comm_shihlin/` — `app.py` is identical between the two, so a fix there (if this folder is ever touched) should generally be mirrored. |
+| `servo_communication/` | Type 1 motor (different brand). See README "AC Servo Motor Type 1 Info." | **Active, and the real entrypoint for Type 1** — `app.py` is self-contained with its own full action-route set and local imports; it can run standalone without `web/`. |
 | `web/` | Formerly a separate Flask UI. `main.py` still boots it (`from web.app import app`). | **Superseded by `servo_communication/app.py` (confirmed 2026-07-22).** `web/app.py` was rewritten to import directly from the `servo_communication` package rather than duplicating its helpers, and its routes now just mirror `servo_communication/app.py`. Treat `web/` + `main.py` as the legacy path — don't build new features here; extend `servo_communication/app.py` instead. `main.py` has not been updated to reflect this yet (see §6). |
 | `examples/` | Scratch/dev sandbox. | **Not deployed, not canonical.** Reference-only. |
 
-Practical routing: Shihlin/Type 2 work → `servo_comm_shihlin*` (mind the
-manual-sync list above; `servo_comm_shihlin_unified/` is the in-progress
-merge target but isn't runnable yet — don't route active feature work
-there until it's past the PA28 blocker). Type 1 work →
-`servo_communication/app.py` directly. Exploratory/reference only →
-`examples/`. If a task still doesn't map cleanly onto this table, ask
-before editing rather than guessing.
+Practical routing: Shihlin/Type 2 work → `servo_comm_shihlin_unified/`
+(the two legacy `servo_comm_shihlin*` folders are superseded — only
+touch them if a task specifically asks you to, e.g. porting one last
+behavior forward). Type 1 work → `servo_communication/app.py` directly.
+Exploratory/reference only → `examples/`. If a task still doesn't map
+cleanly onto this table, ask before editing rather than guessing.
 
 Because `servo_comm_shihlin/` and `servo_comm_shihlin_50W/` share logic
 by copy, not by import, a bug fix or behavior change in one that isn't

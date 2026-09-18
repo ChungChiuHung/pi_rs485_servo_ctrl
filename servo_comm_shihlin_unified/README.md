@@ -1,68 +1,153 @@
-# servo_comm_shihlin_unified（籌備中）
+# servo_comm_shihlin_unified
 
-這個資料夾的目標：把 `servo_comm_shihlin/` 與 `servo_comm_shihlin_50W/`
-合併成一份程式碼，透過 JSON 設定檔（`motor_profiles.json`）切換要控制
-哪一顆馬達，取代目前「兩份程式碼手動同步」的做法。
+A merged, config-driven replacement for `servo_comm_shihlin/` and
+`servo_comm_shihlin_50W/`: one codebase, a JSON motor-profile switch
+instead of two hand-synced folders. Controls a Shihlin SDE-series servo
+drive over RS-485 **Modbus RTU** (confirmed against real hardware:
+115200 baud, station 1 — not the ASCII protocol the two legacy folders
+assume).
 
-完整設計文件：`docs/servo_comm_shihlin_merge_design.md`
+> **Safety:** this code sends real commands to a physical servo motor.
+> Make sure the motor and its load are clear of people and obstacles
+> before starting any action that can move it. See "Hardware safety"
+> below.
 
-## 目前狀態
+Full design history: `docs/servo_comm_shihlin_merge_design.md` (the
+original planning doc — mostly of historical interest now; this README
+and `OSC_ARTNET_GUIDE.md` describe the current, working system).
 
-**通訊底層 + 一個防呆檢查已就緒，主控邏輯（`servo_control.py`）尚未搬入**：
+## Status
 
-* ✅ 已從 `servo_comm_shihlin_50W/`（決議中的基準版本）複製通訊底層：
-  `modbus_ascii_client.py`、`modbus_response.py`、`modbus_command_code.py`、
-  `modbus_utils.py`、`servo_control_registers.py`、`serial_port_manager.py`、
-  `servo_p_register.py`。
-* ✅ `servo_p_register.py` 新增 `PA.ABS`（PA28）暫存器定義。
-* ✅ 新增 `absolute_mode_check.py`：讀取 PA28、在 log 中清楚回報絕對模式
-  狀態的防呆檢查（讀值 1／0／預期外數值／通訊失敗，四種情況都有對應
-  log 與明確的回傳值語意，`None` 代表「不知道」，不會被誤判成安全）。
-  搭配 `test_absolute_mode_check.py`（7 個測試，已跑過、全過）。
-* ✅ 新增 `check_pa28.py`：**可直接在樹莓派上對真實硬體執行**的獨立
-  診斷腳本，純讀取、不會啟動/移動/寫入馬達，跑完會印出 PA28 是否為 1。
-* ✅ **新增 Modbus RTU 支援**（`modbus_rtu_client.py`、
-  `modbus_rtu_response.py`）：先前用 Modbus ASCII 對驅動器做的診斷
-  （9600/19200/38400/115200 baud × 站號 1-32 × 7/8-bit，共 82 種組合）
-  全部零回應，懷疑驅動器的 `PC22`（通訊協定選項）實際上被設成 RTU
-  模式（選項 6/7/8），不是這個專案原本假設的 ASCII 模式（選項
-  0-5）——見 `docs/en_manual.txt` §9.2。這兩個新檔案讓 `check_pa28.py`
-  可以改用 RTU 框架（二進位 + CRC16）重新嘗試，介面跟既有的
-  `ModbusASCIIClient`/`ModbusResponse` 對齊（吃原始位址整數，不像
-  `servo_comm_shihlin/modbus_rtu_client.py` 原版那樣要求
-  `ServoControlRegistry` enum），`absolute_mode_check.py` 也改成可以接受
-  `response_parser` 參數，兩種協定共用同一套防呆判斷邏輯，不用維護
-  兩份平行的檢查程式。**只做過純記憶體內的 frame 組裝/CRC/例外解析驗證
-  （沒開過序列埠、沒送過任何 byte 到驅動器）**，還沒在真實硬體上跑過。
-* ✅ §2.2 第 1、2、3、5、6 項：已確認做法
-* ✅ Encoder overflow：已決定採用方案 B（改讀 `PA32`+`PA33`）
-* ⏸ **卡點：需要你在樹莓派上實際執行 `check_pa28.py`，確認 PA28 是否為 1**
-  —— 沒有這個確認，PA32/PA33 讀出來的位置資料無效，§2.2 第 4、7 項
-  也無法定案。
-* ⏸ §2.2 第 4、7 項（角度追蹤演算法、180 度保護）、`servo_control.py`
-  主控邏輯本體，待 PA28 確認後才會搬入/實作。
+**Functional and tested.** Flask web UI, OSC server, and Art-Net server
+all drive the same `ServoController` instance; motor profile switching,
+positioning moves, continuous JOG rotation, and alarm handling have all
+been verified against real hardware (not just unit tests). 198 unit
+tests, all passing.
 
-## 如何執行 PA28 檢查
-
-在樹莓派上、驅動器已接妥的狀態下：
+## Quick start
 
 ```bash
-cd servo_comm_shihlin_unified/
-python3 check_pa28.py                                    # 預設：ASCII, 9600 baud, 站號 1
-python3 check_pa28.py --protocol rtu                      # 改試 Modbus RTU
-python3 check_pa28.py --protocol rtu --baud 115200         # 也可以順便換波特率/站號
-python3 check_pa28.py --baud 115200 --device-number 3
+cd servo_comm_shihlin_unified
+pip3 install -r ../requirements.txt
+python3 app.py
 ```
 
-只會讀取，不會對馬達做任何啟動/移動/寫入動作。結果會印在畫面上，
-exit code 0 代表確認為絕對模式（PA28=1），1 代表不是，2 代表讀不到。
+Then open `http://<HOST>:5000` in a browser. `app.py` opens the serial
+port for the active motor profile at startup — only one process can hold
+it at a time.
 
-## 下一步
+Run the test suite (no hardware required — everything is mocked):
+```bash
+python3 -m unittest discover -p "test_*.py"
+```
 
-1. 在樹莓派上執行 `check_pa28.py`，把結果回報回來。
-2. 依結果把 §2.2 第 4、7 項定案。
-3. 搬入/重寫 `servo_control.py`（含 `motor_profiles.json` 的 config 切換
-   邏輯），繼續 TDD Red/Green 階段。
-4. `servo_comm_shihlin/`、`servo_comm_shihlin_50W/` 在這份合併版本
-   通過真實硬體驗證（兩個 motor profile 都測過）之前，**不會**被刪除
-   或標記為棄用。
+## Motor profiles
+
+`motor_profiles.json` holds the two known motors' settings; switch
+between them from the web UI's "Motor Profile" dropdown or `POST
+/profile`:
+
+```json
+{
+  "active_profile": "shihlin_400W",
+  "encoder_pulses_per_rev": 4194304,
+  "modbus_device_number": 1,
+  "profiles": {
+    "shihlin_400W": {"baud_rate": 115200, "gear_ratio": 30, "abs_home_pos": 62369153},
+    "shihlin_50W":  {"baud_rate": 9600,   "gear_ratio": 10, "abs_home_pos": 1184347}
+  }
+}
+```
+
+`base_pulse_per_degree` is always computed from `encoder_pulses_per_rev
+* gear_ratio / 360` at load time — never hardcoded. Switching profiles
+closes the current serial connection and reopens it at the new baud
+rate; it's rejected while an OSC/Art-Net server is running (stop it
+first). Each profile persists its own calibrated home position to
+`servo_config_<profile>.json` (created at runtime, not checked into
+git — it's this specific installation's calibration, not source code).
+
+## Web UI
+
+The single-page control panel (`templates/index.html`) covers:
+- Live status panel (port, baud, alarm, Servo-on, current angle/encoder,
+  drive test-mode state) — polled read-only, never sends a command.
+- Motor profile selection.
+- Continuous Motion Input: start/stop OSC or Art-Net (see
+  `OSC_ARTNET_GUIDE.md`).
+- Commands: Servo on/off, alarm clear (with confirmation), positioning
+  test (arm mode / trigger CW-CCW / set point / home), and speed-control
+  JOG mode (arm / start CW-CCW / pause / cancel), each with bounded
+  numeric inputs (pulses, speed) validated both client- and server-side.
+
+## HTTP API
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/` | GET | Redirects to `/index`. |
+| `/index` | GET | The control panel. |
+| `/status` | GET | Read-only live status snapshot. Never sends a write/motion command — safe to poll on an interval. |
+| `/profile` | GET | Active profile + available profiles. |
+| `/profile` | POST | Switch motor profile. Rejected while an input server is running. |
+| `/server/status` | GET | Which input server (if any) is active. |
+| `/server/start` | POST | Start OSC or Art-Net — see `OSC_ARTNET_GUIDE.md`. |
+| `/server/stop` | POST | Stop the active input server. |
+| `/alarm/clear` | POST | Clear Alarm 12 only. Requires `{"confirm": true}`. See safety note below. |
+| `/action` | POST | Web UI button actions (`{"action": "..."}`, see `app.py`'s `handle_action()` for the full list). |
+
+### `POST /alarm/clear` safety precondition
+
+Per the driver manual (`docs/en_manual.txt`, AL.12 entry), AL.12 means
+the EMG (Emergency Stop) signal is active, and the manual's own remedy
+is to release the trigger only *after* the emergency condition is
+actually resolved. This endpoint's primary mechanism
+(`clear_alarm_12()`) switches the drive's DI input source to
+communication-control and writes the virtual EMG DI bit to "released" —
+**if a physical E-Stop circuit is still engaged, the drive will report
+EMG as released anyway**; the software cannot verify the physical
+condition is actually gone. Confirming that is the caller's
+responsibility, not something this endpoint can check.
+
+```bash
+curl -X POST http://<HOST>:5000/alarm/clear \
+     -H "Content-Type: application/json" \
+     -d '{"confirm": true}'
+```
+
+Response includes the alarm code before/after, which mechanism actually
+cleared it (falls back to the official `0x0130` register write if the
+primary mechanism doesn't work), caller IP, and timestamp. Every call is
+logged regardless of outcome. Note this driver reports `0xFF` (255), not
+`0`, for "no alarm" — the response's `after_alarm_code` reflects the raw
+register value; `status: "success"` is what tells you whether it actually
+cleared.
+
+## Continuous-motion input: OSC and Art-Net
+
+See **`OSC_ARTNET_GUIDE.md`** for the full address/channel reference,
+example packets, and — importantly — the "Gotchas" section covering
+non-obvious real-hardware behavior (direction value conventions, the
+Alarm-12 side effect of servo-off, absolute vs. cumulative angle
+tracking, the 180° safety guard, and the continuous-motion
+direction-reversal fail-safe).
+
+## Hardware safety
+
+Any code path that can enable/move/write live state to the motor has
+been treated as requiring explicit confirmation before being considered
+"done" throughout this project's development — this isn't just a
+documentation convention, it shaped how features here were built and
+tested (e.g. the direction-reversal fail-safe in
+`speed_ctrl_action()`, the 180° guards in `pos_step_motion_by()`/
+`post_step_motion_by()`, and the confirm-gated `/alarm/clear`). If
+you're extending this code with a new path that can move the motor,
+follow the same pattern: real-hardware verification before calling it
+done, not just passing unit tests against mocks.
+
+## Testing conventions
+
+Tests mock the serial transport (`SerialPortManager`)/`ModbusRTUClient`
+so the full suite runs without hardware attached. Real-hardware
+verification (register read-backs, actual rotation) has been done
+separately and is documented in commit messages and the design doc, not
+re-run automatically — there is no CI hardware rig.
