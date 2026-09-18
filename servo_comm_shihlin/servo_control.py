@@ -7,6 +7,7 @@ from threading import Thread, Event, Lock
 from serial import SerialException
 from modbus_ascii_client import ModbusASCIIClient
 from modbus_response import ModbusResponse
+from encoder_pulse_tracker import EncoderPulseTracker
 from servo_utility import ServoUtility
 from servo_control_registers import ServoControlRegistry
 from status_bit_map import DI_Function_Code
@@ -42,6 +43,7 @@ class ServoController:
         self.target_angle = 0.0
         self.current_encoder = 0
         self.previous_encoder = 0
+        self._encoder_tracker = EncoderPulseTracker()
         self.float_error = 0.0
         self.on_initial_home = False
         self.completed_tag = False
@@ -167,9 +169,11 @@ class ServoController:
                 self.delay_ms(interval * 1000)
                 continue
 
-            # 3) Process valid encoder reading
-            self.current_encoder = encoder
-            logger.info(f"Current Encoder Value: {self.current_encoder}")
+            # 3) Process valid encoder reading (unwrapped -- see
+            # encoder_pulse_tracker.py / docs/servo_comm_shihlin_merge_design.md
+            # §2.4 for why the raw 0x0000 register can't be trusted directly)
+            self.current_encoder = self._encoder_tracker.update(encoder)
+            logger.info(f"Current Encoder Value: {self.current_encoder} (raw: {encoder})")
             diff_angle = round((self.current_encoder - self.abs_home_pos) / base_pulse_per_degree, 4)
             self.current_angle = diff_angle
             logger.info(f"Diff Angle: {diff_angle}")
@@ -755,7 +759,8 @@ class ServoController:
         self.previous_angle = 0.0
         self.target_angle = 0.0
         self.previous_encoder = self.current_encoder
-        self.current_encoder = self.read_encoder_before_gear_ratio()
+        raw_encoder = self.read_encoder_before_gear_ratio()
+        self.current_encoder = self._encoder_tracker.reset(raw_encoder)
         self.delay_ms(100)
         self.float_error = 0.0
         self.save_abs_home_pos(self.current_encoder)
