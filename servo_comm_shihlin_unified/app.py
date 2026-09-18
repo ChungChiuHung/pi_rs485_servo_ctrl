@@ -6,12 +6,13 @@ import traceback
 from datetime import datetime, timezone
 from functools import wraps
 
-from flask import Flask, render_template, request, jsonify, Response
+from flask import Flask, render_template, request, jsonify, Response, redirect
 
 from serial_port_manager import SerialPortManager
 from servo_control import ServoController, is_alarm_active
 from motor_profile import load_profiles, resolve_profile
 from hardware_lock import hardware_serialized
+from input_validation import validate_int_range
 from osc_server import OSCInputServer
 from artnet_server import ArtNetInputServer
 
@@ -119,7 +120,10 @@ def json_response(f):
 
 @app.route('/')
 def home():
-    return render_template('home.html')
+    # home.html was an unused legacy "Walking Lamp Control" test page (a
+    # START/STOP pair wired to no-op actions) -- removed 2026-09-18. index.html
+    # is the actual control panel this project uses.
+    return redirect('/index')
 
 
 @app.route('/index')
@@ -397,11 +401,7 @@ def handle_action():
     # Enable the Digital I/O Writable
     servo_ctrller.write_PD_16_Enable_DI_Control()
 
-    if action == "start":
-        print("start")
-    elif action == "stop":
-        print("stop")
-    elif action == "servoOn":
+    if action == "servoOn":
         servo_ctrller.clear_alarm_12()
         time.sleep(0.1)
         servo_ctrller.servo_on()
@@ -410,18 +410,21 @@ def handle_action():
         servo_ctrller.servo_off()
     elif action == "getMsg":
         servo_ctrller.Read_Pos_Related_Paremters()
-    elif action == "clearAlarm12":
-        servo_ctrller.clear_alarm_12()
     elif action == "enablePosMode":
+        # Command pulses (0x0905/0x0906): manual's documented range is
+        # 0~(2^31-1) -- see docs/en_manual.txt:10416-10422.
+        pulses, error = validate_int_range(data.get('pulses', 1920), 0, 2**31 - 1, 'pulses')
+        if error:
+            return jsonify({"status": "error", "action": action, "message": error}), 400
         servo_ctrller.Enable_Position_Mode(True)
         time.sleep(0.05)
         servo_ctrller.config_acc_dec_0x0902(0)
         time.sleep(0.05)
         servo_ctrller.config_speed_0x0903(10)
         time.sleep(0.05)
-        servo_ctrller.config_pulses_0x0905_low_byte(0x0000)
+        servo_ctrller.config_pulses_0x0905_low_byte(pulses & 0xFFFF)
         time.sleep(0.05)
-        servo_ctrller.config_pulses_0x0906_high_byte(0x0780)
+        servo_ctrller.config_pulses_0x0906_high_byte((pulses >> 16) & 0xFFFF)
         time.sleep(0.05)
         servo_ctrller.start_continuous_reading(0.1)
     elif action == "posTestStart_CW":
@@ -435,7 +438,12 @@ def handle_action():
     elif action == "Home":
         servo_ctrller.post_step_motion_by(0)
     elif action == "enableSpeedCtrlMode":
-        servo_ctrller.enable_speed_ctrl(100)
+        # JOG speed command (0x0903): manual's documented range is 0~3000
+        # rpm -- see docs/en_manual.txt:10367-10373.
+        speed_rpm, error = validate_int_range(data.get('speed_rpm', 100), 0, 3000, 'speed_rpm')
+        if error:
+            return jsonify({"status": "error", "action": action, "message": error}), 400
+        servo_ctrller.enable_speed_ctrl(speed_rpm)
     elif action == "motionStart_CW":
         # Per docs/en_manual.txt:10380-10382 (JOG_OPERATION, 0x0904):
         # 1 = forward rotation (CCW), 2 = reverse rotation (CW).
