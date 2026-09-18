@@ -7,6 +7,7 @@ from threading import Thread, Event
 from serial import SerialException
 from modbus_ascii_client import ModbusASCIIClient
 from modbus_response import ModbusResponse
+from encoder_pulse_tracker import EncoderPulseTracker
 from servo_utility import ServoUtility
 from servo_control_registers import ServoControlRegistry
 from status_bit_map import DI_Function_Code
@@ -45,6 +46,7 @@ class ServoController:
         self.previous_angle = 0.0
         self.current_encoder = 0
         self.previous_encoder = 0
+        self._encoder_tracker = EncoderPulseTracker()
         self.float_error = 0.0
         self.accumulate_pulse = 0
         self.on_initial_home = False
@@ -160,9 +162,10 @@ class ServoController:
             self.stop_event.set()
 
             self.delay_ms(50)
-            self.current_encoder = self.read_encoder_before_gear_ratio() 
-            logging.info(f"Current Encoder Value: {self.current_encoder}")
-            if self.current_encoder is not None:
+            raw_encoder = self.read_encoder_before_gear_ratio()
+            if raw_encoder is not None:
+                self.current_encoder = self._encoder_tracker.update(raw_encoder)
+                logging.info(f"Current Encoder Value: {self.current_encoder} (raw: {raw_encoder})")
                 base_pulse_per_degree = 116508.444445
                 self.current_angle = round((self.current_encoder - self.abs_home_pos)/base_pulse_per_degree,4)
                 logging.info(f"Current Angle: {self.current_angle}")
@@ -199,9 +202,9 @@ class ServoController:
                 self.delay_ms(interval * 1000)
                 continue
 
-            self.current_encoder = enc
-            logger.info(f"Current Encoder Value: {enc}")
-            diff_angle = round((enc - self.abs_home_pos) / base_pulse_per_degree, 4)
+            self.current_encoder = self._encoder_tracker.update(enc)
+            logger.info(f"Current Encoder Value: {self.current_encoder} (raw: {enc})")
+            diff_angle = round((self.current_encoder - self.abs_home_pos) / base_pulse_per_degree, 4)
             self.current_angle = diff_angle
             logger.info(f"Diff Angle: {diff_angle}")
             self._notify_event_listeners("on_moving", diff_angle)
@@ -762,6 +765,11 @@ class ServoController:
     def set_home_position(self):
         self.current_angle = 0.0
         self.previous_angle = 0.0
+        # current_encoder is zeroed symbolically here (no real encoder read),
+        # so _encoder_tracker is deliberately left untouched -- reseeding it
+        # to a fictional 0 would make the next real reading look like a huge
+        # spurious jump. The next _read_continuously() tick overwrites
+        # current_encoder with the tracker's real cumulative value anyway.
         self.current_encoder = 0
         self.previous_encoder = 0
         self.float_error = 0.0
