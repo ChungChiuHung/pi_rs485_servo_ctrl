@@ -50,6 +50,7 @@
 
                 function sendCommand(action) {
                     clearStatuses(action);
+                    disarmClearAlarm12();
                     setButtonsEnabled(false);
                     $.ajax({
                         url:'/action',
@@ -85,18 +86,45 @@
                 // before/after verification), not the bare clearAlarm12
                 // /action, since clearing it can mask a physical E-Stop
                 // condition (see README "Alarm 12 clear -- safety
-                // precondition").
+                // precondition"). Confirmation is a plain in-page
+                // click-again-to-confirm state, not window.confirm(): some
+                // browsers silently suppress repeated native dialogs on a
+                // page (a "prevent this page from creating more dialogs"
+                // checkbox some users click without noticing) -- once that
+                // happens, confirm() returns false forever with zero visible
+                // trace, so the button looked "broken" with no error and no
+                // network request ever sent. Confirmed 2026-09-18 via a
+                // direct repro: console showed "native JavaScript dialogs
+                // are disabled in this browser; confirm() returned false".
+                let clearAlarm12Armed = false;
+                let clearAlarm12ArmTimer = null;
+
+                function disarmClearAlarm12() {
+                    clearAlarm12Armed = false;
+                    if (clearAlarm12ArmTimer) {
+                        clearTimeout(clearAlarm12ArmTimer);
+                        clearAlarm12ArmTimer = null;
+                    }
+                    $('#clearAlarm12Btn').text('CLEAR ALARM 12').removeClass('button-armed');
+                }
+
                 $('#clearAlarm12Btn').click(function(){
-                    const confirmed = window.confirm(
-                        'Clear Alarm 12 (Emergency Stop)?\n\n' +
-                        'Only do this after confirming the physical E-Stop ' +
-                        'condition has actually been resolved -- this can ' +
-                        'make the drive treat EMG as released even if a ' +
-                        'physical E-Stop circuit is still engaged.'
-                    );
-                    if (!confirmed) {
+                    if (!clearAlarm12Armed) {
+                        clearAlarm12Armed = true;
+                        $('#clearAlarm12Btn').text('CLICK AGAIN TO CONFIRM').addClass('button-armed');
+                        setFeedback(
+                            'clearAlarm12',
+                            'Only confirm after the physical E-Stop condition is actually resolved. Click again within 5s to proceed.',
+                            true
+                        );
+                        clearAlarm12ArmTimer = setTimeout(function(){
+                            disarmClearAlarm12();
+                            setFeedback('clearAlarm12', 'Confirmation timed out; not cleared.', false);
+                        }, 5000);
                         return;
                     }
+
+                    disarmClearAlarm12();
                     setFeedback('clearAlarm12', 'Clearing...', true);
                     setButtonsEnabled(false);
                     $.ajax({
