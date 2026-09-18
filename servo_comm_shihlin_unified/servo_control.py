@@ -35,6 +35,19 @@ logger = logging.getLogger(__name__)
 NO_ALARM_CODES = frozenset({0, 0xFF})
 
 
+# Software motion-complete detection (see _read_continuously()). A per-poll
+# encoder delta at or below this many pulses counts as "not moving" -- set
+# comfortably above the ~1-2 pulse jitter observed on a stationary encoder
+# in real-hardware testing, so sensor noise alone never registers as motion.
+STILL_THRESHOLD_PULSES = 10
+# Consecutive "not moving" polls required before declaring motion complete.
+# At the loop's ~100-150ms per-iteration pace this is roughly 1-1.5 seconds
+# of confirmed stillness -- long enough that the brief pause between
+# _execute_positioning()'s config writes and the actual 0x0907 start trigger
+# can't be mistaken for "already done" the way the old PF.PRCM check was.
+STILL_COUNT_TO_COMPLETE = 12
+
+
 def is_alarm_active(alarm_code) -> bool:
     """True if alarm_code represents an active alarm. alarm_code=None
     (communication failure) is deliberately NOT "no alarm" -- callers must
@@ -94,8 +107,10 @@ class ServoController:
         self.float_error = 0.0
         self.accumulate_pulse = 0
         self.on_initial_home = False
-        self.completed_tag = False
-        self.completed_cnt = 0
+        # Software motion-complete detection state -- see _read_continuously()'s
+        # comment for why this replaced a PF.PRCM-based check.
+        self._motion_seen = False
+        self._still_count = 0
         self.abs_home_pos = self.load_abs_home_pos()
         self._event_listeners = {
             "on_motion_completed": [],
@@ -164,6 +179,10 @@ class ServoController:
                 return
 
             self.read_thread_stop_event.clear()
+            # Fresh motion-complete detection state per reading session --
+            # see _read_continuously()'s comment.
+            self._motion_seen = False
+            self._still_count = 0
             self.read_thread = threading.Thread(target=self._read_continuously, args=(interval,))
             self.reading_active = True
             self.read_thread.start()
@@ -177,17 +196,26 @@ class ServoController:
 
             self.reading_active = False
             self.read_thread_stop_event.set()
-            if self.read_thread and threading.current_thread() is not self.read_thread:
-                self.read_thread.join()
-
+            thread_to_join = self.read_thread
             self.read_thread = None
-            self.completed_cnt = 0
-            self.completed_tag = False
+            self._motion_seen = False
+            self._still_count = 0
             if self.on_initial_home:
                 self.on_initial_home = False
-            logging.info("Motion Completed Signal Reading Stopped.")
-            self._notify_event_listeners("on_motion_completed")
-            self.stop_event.set()
+
+        # Join OUTSIDE self.lock. _read_continuously() takes self.lock
+        # itself for its wire I/O -- if a caller on a different thread held
+        # the lock here while blocking on join(), and the background
+        # thread happened to be waiting to acquire that same lock to reach
+        # its next read_thread_stop_event check, neither side could ever
+        # make progress (found via a stress test that reliably hit this
+        # ordering -- not just a theoretical race).
+        if thread_to_join and threading.current_thread() is not thread_to_join:
+            thread_to_join.join()
+
+        logging.info("Motion Completed Signal Reading Stopped.")
+        self._notify_event_listeners("on_motion_completed")
+        self.stop_event.set()
 
     def cancel_continuous_reading(self) -> None:
         """Like stop_continuous_reading(), but also takes one more encoder
@@ -211,31 +239,43 @@ class ServoController:
             self._notify_event_listeners("on_cancel", self.current_angle)
 
     def _read_continuously(self, interval: float) -> None:
+        # Software motion-complete detection instead of Read_Motion_Completed_Signal()
+        # (PF.PRCM): real-hardware testing (2026-09-18) found PF.PRCM is a
+        # PATH-execution status register, unrelated to the raw-pulse
+        # positioning workflow this loop actually monitors
+        # (pos_step_motion_test()/_execute_positioning(), driven by
+        # 0x0905/0x0906/0x0907 -- not PF82 PATH execution). It read as
+        # "already complete" from the very first poll regardless of whether
+        # the motor had moved at all, so the old 6-consecutive-completed
+        # check triggered a false auto-stop within ~1.5s of every
+        # start_continuous_reading() call, cutting off current_angle
+        # feedback while a real move might still be in progress.
+        #
+        # Instead: track the raw per-poll encoder delta. Once the encoder
+        # has genuinely moved (delta above STILL_THRESHOLD_PULSES, safely
+        # above the ~1-2 pulse jitter seen on a stationary encoder) at least
+        # once, require STILL_COUNT_TO_COMPLETE consecutive polls back below
+        # that threshold before declaring the motion complete and
+        # auto-stopping. If the encoder never moves at all (e.g. "ENABLE
+        # POS MODE" alone, which arms position mode without commanding a
+        # move via 0x0907), reading is deliberately left running rather
+        # than auto-stopped -- stop it explicitly (MOTION CANCEL /
+        # stop_continuous_reading()) instead.
+        previous_encoder_for_stillness = None
+
         while not self.read_thread_stop_event.is_set():
             if not self.serial_port.keep_running:
                 logger.info("Reconnection attempts stopped.")
                 break
 
-            # 1) Read "motion completed" flag
-            # Holds self.lock across the wire I/O (not just the state
-            # writes below) so a concurrent call to a method that also
-            # talks to the modbus client from another thread (e.g. a web UI
-            # status-polling endpoint calling read_current_alarm_code())
-            # can't interleave its request/response with this loop's on the
-            # same serial line. RTU has no built-in transaction ID to tell
-            # interleaved responses apart.
-            try:
-                with self.lock:
-                    self.completed_tag = self.Read_Motion_Completed_Signal()
-            except Exception as e:
-                logger.warning(f"Failed to read motion-completed signal ({e}); retrying...")
-                self.delay_ms(interval * 1000)
-                continue
-
-            # small inter-read delay
-            self.delay_ms(100)
-
-            # 2) Read encoder position
+            # Read encoder position. Holds self.lock across the wire I/O
+            # (not just the state writes below) so a concurrent call to a
+            # method that also talks to the modbus client from another
+            # thread (e.g. a web UI status-polling endpoint calling
+            # read_current_alarm_code()) can't interleave its
+            # request/response with this loop's on the same serial line.
+            # RTU has no built-in transaction ID to tell interleaved
+            # responses apart.
             try:
                 with self.lock:
                     encoder = self.read_encoder_before_gear_ratio()
@@ -249,7 +289,7 @@ class ServoController:
                 self.delay_ms(interval * 1000)
                 continue
 
-            # 3) Process valid encoder reading (unwrapped -- see
+            # Process valid encoder reading (unwrapped -- see
             # encoder_pulse_tracker.py / docs/servo_comm_shihlin_merge_design.md
             # §2.4 "Plan C" for why the raw 0x0000 register can't be trusted
             # directly). current_angle/current_encoder are only ever updated
@@ -266,13 +306,21 @@ class ServoController:
             logger.info(f"Diff Angle: {diff_angle}")
             self._notify_event_listeners("on_moving", diff_angle)
 
-            # 4) Check for motion-complete bursts
-            if self.completed_tag:
-                self.completed_cnt += 1
-                if self.completed_cnt > 6:
-                    logger.info(f"Motion Completed Signal Detected: {self.completed_cnt}")
-                    self.stop_continuous_reading()
-                    break
+            if previous_encoder_for_stillness is not None:
+                delta = abs(self.current_encoder - previous_encoder_for_stillness)
+                if delta > STILL_THRESHOLD_PULSES:
+                    self._motion_seen = True
+                    self._still_count = 0
+                else:
+                    self._still_count += 1
+            previous_encoder_for_stillness = self.current_encoder
+
+            if self._motion_seen and self._still_count >= STILL_COUNT_TO_COMPLETE:
+                logger.info(
+                    f"Motion complete: encoder stable for {self._still_count} consecutive reads."
+                )
+                self.stop_continuous_reading()
+                break
 
             # loop delay
             self.delay_ms(interval * 1000)

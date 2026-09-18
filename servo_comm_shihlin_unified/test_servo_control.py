@@ -18,10 +18,14 @@ Two groups:
 """
 import os
 import tempfile
+import time
 import unittest
 from unittest.mock import MagicMock, patch
 
-from servo_control import ServoController, is_alarm_active, NO_ALARM_CODES
+from servo_control import (
+    ServoController, is_alarm_active, NO_ALARM_CODES,
+    STILL_THRESHOLD_PULSES, STILL_COUNT_TO_COMPLETE,
+)
 from servo_utility import ServoUtility
 from servo_control_registers import ServoControlRegistry
 from servo_p_register import PA, PD, PF
@@ -691,6 +695,109 @@ class TestIsAlarmActive(unittest.TestCase):
 
     def test_no_alarm_codes_contains_exactly_zero_and_0xff(self):
         self.assertEqual(NO_ALARM_CODES, {0, 0xFF})
+
+
+class TestSoftwareMotionCompleteDetection(unittest.TestCase):
+    """Regression coverage for the 2026-09-18 real-hardware finding:
+    Read_Motion_Completed_Signal() (PF.PRCM, a PATH-execution status
+    register) read as "already complete" from the very first poll of
+    _read_continuously(), regardless of whether the motor had moved at
+    all -- confirmed by live timing (reading_active flipped true->false in
+    ~1.5s while current_angle barely changed). Replaced with a
+    software-only check: track real encoder deltas, only declare
+    completion after genuine motion followed by sustained stillness."""
+
+    def _run_continuous_reading_with_sequence(self, ctrl, encoder_values, join_timeout=2):
+        """Feeds encoder_values in order, then holds at the last value
+        indefinitely (so the mock never raises StopIteration if the loop
+        runs a few extra iterations before observing the stop event)."""
+        values = list(encoder_values)
+
+        def _side_effect():
+            if values:
+                return values.pop(0)
+            return encoder_values[-1]
+
+        ctrl.read_encoder_before_gear_ratio = MagicMock(side_effect=_side_effect)
+        ctrl.delay_ms = MagicMock()  # no real sleeping -- deterministic, fast test
+        ctrl.start_continuous_reading(interval=0.001)
+        thread = ctrl.read_thread
+        if thread is not None:
+            thread.join(timeout=join_timeout)
+
+    def test_auto_stops_after_motion_then_sustained_stillness(self):
+        ctrl = make_controller()
+        # Baseline read, then a real jump (motion), then it settles and
+        # holds -- exactly the "moved, then arrived" pattern a real
+        # position command produces.
+        settled_value = STILL_THRESHOLD_PULSES + 1
+        sequence = [0, settled_value] + [settled_value] * (STILL_COUNT_TO_COMPLETE + 5)
+
+        completed_events = []
+        ctrl.register_event_listener("on_motion_completed", lambda: completed_events.append(True))
+
+        self._run_continuous_reading_with_sequence(ctrl, sequence)
+
+        # stop_continuous_reading() resets _motion_seen/_still_count as part
+        # of its own cleanup (both for a manual stop and this auto-stop
+        # path), so they can't be inspected after the fact -- the real
+        # evidence this was the *completion* auto-stop, not something else,
+        # is: nothing external called stop_continuous_reading() here, yet
+        # reading_active went false, on_motion_completed fired, and the
+        # encoder settled at the value the sequence actually held at
+        # (proving the full moved-then-stable pattern was consumed, not an
+        # immediate/premature stop).
+        self.assertFalse(ctrl.reading_active)
+        self.assertEqual(completed_events, [True])
+        self.assertEqual(ctrl.current_encoder, settled_value)
+
+    def test_does_not_auto_stop_if_encoder_never_moves(self):
+        """This is the exact "ENABLE POS MODE alone" scenario: position
+        mode is armed but no move (0x0907) is ever commanded, so the
+        encoder legitimately never changes. Reading must keep running --
+        auto-stopping here was the original bug."""
+        ctrl = make_controller()
+        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=500)
+        ctrl.delay_ms = MagicMock(side_effect=lambda ms: time.sleep(0.001))
+        ctrl.start_continuous_reading(interval=0.001)
+        try:
+            time.sleep(0.15)  # let well more than STILL_COUNT_TO_COMPLETE iterations run
+            self.assertTrue(ctrl.reading_active)
+            self.assertFalse(ctrl._motion_seen)
+        finally:
+            ctrl.stop_continuous_reading()
+        self.assertFalse(ctrl.reading_active)
+
+    def test_small_jitter_at_or_below_threshold_does_not_count_as_motion(self):
+        ctrl = make_controller()
+        base = 1000
+        # Every delta is exactly STILL_THRESHOLD_PULSES -- the boundary
+        # itself must NOT count as motion (condition is strictly >).
+        jittery_sequence = [base, base + STILL_THRESHOLD_PULSES, base] * 10
+        ctrl.read_encoder_before_gear_ratio = MagicMock(
+            side_effect=jittery_sequence + [base] * 10
+        )
+        ctrl.delay_ms = MagicMock(side_effect=lambda ms: time.sleep(0.001))
+        ctrl.start_continuous_reading(interval=0.001)
+        try:
+            time.sleep(0.15)
+            self.assertTrue(ctrl.reading_active)
+            self.assertFalse(ctrl._motion_seen)
+        finally:
+            ctrl.stop_continuous_reading()
+
+    def test_start_continuous_reading_resets_detection_state(self):
+        ctrl = make_controller()
+        ctrl._motion_seen = True
+        ctrl._still_count = 99
+        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=1)
+        ctrl.delay_ms = MagicMock(side_effect=lambda ms: time.sleep(0.001))
+        ctrl.start_continuous_reading(interval=0.001)
+        # Immediately after (re)starting, state must be fresh, not carried
+        # over from whatever the previous session left behind.
+        self.assertFalse(ctrl._motion_seen)
+        self.assertEqual(ctrl._still_count, 0)
+        ctrl.stop_continuous_reading()
 
 
 if __name__ == "__main__":
