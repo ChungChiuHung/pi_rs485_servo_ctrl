@@ -23,6 +23,27 @@ PF.init_registers()
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Values the "Current alarm" register (0x0100) reports when there is no
+# active alarm. docs/en_manual.txt only documents 0 ("(3) Alarm
+# information", ~line 10220), but real-hardware testing (2026-09-18) found
+# this driver reports 0xFF (255) after a successful AL.12 clear -- verified
+# by checking the physical panel, which showed "AL --" (its own "nothing to
+# display" state) at that exact moment, not any alarm code. The full alarm
+# table (docs/en_manual.txt ~line 10464-10537) tops out at AL.64, so 0xFF
+# isn't a real numbered alarm either way. Treat both as "no alarm" rather
+# than assuming 0 is the only valid value -- see is_alarm_active().
+NO_ALARM_CODES = frozenset({0, 0xFF})
+
+
+def is_alarm_active(alarm_code) -> bool:
+    """True if alarm_code represents an active alarm. alarm_code=None
+    (communication failure) is deliberately NOT "no alarm" -- callers must
+    treat None as unknown/unsafe, same as read_current_alarm_code() itself
+    documents."""
+    if alarm_code is None:
+        return True
+    return alarm_code not in NO_ALARM_CODES
+
 
 class ServoController:
     """Merged servo_comm_shihlin / servo_comm_shihlin_50W controller.
@@ -389,11 +410,11 @@ class ServoController:
 
     def read_current_alarm_code(self):
         """Read the 'Current alarm' monitor register (0x0100, 1 word,
-        read-only). 0 means no alarm active; nonzero is the active alarm
-        code. See docs/en_manual.txt, "(3) Alarm information" (~line 10220).
-
-        Returns the raw int code, or None on a communication/parse failure
-        (never assume None means "no alarm").
+        read-only). Returns the raw int code -- use is_alarm_active() to
+        interpret it (this driver reports 0xFF, not just 0, for "no alarm";
+        see NO_ALARM_CODES's comment), or None on a communication/parse
+        failure (never assume None means "no alarm" -- is_alarm_active(None)
+        is deliberately True).
 
         Locked (self.lock) so a concurrent status poll from the web UI can't
         interleave its request/response with the continuous-reading loop's

@@ -21,7 +21,7 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from servo_control import ServoController
+from servo_control import ServoController, is_alarm_active, NO_ALARM_CODES
 from servo_utility import ServoUtility
 from servo_control_registers import ServoControlRegistry
 from servo_p_register import PA, PD, PF
@@ -664,6 +664,33 @@ class TestEnableSpeedCtrl(unittest.TestCase):
         ctrl.config_speed_0x0903.assert_called_once_with(200)
         ctrl.config_acc_dec_0x0902.assert_called_once_with(3000)
         ctrl.Enable_Position_Mode.assert_called_once_with(True)
+
+
+class TestIsAlarmActive(unittest.TestCase):
+    """Regression coverage for the 2026-09-18 real-hardware finding: this
+    driver reports 0xFF (255), not just 0, for "no alarm" -- confirmed by
+    checking the physical panel (showed "AL --", its own no-alarm display)
+    right after a clear_alarm_12() call that left the register at 255.
+    Before this, /alarm/clear's `after_code == 0` check reported "failed"
+    on a clear that had actually succeeded."""
+
+    def test_zero_is_not_active(self):
+        self.assertFalse(is_alarm_active(0))
+
+    def test_0xff_is_not_active(self):
+        self.assertFalse(is_alarm_active(0xFF))
+        self.assertFalse(is_alarm_active(255))
+
+    def test_none_is_active(self):
+        """None means "communication failure, status unknown" -- must
+        never be treated as "safe"/"no alarm"."""
+        self.assertTrue(is_alarm_active(None))
+
+    def test_a_real_named_alarm_is_active(self):
+        self.assertTrue(is_alarm_active(0x12))  # AL.12, Emergency stop
+
+    def test_no_alarm_codes_contains_exactly_zero_and_0xff(self):
+        self.assertEqual(NO_ALARM_CODES, {0, 0xFF})
 
 
 if __name__ == "__main__":

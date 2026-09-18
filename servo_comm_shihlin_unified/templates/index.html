@@ -241,12 +241,17 @@
                         $('#status_current_angle').text(response.current_angle.toFixed(4) + ' deg');
                         $('#status_current_encoder').text(response.current_encoder);
 
+                        // Use the backend's alarm_active flag, not a raw
+                        // alarm_code != 0 check -- this driver reports 0xFF
+                        // (255), not 0, for "no alarm" (confirmed against
+                        // the physical panel, which shows "AL --" at that
+                        // value). See servo_control.NO_ALARM_CODES.
                         const alarmTile = $('#status_alarm_tile');
                         if (response.alarm_code === null) {
                             $('#status_alarm_code').text('unknown');
                             alarmTile.addClass('alarm-active');
-                        } else if (response.alarm_code === 0) {
-                            $('#status_alarm_code').text('0 (none)');
+                        } else if (!response.alarm_active) {
+                            $('#status_alarm_code').text(response.alarm_code + ' (none)');
                             alarmTile.removeClass('alarm-active');
                         } else {
                             $('#status_alarm_code').text(response.alarm_code);

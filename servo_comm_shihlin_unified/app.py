@@ -9,7 +9,7 @@ from functools import wraps
 from flask import Flask, render_template, request, jsonify, Response
 
 from serial_port_manager import SerialPortManager
-from servo_control import ServoController
+from servo_control import ServoController, is_alarm_active
 from motor_profile import load_profiles, resolve_profile
 from hardware_lock import hardware_serialized
 from osc_server import OSCInputServer
@@ -156,6 +156,10 @@ def get_status():
         "current_angle": servo_ctrller.current_angle,
         "current_encoder": servo_ctrller.current_encoder,
         "alarm_code": alarm_code,
+        # Raw alarm_code alone is misleading: this driver reports 0xFF
+        # (255), not 0, for "no alarm" (see servo_control.NO_ALARM_CODES).
+        # The UI should key off this, not "alarm_code != 0".
+        "alarm_active": is_alarm_active(alarm_code),
     })
 
 
@@ -354,7 +358,7 @@ def clear_alarm_12_endpoint():
     after_code = servo_ctrller.read_current_alarm_code()
     mechanism_used = "clear_alarm_12"
 
-    if after_code != 0:
+    if is_alarm_active(after_code):
         # Fallback: official 0x0130 "Alarm clearance" register (write
         # 0x1EA5). Does not touch DI control source / virtual EMG state.
         servo_ctrller.clear_alarm_via_register()
@@ -362,7 +366,7 @@ def clear_alarm_12_endpoint():
         after_code = servo_ctrller.read_current_alarm_code()
         mechanism_used = "clear_alarm_12+0x0130_fallback"
 
-    success = after_code == 0
+    success = not is_alarm_active(after_code)
     alarm_logger.info(
         "Alarm-12 clear result for %s: before=%s after=%s success=%s mechanism=%s",
         caller_ip, before_code, after_code, success, mechanism_used
