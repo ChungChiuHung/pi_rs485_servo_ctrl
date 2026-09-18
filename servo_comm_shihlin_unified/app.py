@@ -416,6 +416,11 @@ def handle_action():
         pulses, error = validate_int_range(data.get('pulses', 1920), 0, 2**31 - 1, 'pulses')
         if error:
             return jsonify({"status": "error", "action": action, "message": error}), 400
+        # Positioning-test mode requires "no alarm occurrence or Servo ON
+        # activated" (docs/en_manual.txt:10390) -- same precondition as JOG
+        # mode; see _execute_positioning()'s comment in servo_control.py.
+        servo_ctrller.clear_alarm_12()
+        time.sleep(0.1)
         servo_ctrller.Enable_Position_Mode(True)
         time.sleep(0.05)
         servo_ctrller.config_acc_dec_0x0902(0)

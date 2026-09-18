@@ -917,6 +917,18 @@ class ServoController:
             self._execute_positioning(diff_angle, low_byte, high_byte, acc_dec_time, speed_rpm)
 
     def _execute_positioning(self, angle, low_byte, high_byte, acc_dec_time, speed_rpm):
+        # Manual Step 1 for Positioning test (docs/en_manual.txt:10390),
+        # identical to JOG test's own Step 1 (see enable_speed_ctrl()'s
+        # comment, confirmed 2026-09-18 on real hardware): the drive only
+        # accepts entering this mode "without any alarm occurrence or Servo
+        # ON activated". Without this, SET POINT 1/2, HOME, and any other
+        # caller of this method would silently fail to actually enter
+        # position-test mode whenever Servo was already ON -- the 0x0901
+        # write would be accepted at the wire level but never take effect,
+        # so the pulse/speed/trigger writes that follow would have no
+        # effect either.
+        self.clear_alarm_12()
+        self.delay_ms(100)
         self.Enable_Position_Mode(True)
         self.delay_ms(100)
         self.config_acc_dec_0x0902(acc_dec_time)

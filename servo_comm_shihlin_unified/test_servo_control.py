@@ -675,8 +675,31 @@ class TestPosStepMotionTestAndExecutePositioning(unittest.TestCase):
 
         ctrl.pos_motion_start_0x0907.assert_called_once_with(2)
 
+    def test_execute_positioning_clears_alarm_12_before_entering_position_mode(self):
+        """Regression coverage for the 2026-09-18 finding: Positioning-test
+        mode has the identical Step 1 precondition as JOG mode (no alarm +
+        Servo OFF, docs/en_manual.txt:10390). Without clearing Alarm 12
+        first, SET POINT 1/2, HOME, etc. would silently fail to enter
+        position-test mode whenever Servo was already ON."""
+        ctrl = make_controller()
+        call_order = []
+        ctrl.clear_alarm_12 = MagicMock(side_effect=lambda: call_order.append("clear_alarm_12"))
+        ctrl.Enable_Position_Mode = MagicMock(side_effect=lambda v: call_order.append("position_mode"))
+        ctrl.config_acc_dec_0x0902 = MagicMock()
+        ctrl.config_speed_0x0903 = MagicMock()
+        ctrl.config_pulses_0x0905_low_byte = MagicMock()
+        ctrl.config_pulses_0x0906_high_byte = MagicMock()
+        ctrl.pos_step_motion_test = MagicMock()
+        ctrl.delay_ms = MagicMock()
+
+        ctrl._execute_positioning(angle=10, low_byte=1, high_byte=0, acc_dec_time=100, speed_rpm=5)
+
+        ctrl.clear_alarm_12.assert_called_once()
+        self.assertEqual(call_order, ["clear_alarm_12", "position_mode"])
+
     def test_execute_positioning_positive_angle_runs_cw(self):
         ctrl = make_controller()
+        ctrl.clear_alarm_12 = MagicMock()
         ctrl.Enable_Position_Mode = MagicMock()
         ctrl.config_acc_dec_0x0902 = MagicMock()
         ctrl.config_speed_0x0903 = MagicMock()
@@ -691,6 +714,7 @@ class TestPosStepMotionTestAndExecutePositioning(unittest.TestCase):
 
     def test_execute_positioning_negative_angle_runs_ccw(self):
         ctrl = make_controller()
+        ctrl.clear_alarm_12 = MagicMock()
         ctrl.Enable_Position_Mode = MagicMock()
         ctrl.config_acc_dec_0x0902 = MagicMock()
         ctrl.config_speed_0x0903 = MagicMock()
