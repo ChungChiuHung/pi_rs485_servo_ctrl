@@ -196,8 +196,16 @@ class ServoController:
                 break
 
             # 1) Read "motion completed" flag
+            # Holds self.lock across the wire I/O (not just the state
+            # writes below) so a concurrent call to a method that also
+            # talks to the modbus client from another thread (e.g. a web UI
+            # status-polling endpoint calling read_current_alarm_code())
+            # can't interleave its request/response with this loop's on the
+            # same serial line. RTU has no built-in transaction ID to tell
+            # interleaved responses apart.
             try:
-                self.completed_tag = self.Read_Motion_Completed_Signal()
+                with self.lock:
+                    self.completed_tag = self.Read_Motion_Completed_Signal()
             except Exception as e:
                 logger.warning(f"Failed to read motion-completed signal ({e}); retrying...")
                 self.delay_ms(interval * 1000)
@@ -208,7 +216,8 @@ class ServoController:
 
             # 2) Read encoder position
             try:
-                encoder = self.read_encoder_before_gear_ratio()
+                with self.lock:
+                    encoder = self.read_encoder_before_gear_ratio()
             except Exception as e:
                 logger.warning(f"Failed to read encoder ({e}); retrying...")
                 self.delay_ms(interval * 1000)
@@ -381,9 +390,15 @@ class ServoController:
 
         Returns the raw int code, or None on a communication/parse failure
         (never assume None means "no alarm").
+
+        Locked (self.lock) so a concurrent status poll from the web UI can't
+        interleave its request/response with the continuous-reading loop's
+        own traffic on the same serial line -- see the comment in
+        _read_continuously().
         """
-        message = self.modbus_client.build_read_message(0x0100, 1)
-        response = self.modbus_client.send_and_receive(message)
+        with self.lock:
+            message = self.modbus_client.build_read_message(0x0100, 1)
+            response = self.modbus_client.send_and_receive(message)
         if response is None:
             logger.error("No response reading current alarm code (0x0100).")
             return None

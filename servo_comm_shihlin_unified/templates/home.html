@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Servo Control</title>
+        <link rel="stylesheet" href='../static/style.css'/>
+        <!--
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+        -->
+        <script src="../static/js/jquery-3.5.1.min.js"></script>
+        <script>
+            $(document).ready(function(){
+                function clearStatuses(excludeAction){
+                    // List all action IDs
+                    let actions = ['start','stop'];
+                    actions.forEach(function(action) {
+                        if(action !== excludeAction) {
+                            $('#'+action + '_status').text(''); // Clear the status text
+                        }
+                    });
+
+                }
+
+                function sendCommand(actionType) {
+                    clearStatuses(actionType);
+                    $.ajax({
+                        url:'/action',
+                        type:'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify({action: actionType}),
+                        success: function(response) {
+                            console.log('Sucess', response);
+                            $('#'+actionType + '_status').text(response.message ||'Action Completed');
+                        },
+                        error: function(error){
+                            console.error('Error:', error);
+                            $('#'+actionType + '_status').text('Error performing action');
+                        }
+                    });
+                }
+
+                // Event listeners for buttons
+                $('#startBtn').click(function(event){
+                    event.preventDefault();
+                    sendCommand('start');
+                });
+
+                $('#stopBtn').click(function(event){
+                    event.preventDefault();
+                    sendCommand('stop');
+                })
+            });
+        </script>
+    </head>
+<body>
+    <div class="navbar">
+        <a href="/">Home</a>
+        <a href="/index">Config</a>
+    </div>
+    <div class="main">
+        <h1>Walking Lamp Control</h1>
+        <div class="button-container">
+            <button class="button" id="startBtn">START</button>
+            <span id="start_status"></span>
+        </div>
+        <div class="button-container">
+            <button class="button" id="stopBtn">STOP</button>
+            <span id="stop_status"></span>
+        </div>
+    </div>
+</body>
+</html>
