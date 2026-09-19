@@ -127,32 +127,64 @@ class ServoController:
         self._last_motion_direction = None
         self._auto_stop_on_stillness = True
         self.abs_home_pos = self.load_abs_home_pos()
+        # Set Point 1/2 (degrees) -- recorded, not moved-to: SET POINT 1/2
+        # save wherever the motor currently is, they don't command a move.
+        # Per-profile, like abs_home_pos (see _load_config_value()'s
+        # docstring). None means "never recorded for this profile".
+        self.set_point_1 = self._load_config_value("set_point_1")
+        self.set_point_2 = self._load_config_value("set_point_2")
         self._event_listeners = {
             "on_motion_completed": [],
             "on_moving": [],
             "on_cancel": [],
         }
 
-    def load_abs_home_pos(self) -> int:
-        default = self.profile["abs_home_pos_default"]
+    def _load_config_dict(self) -> dict:
         try:
             with open(self.config_file, 'r') as file:
-                config = json.load(file)
-            return config.get("abs_home_pos", default)
+                return json.load(file)
         except FileNotFoundError:
-            logging.warning(f"Config file {self.config_file} not found; using profile default.")
-            return default
+            logging.warning(f"Config file {self.config_file} not found; using defaults.")
+            return {}
         except json.JSONDecodeError as e:
             logging.error(f"Error parsing configuration file: {e}.")
-            return default
+            return {}
 
-    def save_abs_home_pos(self, abs_home_pos: int):
+    def _load_config_value(self, key: str, default=None):
+        return self._load_config_dict().get(key, default)
+
+    def _save_config_value(self, key: str, value) -> None:
+        """Read-modify-write the whole config dict, not just {key: value} --
+        this file holds several independent values (abs_home_pos,
+        set_point_1, set_point_2), and a previous version of this method
+        overwrote the entire file with only its own key, silently erasing
+        whatever else had been saved there."""
+        config = self._load_config_dict()
+        config[key] = value
         try:
             with open(self.config_file, 'w') as file:
-                json.dump({"abs_home_pos": abs_home_pos}, file)
-            logging.info(f"Saved abs_home_pos: {abs_home_pos} to {self.config_file}")
+                json.dump(config, file)
+            logging.info(f"Saved {key}: {value} to {self.config_file}")
         except Exception as e:
-            logging.error(f"Error saving abs_home_pos: {e}")
+            logging.error(f"Error saving {key}: {e}")
+
+    def load_abs_home_pos(self) -> int:
+        return self._load_config_value("abs_home_pos", self.profile["abs_home_pos_default"])
+
+    def save_abs_home_pos(self, abs_home_pos: int):
+        self._save_config_value("abs_home_pos", abs_home_pos)
+
+    def record_set_point(self, n: int) -> float:
+        """Persists the CURRENTLY TRACKED angle as Set Point 1 or 2 --
+        does not move the motor. Returns the recorded angle."""
+        if n not in (1, 2):
+            raise ValueError(f"Set Point must be 1 or 2, got {n!r}.")
+        with self.lock:
+            angle = self.current_angle
+        self._save_config_value(f"set_point_{n}", angle)
+        setattr(self, f"set_point_{n}", angle)
+        logging.info(f"Set Point {n} recorded: {angle} deg")
+        return angle
 
     def register_event_listener(self, event_name: str, callback: Callable):
         """Register a callback for a specific event."""

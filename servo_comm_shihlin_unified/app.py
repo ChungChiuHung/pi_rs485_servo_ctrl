@@ -183,6 +183,10 @@ def get_status():
         "ctrl_mode_sel": servo_ctrller.read_test_mode_0x0901(),
         "current_angle": servo_ctrller.current_angle,
         "current_encoder": servo_ctrller.current_encoder,
+        # None means "never recorded for this profile" -- see
+        # ServoController.record_set_point()'s docstring.
+        "set_point_1": servo_ctrller.set_point_1,
+        "set_point_2": servo_ctrller.set_point_2,
         "alarm_code": alarm_code,
         # Raw alarm_code alone is misleading: this driver reports 0xFF
         # (255), not 0, for "no alarm" (see servo_control.NO_ALARM_CODES).
@@ -499,9 +503,12 @@ def handle_action():
     elif action == "posTestStart_CCW":
         servo_ctrller.pos_step_motion_test(CW=False)
     elif action == "setPoint_1":
-        servo_ctrller.post_step_motion_by(90)
+        # Records the CURRENT tracked angle as Set Point 1 -- does not move
+        # the motor. Persisted per-profile (servo_config_<profile>.json),
+        # so it survives a restart.
+        servo_ctrller.record_set_point(1)
     elif action == "setPoint_2":
-        servo_ctrller.post_step_motion_by(180)
+        servo_ctrller.record_set_point(2)
     elif action == "Home":
         servo_ctrller.post_step_motion_by(0)
     elif action == "enableSpeedCtrlMode":

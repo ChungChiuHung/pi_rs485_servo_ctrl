@@ -310,6 +310,88 @@ class TestPerProfileConfigFile(unittest.TestCase):
         self.assertNotEqual(ctrl_a.config_file, ctrl_b.config_file)
 
 
+class TestSetPointRecording(unittest.TestCase):
+    """SET POINT 1/2 record wherever the motor currently is -- they must
+    never command a move. Persisted per-profile like abs_home_pos, via the
+    same read-modify-write _save_config_value() helper."""
+
+    def test_records_current_angle_without_moving(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ctrl = make_controller(tmp_dir=tmp_dir)
+            ctrl.current_angle = 45.5
+            ctrl.modbus_client.send_and_receive = MagicMock()
+
+            result = ctrl.record_set_point(1)
+
+            self.assertEqual(result, 45.5)
+            self.assertEqual(ctrl.set_point_1, 45.5)
+            self.assertEqual(ctrl.current_angle, 45.5)  # unchanged -- no move
+            ctrl.modbus_client.send_and_receive.assert_not_called()
+
+    def test_set_point_2_recorded_independently(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ctrl = make_controller(tmp_dir=tmp_dir)
+            ctrl.current_angle = 12.0
+            ctrl.record_set_point(1)
+            ctrl.current_angle = 99.0
+
+            ctrl.record_set_point(2)
+
+            self.assertEqual(ctrl.set_point_1, 12.0)
+            self.assertEqual(ctrl.set_point_2, 99.0)
+
+    def test_invalid_set_point_number_raises(self):
+        ctrl = make_controller()
+        with self.assertRaises(ValueError):
+            ctrl.record_set_point(3)
+
+    def test_save_config_value_does_not_erase_other_keys(self):
+        # Regression test: an earlier version of _save_config_value()
+        # overwrote the whole config file with only {key: value}, which
+        # would have silently erased abs_home_pos the moment a set point
+        # was saved (or vice versa).
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ctrl = make_controller(tmp_dir=tmp_dir)
+            ctrl.save_abs_home_pos(111)
+            ctrl.current_angle = 22.5
+
+            ctrl.record_set_point(1)
+
+            import json
+            with open(ctrl.config_file) as f:
+                saved = json.load(f)
+            self.assertEqual(saved["abs_home_pos"], 111)
+            self.assertEqual(saved["set_point_1"], 22.5)
+
+    def test_init_loads_existing_set_points_from_config_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            original_cwd = os.getcwd()
+            os.chdir(tmp_dir)
+            try:
+                import json
+                config_name = f"servo_config_{PROFILE_400W['name']}.json"
+                with open(config_name, 'w') as f:
+                    json.dump({"set_point_1": 30.0, "set_point_2": 60.0}, f)
+
+                ctrl = make_controller()
+
+                self.assertEqual(ctrl.set_point_1, 30.0)
+                self.assertEqual(ctrl.set_point_2, 60.0)
+            finally:
+                os.chdir(original_cwd)
+
+    def test_init_defaults_to_none_when_never_recorded(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            original_cwd = os.getcwd()
+            os.chdir(tmp_dir)
+            try:
+                ctrl = make_controller()
+                self.assertIsNone(ctrl.set_point_1)
+                self.assertIsNone(ctrl.set_point_2)
+            finally:
+                os.chdir(original_cwd)
+
+
 class TestLockIsReentrant(unittest.TestCase):
 
     def test_lock_is_rlock_not_plain_lock(self):
