@@ -186,6 +186,27 @@ class ServoController:
         logging.info(f"Set Point {n} recorded: {angle} deg")
         return angle
 
+    def move_to_set_point(self, n: int, acc_dec_time: int = 5000, speed_rpm: int = 10) -> None:
+        """Commands a move to the previously recorded Set Point 1 or 2 (see
+        record_set_point()) via the same closed-loop post_step_motion_by()
+        path as HOME. Raises ValueError if n isn't 1/2, or if that set
+        point has never been recorded -- callers must not fall back to a
+        default target (e.g. 0) in that case."""
+        if n not in (1, 2):
+            raise ValueError(f"Set Point must be 1 or 2, got {n!r}.")
+        target_angle = getattr(self, f"set_point_{n}")
+        if target_angle is None:
+            raise ValueError(f"Set Point {n} has not been recorded yet.")
+        # post_step_motion_by() computes a RELATIVE move from
+        # self.current_angle, which is otherwise only updated by the
+        # continuous-reading background thread -- refresh it from a real
+        # encoder read first so a call right after a process restart (before
+        # that thread has ever run) doesn't move relative to a stale
+        # default. See _refresh_current_angle_from_hardware()'s docstring.
+        self._refresh_current_angle_from_hardware()
+        logging.info(f"Moving to Set Point {n}: {target_angle} deg")
+        self.post_step_motion_by(target_angle, acc_dec_time, speed_rpm)
+
     def register_event_listener(self, event_name: str, callback: Callable):
         """Register a callback for a specific event."""
         if event_name not in self._event_listeners:
@@ -309,19 +330,34 @@ class ServoController:
         """
         self.stop_continuous_reading()
         self.Enable_Position_Mode(False)
+        self.delay_ms(50)
+        if self._refresh_current_angle_from_hardware():
+            self._notify_event_listeners("on_cancel", self.current_angle)
+
+    def _refresh_current_angle_from_hardware(self) -> bool:
+        """One-shot fresh encoder read that brings self.current_angle/
+        current_encoder up to date immediately, instead of waiting for the
+        continuous-reading background thread (the only other writer of
+        these fields). Needed before computing a RELATIVE move (e.g.
+        move_to_set_point()) right after a process restart: current_angle
+        still holds its __init__ default (0.0) until that thread has run
+        at least once, and a relative move computed against a stale value
+        lands at the wrong absolute position -- confirmed live 2026-09-19
+        (a move-to-14.43deg landed at 28.86deg, exactly double, because
+        current_angle was still 0.0 post-restart). Returns False (and
+        leaves current_angle untouched) on a communication failure."""
         with self.lock:
-            self.delay_ms(50)
             raw_encoder = self.read_encoder_before_gear_ratio()
             if raw_encoder is None:
-                logging.warning("cancel_continuous_reading: empty encoder response.")
-                return
+                logging.warning("_refresh_current_angle_from_hardware: empty encoder response.")
+                return False
             self.current_encoder = self._encoder_tracker.update(raw_encoder)
             logging.info(f"Current Encoder Value: {self.current_encoder} (raw: {raw_encoder})")
             self.current_angle = round(
                 (self.current_encoder - self.abs_home_pos) / self.base_pulse_per_degree, 4
             )
             logging.info(f"Current Angle: {self.current_angle}")
-            self._notify_event_listeners("on_cancel", self.current_angle)
+            return True
 
     def _read_continuously(self, interval: float) -> None:
         # Software motion-complete detection instead of Read_Motion_Completed_Signal()
