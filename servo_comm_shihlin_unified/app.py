@@ -98,10 +98,14 @@ def _connect_profile(profile_name: str) -> None:
 with _state_lock:
     _connect_profile(current_profile_name)
 
-# Kept for template/JS compatibility with servo_comm_shihlin's index.html;
-# handle_action() doesn't actually populate these from real RS485 traffic
-# (neither does the version this was ported from).
-RS485_send, RS485_read = "00 00 FF FF", "FF FF 00 00"
+def _current_rs485_traffic():
+    """The most recent raw Modbus transaction's bytes, for the web UI's
+    "RS-485 Send/Receive" boxes. These used to be a hardcoded placeholder
+    ("00 00 FF FF" / "FF FF 00 00") never updated from real traffic --
+    now reads ModbusRTUClient.last_sent/last_received directly, which
+    every send()/receive() call updates (see modbus_rtu_client.py)."""
+    client = servo_ctrller.modbus_client
+    return client.format_hex(client.last_sent), client.format_hex(client.last_received)
 
 
 def json_response(f):
@@ -128,9 +132,10 @@ def home():
 
 @app.route('/index')
 def index():
+    rs485_send, rs485_read = _current_rs485_traffic()
     return render_template(
         'index.html', title='Servo Control Panel',
-        RS485_read=RS485_read, RS485_send=RS485_send
+        RS485_read=rs485_read, RS485_send=rs485_send
     )
 
 
@@ -484,11 +489,12 @@ def handle_action():
             "message": f"Action '{action}' not recognized.",
         }), 400
 
+    rs485_send, rs485_read = _current_rs485_traffic()
     return jsonify({
         "status": "success",
         "action": action,
-        "RS485_send": RS485_send,
-        "RS485_read": RS485_read,
+        "RS485_send": rs485_send,
+        "RS485_read": rs485_read,
         "message": f"Action {action} completed successfully.",
     })
 

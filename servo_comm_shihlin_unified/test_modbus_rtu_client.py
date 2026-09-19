@@ -141,6 +141,70 @@ class TestSendFlushesInputBufferFirst(unittest.TestCase):
         self.assertEqual(len(fake_serial._incoming), 0)
 
 
+class TestFormatHex(unittest.TestCase):
+
+    def test_formats_bytes_as_spaced_uppercase_hex(self):
+        self.assertEqual(ModbusRTUClient.format_hex(b'\x01\x03\xff'), '01 03 FF')
+
+    def test_none_is_empty_string(self):
+        self.assertEqual(ModbusRTUClient.format_hex(None), '')
+
+    def test_empty_bytes_is_empty_string(self):
+        self.assertEqual(ModbusRTUClient.format_hex(b''), '')
+
+
+class TestLastSentAndReceivedTracking(unittest.TestCase):
+    """Regression coverage for the 2026-09-19 finding: the web UI's
+    "RS-485 Send/Receive" boxes displayed a hardcoded placeholder that was
+    never actually updated from real traffic. last_sent/last_received (and
+    app.py's use of them) fix that -- these track the real bytes of the
+    most recent transaction."""
+
+    def test_no_traffic_yet_is_none(self):
+        client, _ = make_client_with_fake_serial()
+        self.assertIsNone(client.last_sent)
+        self.assertIsNone(client.last_received)
+
+    def test_successful_transaction_records_both(self):
+        frame = build_frame(1, CmdCode.READ_DATA.value, b'\x02' + struct.pack('>H', 42))
+        client, _ = make_client_with_fake_serial(response_after_write=frame)
+        message = client.build_read_message(0x0100, 1)
+
+        client.send_and_receive(message, expected_length=len(frame))
+
+        self.assertEqual(client.last_sent, message)
+        self.assertEqual(client.last_received, frame)
+
+    def test_a_later_transaction_overwrites_the_earlier_one(self):
+        """Confirms this reflects the MOST RECENT transaction, not a stale
+        first one -- otherwise the UI would show old traffic as if it were
+        current."""
+        frame1 = build_frame(1, CmdCode.READ_DATA.value, b'\x02' + struct.pack('>H', 1))
+        client, fake_serial = make_client_with_fake_serial(response_after_write=frame1)
+        message1 = client.build_read_message(0x0100, 1)
+        client.send_and_receive(message1, expected_length=len(frame1))
+
+        frame2 = build_frame(1, CmdCode.READ_DATA.value, b'\x02' + struct.pack('>H', 2))
+        fake_serial._response_after_write = frame2
+        message2 = client.build_read_message(0x0200, 1)
+        client.send_and_receive(message2, expected_length=len(frame2))
+
+        self.assertEqual(client.last_sent, message2)
+        self.assertEqual(client.last_received, frame2)
+
+    def test_no_response_clears_last_received_but_keeps_last_sent(self):
+        """A failed attempt must not keep showing a stale successful
+        response as if it just happened -- but the request really was
+        sent, so last_sent should still reflect that."""
+        client, _ = make_client_with_fake_serial()  # no response ever arrives
+        message = client.build_read_message(0x0100, 1)
+
+        client.send_and_receive(message, expected_length=7, timeout=0.05)
+
+        self.assertEqual(client.last_sent, message)
+        self.assertIsNone(client.last_received)
+
+
 class RequestEchoingFakeSerial:
     """Answers every write() with a response tailored to THAT specific
     request (encodes the requested address into the reply), unlike a fixed

@@ -49,6 +49,19 @@ class ModbusRTUClient:
         # every current and future ServoController method to remember to
         # take a lock itself.
         self._transaction_lock = threading.Lock()
+        # Raw bytes of the most recent transaction, for diagnostics (the web
+        # UI's "RS-485 Send/Receive" boxes). Written only from inside send()/
+        # receive(), both always called under _transaction_lock via
+        # send_and_receive() -- see format_hex() for how callers display these.
+        self.last_sent: Union[bytes, None] = None
+        self.last_received: Union[bytes, None] = None
+
+    @staticmethod
+    def format_hex(data: Union[bytes, None]) -> str:
+        """Space-separated uppercase hex, e.g. b'\\x01\\x03' -> '01 03'.
+        Empty string for None/empty (no traffic yet, or the last attempt
+        got no response) -- never a stale or fabricated value."""
+        return ' '.join(f'{b:02X}' for b in data) if data else ''
 
     def build_read_message(self, address: int, word_length: int) -> bytes:
         data = struct.pack('>H', word_length)
@@ -130,6 +143,7 @@ class ModbusRTUClient:
                 serial_instance.reset_input_buffer()
                 logger.debug(f"Message sent: {message.hex()}")
                 serial_instance.write(message)
+                self.last_sent = message
             except serial.SerialException as e:
                 logger.error(f"Failed to send message due to serial error: {e}")
             except Exception as e:
@@ -169,8 +183,10 @@ class ModbusRTUClient:
 
             if response:
                 logger.debug(f"Response received: {response.hex()}")
+                self.last_received = bytes(response)
                 return bytes(response)
             logger.warning("No response received.")
+            self.last_received = None
             return None
         except serial.SerialException as e:
             logger.error(f"Failed to receive message due to serial error: {e}")
