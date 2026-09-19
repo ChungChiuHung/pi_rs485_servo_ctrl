@@ -57,6 +57,7 @@ import logging
 import socket
 import struct
 import threading
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,14 @@ class ArtNetInputServer:
         self._last_set_home_channel = 0
         self._last_reset_initial_abs_pos_channel = 0
 
+        # Raw bytes of the most recently received DMX frame (for the
+        # configured universe only), plus when it arrived -- for the web
+        # UI's Art-Net Channel Monitor (get_channel_snapshot()), so a user
+        # can see what a console/controller actually sent without an
+        # external DMX tool.
+        self._last_frame_data = None
+        self._last_frame_time = None
+
     @property
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
@@ -113,6 +122,9 @@ class ArtNetInputServer:
     def _handle_dmx(self, universe: int, data: bytes) -> None:
         if universe != self.universe or len(data) < 3:
             return
+
+        self._last_frame_data = data
+        self._last_frame_time = time.time()
 
         enable_channel, direction_channel, cancel_channel = data[0], data[1], data[2]
 
@@ -218,6 +230,53 @@ class ArtNetInputServer:
             logger.info("Art-Net: reset initial absolute position triggered (channel 12 rising edge).")
         self._last_reset_initial_abs_pos_channel = reset_initial_abs_pos_channel
 
+    def get_channel_snapshot(self):
+        """Interpreted state of the most recently received DMX frame, for
+        the web UI's Art-Net Channel Monitor -- lets a user confirm what a
+        console/controller actually sent without an external DMX tool.
+        Returns None if no frame has arrived yet for the configured
+        universe. Read-only; never touches the driver."""
+        data = self._last_frame_data
+        if data is None:
+            return None
+
+        def entry(channel, label, value, interpreted):
+            return {"channel": channel, "label": label, "value": value, "interpreted": interpreted}
+
+        channels = []
+        enable = data[0]
+        channels.append(entry(
+            1, "Enable/Speed", enable,
+            "disabled" if enable == 0 else f"{max(1, round(enable / 255 * self.max_speed_rpm))} rpm"
+        ))
+        direction = data[1] if len(data) > 1 else 0
+        direction_label = "stop" if direction == 0 else ("CCW" if direction < 128 else "CW")
+        channels.append(entry(2, "Direction", direction, direction_label))
+        cancel = data[2] if len(data) > 2 else 0
+        channels.append(entry(3, "Cancel", cancel, "triggered" if cancel > 0 else "idle"))
+
+        if len(data) >= 7:
+            trigger, angle_high, angle_low, speed_ch = data[3], data[4], data[5], data[6]
+            angle_raw = (angle_high << 8) | angle_low
+            angle = angle_raw / 65535 * self.position_mode_max_angle
+            channels.append(entry(4, "Position trigger", trigger, "armed" if trigger > 0 else "idle"))
+            channels.append(entry(5, "Angle (high byte)", angle_high, f"{angle:.2f} deg (combined w/ ch 6)"))
+            channels.append(entry(6, "Angle (low byte)", angle_low, ""))
+            channels.append(entry(
+                7, "Position speed", speed_ch,
+                f"{max(1, round(speed_ch / 255 * self.max_speed_rpm))} rpm"
+            ))
+
+        if len(data) >= 12:
+            servo, clear, back_home, set_home, reset_abs = data[7], data[8], data[9], data[10], data[11]
+            channels.append(entry(8, "Servo on/off", servo, "on" if servo > 0 else "off"))
+            channels.append(entry(9, "Clear Alarm 12", clear, "triggered" if clear > 0 else "idle"))
+            channels.append(entry(10, "Back home", back_home, "triggered" if back_home > 0 else "idle"))
+            channels.append(entry(11, "Set home", set_home, "triggered" if set_home > 0 else "idle"))
+            channels.append(entry(12, "Reset initial abs pos", reset_abs, "triggered" if reset_abs > 0 else "idle"))
+
+        return {"received_at": self._last_frame_time, "channels": channels}
+
     def _serve(self) -> None:
         self._sock.settimeout(0.5)
         while not self._stop_event.is_set():
@@ -246,6 +305,8 @@ class ArtNetInputServer:
         self._last_back_home_channel = 0
         self._last_set_home_channel = 0
         self._last_reset_initial_abs_pos_channel = 0
+        self._last_frame_data = None
+        self._last_frame_time = None
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._sock.bind((self.listen_ip, self.listen_port))

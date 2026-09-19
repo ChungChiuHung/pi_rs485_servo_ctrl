@@ -232,6 +232,18 @@ def get_input_server_status():
     })
 
 
+@app.route('/server/artnet_channels', methods=['GET'])
+def get_artnet_channels():
+    """Interpreted state of the most recently received Art-Net DMX frame,
+    for the web UI's Channel Monitor -- lets a user confirm what a
+    console/controller actually sent without an external DMX tool.
+    Read-only; never touches the driver. `active: false` (with
+    `channels: null`) whenever Art-Net isn't the running input server."""
+    if active_input_server != "artnet" or _input_server_instance is None:
+        return jsonify({"active": False, "channels": None})
+    return jsonify({"active": True, "channels": _input_server_instance.get_channel_snapshot()})
+
+
 @app.route('/log', methods=['GET'])
 def get_activity_log():
     """Incremental activity feed for a user not watching this process's

@@ -321,6 +321,91 @@ class TestExtendedChannels(unittest.TestCase):
         ctrl.write_PA29_Initial_Abs_Pos.assert_not_called()
 
 
+class TestGetChannelSnapshot(unittest.TestCase):
+    """get_channel_snapshot() -- the web UI's Art-Net Channel Monitor, so
+    a user can see what a console/controller actually sent without an
+    external DMX tool."""
+
+    def test_no_frame_received_yet_returns_none(self):
+        server, ctrl = make_server()
+        self.assertIsNone(server.get_channel_snapshot())
+
+    def test_short_frame_only_reports_channels_1_to_3(self):
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=bytes([100, 200, 0]))
+
+        snapshot = server.get_channel_snapshot()
+
+        self.assertIsNotNone(snapshot)
+        self.assertEqual([c["channel"] for c in snapshot["channels"]], [1, 2, 3])
+
+    def test_channel_1_interpreted_as_rpm(self):
+        server, ctrl = make_server(max_speed_rpm=100)
+        server._handle_dmx(universe=0, data=bytes([255, 0, 0]))
+
+        ch1 = server.get_channel_snapshot()["channels"][0]
+
+        self.assertEqual(ch1["value"], 255)
+        self.assertEqual(ch1["interpreted"], "100 rpm")
+
+    def test_channel_1_zero_is_disabled(self):
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0]))
+
+        ch1 = server.get_channel_snapshot()["channels"][0]
+
+        self.assertEqual(ch1["interpreted"], "disabled")
+
+    def test_direction_channel_interpreted(self):
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=bytes([0, 200, 0]))
+
+        ch2 = server.get_channel_snapshot()["channels"][1]
+
+        self.assertEqual(ch2["interpreted"], "CW")
+
+    def test_seven_byte_frame_reports_position_mode_channels(self):
+        server, ctrl = make_server(max_speed_rpm=100, position_mode_max_angle=360)
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, 0x80, 0x00, 128]))
+
+        snapshot = server.get_channel_snapshot()
+
+        self.assertEqual([c["channel"] for c in snapshot["channels"]], [1, 2, 3, 4, 5, 6, 7])
+        angle_channel = snapshot["channels"][4]
+        self.assertIn("deg", angle_channel["interpreted"])
+
+    def test_twelve_byte_frame_reports_extended_channels(self):
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 0, 0, 0, 0, 200, 255, 0, 0, 0]))
+
+        snapshot = server.get_channel_snapshot()
+
+        self.assertEqual([c["channel"] for c in snapshot["channels"]], list(range(1, 13)))
+        self.assertEqual(snapshot["channels"][7]["interpreted"], "on")  # channel 8, servo
+        self.assertEqual(snapshot["channels"][8]["interpreted"], "triggered")  # channel 9, clear alarm
+
+    def test_snapshot_reflects_most_recent_frame_not_the_first(self):
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=bytes([100, 0, 0]))
+        server._handle_dmx(universe=0, data=bytes([200, 0, 0]))
+
+        ch1 = server.get_channel_snapshot()["channels"][0]
+
+        self.assertEqual(ch1["value"], 200)
+
+    def test_frame_for_a_different_universe_does_not_update_snapshot(self):
+        server, ctrl = make_server(universe=0)
+        server._handle_dmx(universe=1, data=bytes([100, 0, 0]))
+
+        self.assertIsNone(server.get_channel_snapshot())
+
+    def test_received_at_timestamp_is_present(self):
+        server, ctrl = make_server()
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0]))
+
+        self.assertIsNotNone(server.get_channel_snapshot()["received_at"])
+
+
 class TestStartStopLifecycle(unittest.TestCase):
 
     def test_start_sets_is_running_and_stop_clears_it(self):
