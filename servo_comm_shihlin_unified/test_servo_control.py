@@ -392,6 +392,92 @@ class TestSetPointRecording(unittest.TestCase):
                 os.chdir(original_cwd)
 
 
+class TestMoveToSetPoint(unittest.TestCase):
+    """MOVE TO SET POINT 1/2 commands an actual move to the previously
+    recorded angle, via the same post_step_motion_by() path as HOME --
+    distinct from SET POINT 1/2 (record_set_point()), which only records
+    and never moves."""
+
+    def test_moves_to_the_recorded_angle(self):
+        ctrl = make_controller()
+        ctrl.set_point_1 = 45.5
+        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)
+        ctrl.post_step_motion_by = MagicMock()
+
+        ctrl.move_to_set_point(1)
+
+        ctrl.post_step_motion_by.assert_called_once_with(45.5, 5000, 10)
+
+    def test_set_point_2_uses_its_own_value(self):
+        ctrl = make_controller()
+        ctrl.set_point_1 = 10.0
+        ctrl.set_point_2 = 99.0
+        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)
+        ctrl.post_step_motion_by = MagicMock()
+
+        ctrl.move_to_set_point(2)
+
+        ctrl.post_step_motion_by.assert_called_once_with(99.0, 5000, 10)
+
+    def test_refreshes_current_angle_before_moving(self):
+        """Regression test: move_to_set_point() must refresh current_angle
+        from a real encoder read before computing the move -- otherwise a
+        call right after a process restart (before the continuous-reading
+        thread has ever run) moves relative to the stale __init__ default
+        (0.0) instead of the real position. Confirmed live 2026-09-19: a
+        move-to-14.43deg landed at 28.86deg, exactly double, because of
+        this."""
+        ctrl = make_controller()
+        ctrl.set_point_1 = 45.5
+        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)
+        ctrl.post_step_motion_by = MagicMock()
+
+        ctrl.move_to_set_point(1)
+
+        ctrl._refresh_current_angle_from_hardware.assert_called_once()
+
+    def test_unrecorded_set_point_raises_without_moving(self):
+        ctrl = make_controller()
+        ctrl.set_point_1 = None
+        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)
+        ctrl.post_step_motion_by = MagicMock()
+
+        with self.assertRaises(ValueError):
+            ctrl.move_to_set_point(1)
+
+        ctrl.post_step_motion_by.assert_not_called()
+        ctrl._refresh_current_angle_from_hardware.assert_not_called()
+
+    def test_invalid_set_point_number_raises(self):
+        ctrl = make_controller()
+        with self.assertRaises(ValueError):
+            ctrl.move_to_set_point(3)
+
+
+class TestRefreshCurrentAngleFromHardware(unittest.TestCase):
+
+    def test_updates_current_angle_from_a_fresh_read(self):
+        ctrl = make_controller()
+        ctrl.abs_home_pos = 0
+        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=349525)
+
+        result = ctrl._refresh_current_angle_from_hardware()
+
+        self.assertTrue(result)
+        self.assertEqual(ctrl.current_encoder, 349525)
+        self.assertAlmostEqual(ctrl.current_angle, 1.0, places=2)
+
+    def test_empty_response_leaves_current_angle_untouched(self):
+        ctrl = make_controller()
+        ctrl.current_angle = 42.0
+        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=None)
+
+        result = ctrl._refresh_current_angle_from_hardware()
+
+        self.assertFalse(result)
+        self.assertEqual(ctrl.current_angle, 42.0)
+
+
 class TestLockIsReentrant(unittest.TestCase):
 
     def test_lock_is_rlock_not_plain_lock(self):
