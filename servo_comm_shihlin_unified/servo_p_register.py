@@ -83,8 +83,56 @@ class PA:
         value = cls.encode_HMOV(z,y,x)
         cls.HMOV.write_value(value)
         print(f"Register set to {hex(value)} ({cls.explain_HMOV(value)})")
-        
-    
+
+    # STY/PLSS/POL are all packed as hex nibbles (manual pp.83-90), same
+    # shape as HMOV above -- decoded here purely for the "GET STATE VALUE"
+    # diagnostic read (Read_Pos_Related_Paremters()), not used by any
+    # control path.
+    @classmethod
+    def explain_STY(cls, value):
+        x = value % 0x10
+        y = (value // 0x10) % 0x10
+        z = (value // 0x100) % 0x10
+        u = (value // 0x1000) % 0x10
+        control_modes = ["position", "position/speed", "speed", "speed/torque",
+                          "torque", "torque/position", "turret"]
+        position_cmd_sources = ["external input", "inner register", "Pt-Pr switched (SDE-P only)"]
+        x_desc = control_modes[x] if x < len(control_modes) else f"unknown ({x})"
+        y_desc = position_cmd_sources[y] if y < len(position_cmd_sources) else f"unknown ({y})"
+        z_desc = "enabled (motor has electromagnetic brake)" if z else "disabled"
+        u_desc = "DI/DO functions vary with control mode" if u else "DI/DO functions fixed"
+        return f"control mode={x_desc}; position command source={y_desc}; brake={z_desc}; DI/DO={u_desc}"
+
+    @classmethod
+    def explain_PLSS(cls, value):
+        x = value % 0x10
+        y = (value // 0x10) % 0x10
+        z = (value // 0x100) % 0x10
+        pulse_formats = ["forward/reverse rotation pulse train", "pulse train + sign", "A/B phase pulse train"]
+        ack_logics = ["positive logic", "negative logic"]
+        filter_options = ["<=500kpps", "<=200kpps", "<=2Mpps", "<=4Mpps"]
+        x_desc = pulse_formats[x] if x < len(pulse_formats) else f"unknown ({x})"
+        y_desc = ack_logics[y] if y < len(ack_logics) else f"unknown ({y})"
+        z_desc = filter_options[z] if z < len(filter_options) else f"unknown ({z})"
+        return f"pulse-train format={x_desc}; ack logic={y_desc}; input pulse filter={z_desc}"
+
+    @classmethod
+    def explain_POL(cls, value):
+        x = value % 0x10
+        z = (value // 0x100) % 0x10
+        direction_options = [
+            "forward pulse-train -> CCW, reverse pulse-train -> CW",
+            "forward pulse-train -> CW, reverse pulse-train -> CCW",
+        ]
+        encoder_output_options = ["output pulse count (PA14=ENR is pulses/rev)",
+                                   "output division ratio (PA14=ENR is the divisor)"]
+        x_desc = direction_options[x] if x < len(direction_options) else f"unknown ({x})"
+        z_desc = encoder_output_options[z] if z < len(encoder_output_options) else f"unknown ({z})"
+        # The manual's y-nibble table (motor rotation vs. encoder pulse
+        # output relationship, PA39) is a diagram, not text -- no textual
+        # description exists to decode it from, so it's omitted here.
+        return f"input pulse/motor direction={x_desc}; encoder output={z_desc}"
+
 
 class PC:
     _start_address = 0x0500
@@ -159,6 +207,31 @@ class PD:
 
         cls.SDI = Register(16, "SDI", "數位輸入接點來源控制開關", 0x0000, cls.calculate_address(16))
         cls.ITST = Register(25, "ITST", "通訊控制數位輸入接點狀態", 0x0000, cls.calculate_address(25))
+
+    # SDI/ITST are 12-bit masks, bit0-11 = DI1-DI12 (manual p.105/107).
+    # MCOK is nibble-packed like PA's STY/PLSS/POL. Decoded here purely
+    # for the "GET STATE VALUE" diagnostic read.
+    @classmethod
+    def explain_SDI(cls, value):
+        controlled = [f"DI{i + 1}" for i in range(12) if (value >> i) & 1]
+        return ("Communication-controlled: " + ", ".join(controlled)) if controlled \
+            else "All DI controlled by hardware wiring"
+
+    @classmethod
+    def explain_ITST(cls, value):
+        # Only meaningful for DIs that SDI marks as communication-controlled
+        # -- see PD16/PD25 interaction example in the manual (p.107).
+        on_bits = [f"DI{i + 1}" for i in range(12) if (value >> i) & 1]
+        return ("Virtual ON: " + ", ".join(on_bits)) if on_bits else "All virtual DI bits OFF"
+
+    @classmethod
+    def explain_MCOK(cls, value):
+        x = value % 0x10
+        y = (value // 0x10) % 0x10
+        x_desc = "MC_OK held until next move" if x else "MC_OK pulses briefly (not held)"
+        y_desc = "AL1B (position error) enabled" if y else "AL1B (position error) invalid"
+        return f"{x_desc}; {y_desc}"
+
 
 class PE:
     _start_address = 0x0700

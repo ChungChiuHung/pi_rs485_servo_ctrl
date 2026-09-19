@@ -797,17 +797,63 @@ class ServoController:
         except Exception as e:
             logging.info(f"An unexpected error occurred: {e}")
 
-    def Read_Pos_Related_Paremters(self):
+    # Registers whose value is a packed bitfield/mask (manual pp.83-90,
+    # 105-108), not a plain measurement -- decoded via the matching
+    # explain_* classmethod on PA/PD (servo_p_register.py) rather than
+    # shown as a raw integer.
+    _EXPLAIN_FN_BY_REGISTER_NAME = {
+        "STY": PA.explain_STY,
+        "HMOV": PA.explain_HMOV,
+        "PLSS": PA.explain_PLSS,
+        "POL": PA.explain_POL,
+        "SDI": PD.explain_SDI,
+        "ITST": PD.explain_ITST,
+        "MCOK": PD.explain_MCOK,
+    }
+
+    def Read_Pos_Related_Paremters(self) -> list:
+        """Reads a fixed diagnostic set of PA/PD *parameter* registers --
+        mostly configuration bitfields, not live motion feedback -- and
+        decodes each one that has a known bit layout (see
+        _EXPLAIN_FN_BY_REGISTER_NAME) so "GET STATE VALUE" surfaces actual
+        meaning instead of raw undecoded bytes. Read-only; never writes."""
         read_address_array = [PA.STY, PA.HMOV, PA.PLSS,
                                PA.ENR, PA.PO1H, PA.POL,
                                PD.SDI, PD.ITST, PD.MCOK]
 
+        results = []
         for address in read_address_array:
             logger.info(f"Read {address.no}: {address.name}: {hex(address.address)}")
             message = self.modbus_client.build_read_message(address.address, 1)
-            self.response = self.modbus_client.send_and_receive(message)
-            logger.info(self.response)
+            response = self.modbus_client.send_and_receive(message)
+            entry = {
+                "no": address.no,
+                "name": address.name,
+                "description": address.description,
+                "address": hex(address.address),
+                "value": None,
+                "interpreted": None,
+            }
+            if response is None:
+                entry["interpreted"] = "No response (communication failure)"
+            else:
+                try:
+                    value = ModbusRTUResponse(response).get_value()
+                    entry["value"] = value
+                    explain_fn = self._EXPLAIN_FN_BY_REGISTER_NAME.get(address.name)
+                    if explain_fn:
+                        entry["interpreted"] = explain_fn(value)
+                    elif address.name == "ENR":
+                        entry["interpreted"] = f"{value} pulses/rev (or division ratio, per POL's z-bit)"
+                    elif address.name == "PO1H":
+                        entry["interpreted"] = f"{value} rev"
+                except Exception as e:
+                    logger.error(f"Failed to parse {address.name} response: {e}")
+                    entry["interpreted"] = f"Parse error: {e}"
+            logger.info(f"{address.name} = {entry['value']} ({entry['interpreted']})")
+            results.append(entry)
             self.delay_ms(100)
+        return results
 
     def Read_Motion_Completed_Signal(self) -> bool:
         try:

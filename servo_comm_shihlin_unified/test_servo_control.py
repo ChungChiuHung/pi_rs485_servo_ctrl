@@ -1243,5 +1243,64 @@ class TestReadMcOkStatus(unittest.TestCase):
         self.assertIsNone(ctrl.read_mc_ok_status())
 
 
+class TestReadPosRelatedParemters(unittest.TestCase):
+    """GET STATE VALUE ("getMsg") -- must decode each register via its
+    explain_* helper (servo_p_register.py), not just log raw bytes. Values
+    below are the manual's own documented defaults/worked examples (see
+    docs/en_manual.txt), so the expected interpretation strings are the
+    manual's, not reverse-engineered from the implementation."""
+
+    def _mock_reads(self, ctrl, values):
+        # Read order in Read_Pos_Related_Paremters(): STY, HMOV, PLSS,
+        # ENR, PO1H, POL, SDI, ITST, MCOK.
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+        patcher = patch("servo_control.ModbusRTUResponse")
+        mock_cls = patcher.start()
+        self.addCleanup(patcher.stop)
+        mock_cls.return_value.get_value.side_effect = values
+        return ctrl
+
+    def test_decodes_all_nine_registers_with_manual_defaults(self):
+        ctrl = make_controller()
+        # STY=0x1000 (factory default), HMOV=0x0000 (factory default),
+        # PLSS=0x0312 (worked example: A/B phase, negative logic, 4Mpps),
+        # ENR=10000 (factory default pulse/rev), PO1H=0, POL=0x0111,
+        # SDI=0x0FFF (all DI communication-controlled),
+        # ITST=0x0011 (manual's own worked example: DI1 and DI5 ON),
+        # MCOK=0x0011 (hold + AL1B enabled).
+        self._mock_reads(ctrl, [0x1000, 0x0000, 0x0312, 10000, 0, 0x0111,
+                                 0x0FFF, 0x0011, 0x0011])
+
+        results = ctrl.Read_Pos_Related_Paremters()
+
+        by_name = {entry["name"]: entry for entry in results}
+        self.assertEqual(len(results), 9)
+        self.assertIn("position", by_name["STY"]["interpreted"])
+        self.assertIn("A/B phase pulse train", by_name["PLSS"]["interpreted"])
+        self.assertEqual(by_name["ENR"]["value"], 10000)
+        self.assertIn("pulses/rev", by_name["ENR"]["interpreted"])
+        self.assertEqual(by_name["PO1H"]["interpreted"], "0 rev")
+        self.assertIn("output division ratio", by_name["POL"]["interpreted"])
+        self.assertIn("DI1", by_name["SDI"]["interpreted"])
+        self.assertIn("DI12", by_name["SDI"]["interpreted"])
+        # Manual's own worked example for ITST=0x0011: "DI1 and DI5 are ON".
+        self.assertEqual(by_name["ITST"]["interpreted"], "Virtual ON: DI1, DI5")
+        self.assertIn("held until next move", by_name["MCOK"]["interpreted"])
+        self.assertIn("AL1B", by_name["MCOK"]["interpreted"])
+
+    def test_no_response_reports_communication_failure_not_a_crash(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = None
+
+        results = ctrl.Read_Pos_Related_Paremters()
+
+        self.assertEqual(len(results), 9)
+        for entry in results:
+            self.assertIsNone(entry["value"])
+            self.assertEqual(entry["interpreted"], "No response (communication failure)")
+
+
 if __name__ == "__main__":
     unittest.main()

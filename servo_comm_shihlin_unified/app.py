@@ -446,6 +446,9 @@ def handle_action():
 
     print(f"Received action: {action}")
 
+    # Populated only by getMsg -- see the final response below.
+    state_values = None
+
     # Enable the Digital I/O Writable
     servo_ctrller.write_PD_16_Enable_DI_Control()
 
@@ -457,7 +460,7 @@ def handle_action():
     elif action == "servoOff":
         servo_ctrller.servo_off()
     elif action == "getMsg":
-        servo_ctrller.Read_Pos_Related_Paremters()
+        state_values = servo_ctrller.Read_Pos_Related_Paremters()
     elif action == "enablePosMode":
         # Command pulses (0x0905/0x0906): manual's documented range is
         # 0~(2^31-1) -- see docs/en_manual.txt:10416-10422.
@@ -552,6 +555,9 @@ def handle_action():
         "action": action,
         "RS485_send": rs485_send,
         "RS485_read": rs485_read,
+        # Only non-null for getMsg -- decoded PA/PD parameter registers,
+        # see Read_Pos_Related_Paremters()'s docstring.
+        "state_values": state_values,
         "message": f"Action {action} completed successfully.",
     })
 
