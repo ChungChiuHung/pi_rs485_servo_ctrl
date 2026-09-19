@@ -512,6 +512,16 @@ def handle_action():
         servo_ctrller.record_set_point(1)
     elif action == "setPoint_2":
         servo_ctrller.record_set_point(2)
+    elif action == "gotoSetPoint_1":
+        try:
+            servo_ctrller.move_to_set_point(1)
+        except ValueError as e:
+            return jsonify({"status": "error", "action": action, "message": str(e)}), 400
+    elif action == "gotoSetPoint_2":
+        try:
+            servo_ctrller.move_to_set_point(2)
+        except ValueError as e:
+            return jsonify({"status": "error", "action": action, "message": str(e)}), 400
     elif action == "Home":
         servo_ctrller.post_step_motion_by(0)
     elif action == "enableSpeedCtrlMode":
