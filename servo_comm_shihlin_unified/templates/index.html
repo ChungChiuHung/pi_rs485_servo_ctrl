@@ -496,6 +496,19 @@
                                 response.alarm_code + (response.alarm_name ? ' - ' + response.alarm_name : ''));
                             alarmTile.addClass('alarm-active');
                         }
+                        // PA23: 1/2 = EEPROM writes inhibited (safe); 0 = every
+                        // PD16/PD25 write wears the EEPROM (~100,000 write life).
+                        const eepromTile = $('#status_eeprom_tile');
+                        if (response.eeprom_protection === 1 || response.eeprom_protection === 2) {
+                            $('#status_eeprom_protection').text('On (PA23=' + response.eeprom_protection + ')');
+                            eepromTile.removeClass('alarm-active');
+                        } else if (response.eeprom_protection === 0) {
+                            $('#status_eeprom_protection').text('OFF - EEPROM wear!');
+                            eepromTile.addClass('alarm-active');
+                        } else {
+                            $('#status_eeprom_protection').text('unknown');
+                            eepromTile.removeClass('alarm-active');
+                        }
                         $('#status_encoder_mode').text(response.absolute_mode
                             ? 'Absolute' + (response.absolute_home_set ? '' : ' (home not set)')
                             : 'Incremental');
@@ -727,6 +740,10 @@
                         <div class="status-tile">
                             <span class="label">Mode</span>
                             <span class="value" id="status_ctrl_mode_sel">-</span>
+                        </div>
+                        <div class="status-tile" id="status_eeprom_tile">
+                            <span class="label">EEPROM Protect (PA23)</span>
+                            <span class="value" id="status_eeprom_protection">-</span>
                         </div>
                         <div class="status-tile">
                             <span class="label">Encoder Mode</span>

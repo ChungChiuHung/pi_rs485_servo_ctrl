@@ -56,6 +56,15 @@ STILL_THRESHOLD_PULSES = 200
 # can't be mistaken for "already done" the way the old PF.PRCM check was.
 STILL_COUNT_TO_COMPLETE = 12
 
+# PA30 (UAP) handshake: after writing PA30=1 the drive latches the encoder
+# into PA31~PA33 and sets PA30 back to 0 when the data is ready to read
+# (Chinese manual V1.07). Poll up to ABS_UPDATE_MAX_POLLS * ABS_UPDATE_POLL_MS.
+ABS_UPDATE_MAX_POLLS = 50
+ABS_UPDATE_POLL_MS = 20
+# Absolute-position plausibility limits (revolution word is a signed 16-bit
+# range; the pulse word is one revolution of the 22-bit encoder).
+ABS_REV_MIN, ABS_REV_MAX = -32768, 32767
+
 
 # Alarms relevant to the absolute-encoder system (manual §8.1, alarm table
 # ~line 10498+). Keyed by the code as displayed on the drive (AL.2A -> 0x2A).
@@ -171,6 +180,19 @@ class ServoController:
         # (which only reads the cheap raw counter) report positions in the
         # absolute scale without 4 extra Modbus transactions per poll.
         self._absolute_offset = None
+        # Which of PA32/PA33 holds the signed REVOLUTION count (the other one
+        # holds pulses within a revolution). The Chinese V1.07 manual says
+        # PA33 = revolutions / PA32 = pulses; the English manuals say the
+        # opposite -- unverified on this drive, so it is overridable per
+        # profile ("abs_rev_register": "APR" | "APP" in motor_profiles.json).
+        # A wrong choice is caught by the plausibility checks in
+        # read_absolute_position_pulses() rather than yielding a bad position.
+        self.abs_rev_register = profile.get("abs_rev_register", "APP")
+        if self.abs_rev_register not in ("APR", "APP"):
+            raise ValueError(f"abs_rev_register must be 'APR' or 'APP', got {self.abs_rev_register!r}")
+        # Last known PA23 (EEPROM write-inhibit) value; None = never read.
+        self.eeprom_protection = None
+        self._eeprom_checked_at = None
         self._event_listeners = {
             "on_motion_completed": [],
             "on_moving": [],
@@ -584,6 +606,60 @@ class ServoController:
             logger.error(f"Failed to write {register.name}: {e}")
             return False
 
+    def read_PA23_Memory_Write_Inhibit(self):
+        return self._read_parameter(PA.MCS)
+
+    def _set_pa23(self, value: int) -> bool:
+        """Writes PA23 and verifies it by reading it back."""
+        if not self._write_parameter(PA.MCS, value):
+            return False
+        return self.read_PA23_Memory_Write_Inhibit() == value
+
+    def ensure_eeprom_write_protection(self, max_age_s: float = 0.0):
+        """Makes sure PA23 (MCS) inhibits EEPROM writes, and returns its
+        value (0/1/2), or None if it could not be read.
+
+        Why: this app writes PD16/PD25 (DI control source / virtual DI state)
+        on nearly every button, OSC and Art-Net action, and the parameters
+        live in an EEPROM rated for ~100,000 writes (AL.0F when exhausted).
+        The manual says communication-driven parameter writes should run with
+        PA23 = 2 (persists across power-off; firmware >= 106) or, on older
+        firmware, PA23 = 1 (reverts to 0 at every power-off, so it must be
+        re-applied after each boot -- which is why this is called at connect
+        time and then periodically, not just once).
+
+        Only reads when PA23 is already 1/2 (no EEPROM wear). When it is 0
+        it tries 2 first, then 1 (older firmware rejects or ignores 2), and
+        verifies each attempt by reading back. max_age_s > 0 skips the check
+        if one was done that recently. Never raises; a failure is logged and
+        reported as the (unprotected) value read."""
+        now = time.monotonic()
+        if max_age_s and self._eeprom_checked_at is not None \
+                and now - self._eeprom_checked_at < max_age_s:
+            return self.eeprom_protection
+        current = self.read_PA23_Memory_Write_Inhibit()
+        self._eeprom_checked_at = now
+        if current is None:
+            logger.warning("Could not read PA23; EEPROM write protection status unknown.")
+            return None
+        if current in (1, 2):
+            self.eeprom_protection = current
+            return current
+        for candidate in (2, 1):
+            if self._set_pa23(candidate):
+                self.eeprom_protection = candidate
+                logger.info(
+                    f"EEPROM write protection enabled (PA23={candidate})"
+                    + ("" if candidate == 2 else
+                       " -- older firmware: reverts at power-off, re-applied automatically"))
+                return candidate
+        self.eeprom_protection = 0
+        logger.error(
+            "Could not enable EEPROM write protection (PA23 stays 0): every PD16/PD25 "
+            "write is wearing the EEPROM (~100,000 write life). Set PA23 from the panel."
+        )
+        return 0
+
     def read_PA28_Encoder_Mode(self):
         """PA28 (ABS): 0 = incremental, 1 = absolute. None if unreadable."""
         return self._read_parameter(PA.ABS)
@@ -604,9 +680,22 @@ class ServoController:
             home-return -- manual §8.1 "System initialization".
         Returns True only if the write succeeded AND read back as requested."""
         requested = 1 if absolute else 0
-        if not self._write_parameter(PA.ABS, requested):
+        # With PA23 = 1/2 NO parameter reaches the EEPROM, so PA28 would be
+        # lost at the very power cycle that is supposed to apply it. Lift the
+        # protection for this one write and restore it afterwards.
+        protection = self.read_PA23_Memory_Write_Inhibit()
+        if protection is None:
+            logger.error("PA28 not written: PA23 unreadable, cannot guarantee the value would persist.")
             return False
-        readback = self.read_PA28_Encoder_Mode()
+        try:
+            if protection != 0 and not self._set_pa23(0):
+                logger.error("PA28 not written: could not lift PA23 EEPROM protection (it would not persist).")
+                return False
+            if not self._write_parameter(PA.ABS, requested):
+                return False
+            readback = self.read_PA28_Encoder_Mode()
+        finally:
+            self.ensure_eeprom_write_protection()
         if readback != requested:
             logger.error(f"PA28 write not confirmed: wrote {requested}, read back {readback}.")
             return False
@@ -648,17 +737,32 @@ class ServoController:
     def read_PA33_Encoder_ABS_Pos(self):
         return self._read_parameter(PA.APP, 2)
 
-    def read_absolute_position_pulses(self):
-        """Absolute encoder position in pulses (PA32 * pulses_per_rev + PA33),
-        or None if it can't be trusted: PA31 reports lost position / low
-        battery / overflow / coordinate system not set, or any read fails.
-        Only meaningful when PA28 == 1. Refreshes PA31~PA33 via PA30=1 first
-        (whether the drive needs this before every read is unverified --
-        the manual only says PA30 "updates" them -- so it is done to be
-        safe; verify against real hardware once the absolute system runs)."""
+    def _update_absolute_registers(self) -> bool:
+        """PA30 = 1, then poll until the drive sets PA30 back to 0 -- only then
+        are PA31~PA33 valid. False on a failed write or a handshake timeout."""
         if not self.write_PA30_Update_Abs_Position(1):
+            return False
+        for _ in range(ABS_UPDATE_MAX_POLLS):
+            if self._read_parameter(PA.UAP) == 0:
+                return True
+            self.delay_ms(ABS_UPDATE_POLL_MS)
+        logger.warning("PA30 did not return to 0: absolute position registers not updated.")
+        return False
+
+    def read_absolute_position_pulses(self):
+        """Absolute encoder position in pulses (revolutions * pulses_per_rev +
+        pulses), or None if it can't be trusted: PA30 handshake fails, PA31
+        reports lost position / low battery / overflow / coordinate system
+        not set, a read fails, or a value is outside its plausible range
+        (which is how a wrong abs_rev_register layout shows up). Only
+        meaningful when PA28 == 1.
+
+        The PA30 write is a parameter write, so PA23 protection is verified
+        first (throttled) -- otherwise every position read would wear the
+        EEPROM."""
+        self.ensure_eeprom_write_protection(max_age_s=30)
+        if not self._update_absolute_registers():
             return None
-        self.delay_ms(20)
         status = self.read_PA31_Abs_Position_Status()
         if status is None:
             return None
@@ -666,11 +770,21 @@ class ServoController:
         if faults:
             logger.warning(f"Absolute position not trustworthy (PA31={status:#06x}): {'; '.join(faults)}")
             return None
-        revolutions = self.read_PA32_Abs_Revolutions()
-        pulses = self.read_PA33_Encoder_ABS_Pos()
+        rev_register, pulse_register = (
+            (PA.APP, PA.APR) if self.abs_rev_register == "APP" else (PA.APR, PA.APP))
+        revolutions = self._read_parameter(rev_register, 2, signed=True)
+        pulses = self._read_parameter(pulse_register, 2)
         if revolutions is None or pulses is None:
             return None
-        return revolutions * self.profile["encoder_pulses_per_rev"] + pulses
+        pulses_per_rev = self.profile["encoder_pulses_per_rev"]
+        if not (ABS_REV_MIN <= revolutions <= ABS_REV_MAX) or not (0 <= pulses < pulses_per_rev):
+            logger.error(
+                f"Implausible absolute position ({rev_register.name}={revolutions} rev, "
+                f"{pulse_register.name}={pulses} pulses): PA32/PA33 layout probably wrong "
+                f"(abs_rev_register={self.abs_rev_register!r}); position rejected."
+            )
+            return None
+        return revolutions * pulses_per_rev + pulses
 
     def write_PA01_Ctrl_Mode(self):
         logger.info(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
@@ -1040,11 +1154,11 @@ class ServoController:
         "ITST": PD.explain_ITST,
         "MCOK": PD.explain_MCOK,
         "ABS": PA.explain_ABS,
+        "MCS": PA.explain_MCS,
         "APST": PA.explain_APST,
     }
     # 32-bit (2-word) registers; everything else here is read as one word.
     _READ_WORDS_BY_REGISTER_NAME = {"APR": 2, "APP": 2}
-    _SIGNED_REGISTER_NAMES = frozenset({"APR"})
 
     def Read_Pos_Related_Paremters(self) -> list:
         """Reads a fixed diagnostic set of PA/PD *parameter* registers --
@@ -1055,7 +1169,7 @@ class ServoController:
         read_address_array = [PA.STY, PA.HMOV, PA.PLSS,
                                PA.ENR, PA.PO1H, PA.POL,
                                PD.SDI, PD.ITST, PD.MCOK,
-                               PA.ABS, PA.APST, PA.APR, PA.APP]
+                               PA.MCS, PA.ABS, PA.APST, PA.APR, PA.APP]
 
         results = []
         for address in read_address_array:
@@ -1076,7 +1190,7 @@ class ServoController:
             else:
                 try:
                     value = ModbusRTUResponse(response).get_value(
-                        signed=address.name in self._SIGNED_REGISTER_NAMES)
+                        signed=address.name == self.abs_rev_register)
                     entry["value"] = value
                     explain_fn = self._EXPLAIN_FN_BY_REGISTER_NAME.get(address.name)
                     if explain_fn:
@@ -1085,10 +1199,11 @@ class ServoController:
                         entry["interpreted"] = f"{value} pulses/rev (or division ratio, per POL's z-bit)"
                     elif address.name == "PO1H":
                         entry["interpreted"] = f"{value} rev"
-                    elif address.name == "APR":
-                        entry["interpreted"] = f"{value} rev (meaningful only when PA28 = 1)"
-                    elif address.name == "APP":
-                        entry["interpreted"] = f"{value} pulses (meaningful only when PA28 = 1)"
+                    elif address.name in ("APR", "APP"):
+                        unit = "rev" if address.name == self.abs_rev_register else "pulses"
+                        entry["interpreted"] = (
+                            f"{value} {unit} (as configured by abs_rev_register="
+                            f"{self.abs_rev_register!r}; meaningful only when PA28 = 1)")
                 except Exception as e:
                     logger.error(f"Failed to parse {address.name} response: {e}")
                     entry["interpreted"] = f"Parse error: {e}"

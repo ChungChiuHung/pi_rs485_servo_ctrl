@@ -27,6 +27,20 @@ from flask import jsonify
 _hardware_busy_lock = threading.Lock()
 
 
+def run_when_idle(fn) -> bool:
+    """Runs fn() only if no hardware-serialized request is in flight; never
+    waits. Returns True if it ran. For background housekeeping (e.g. the
+    EEPROM-protection guard) that must not delay or interleave with a user's
+    command."""
+    if not _hardware_busy_lock.acquire(blocking=False):
+        return False
+    try:
+        fn()
+        return True
+    finally:
+        _hardware_busy_lock.release()
+
+
 def hardware_serialized(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):

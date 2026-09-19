@@ -105,5 +105,51 @@ class EncoderModeEndpointTests(unittest.TestCase):
         self.assertIs(pending_after, True)
 
 
+class EepromProtectionWiringTests(unittest.TestCase):
+    """PD16/PD25 are EEPROM-backed and written by nearly every action; PA23
+    protection must be verified BEFORE the first such write of each action."""
+
+    def setUp(self):
+        self.ctrl = MagicMock()
+        self.ctrl.eeprom_protection = 2
+        self.ctrl.absolute_mode = False
+        self.ctrl.abs_home_pos_absolute = None
+        self.ctrl.modbus_client.last_sent = None
+        self.ctrl.modbus_client.last_received = None
+        self.ctrl.modbus_client.format_hex.return_value = ""
+        patcher = patch.object(app_module, "servo_ctrller", self.ctrl)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.client = app_module.app.test_client()
+
+    def test_action_verifies_protection_before_the_pd16_write(self):
+        self.client.post("/action", json={"action": "servoOff"})
+        called = [c[0] for c in self.ctrl.method_calls]
+        self.assertIn("ensure_eeprom_write_protection", called)
+        self.assertLess(called.index("ensure_eeprom_write_protection"),
+                        called.index("write_PD_16_Enable_DI_Control"))
+
+    def test_action_check_is_throttled(self):
+        self.client.post("/action", json={"action": "servoOff"})
+        kwargs = self.ctrl.ensure_eeprom_write_protection.call_args.kwargs
+        self.assertEqual(kwargs.get("max_age_s"), app_module.EEPROM_GUARD_INTERVAL_S)
+
+    def test_status_reports_cached_protection_without_extra_writes(self):
+        self.ctrl.read_current_alarm_code.return_value = 255
+        self.ctrl.read_servo_state.return_value = True
+        self.ctrl.read_test_mode_0x0901.return_value = 0
+        self.ctrl.reading_active = False
+        self.ctrl.current_angle = 0.0
+        self.ctrl.current_encoder = 0
+        self.ctrl.set_point_1 = self.ctrl.set_point_2 = None
+        manager = MagicMock()
+        manager.get_connected_port.return_value = "COM_TEST"
+        manager.get_baud_rate.return_value = 115200
+        with patch.object(app_module, "serial_manager", manager):
+            body = self.client.get("/status").get_json()
+        self.assertEqual(body["eeprom_protection"], 2)
+        self.ctrl.ensure_eeprom_write_protection.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

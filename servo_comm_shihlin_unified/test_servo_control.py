@@ -479,36 +479,90 @@ class TestRefreshCurrentAngleFromHardware(unittest.TestCase):
 
 
 class TestEncoderModeRegisters(unittest.TestCase):
-    """PA28 read/write and the PA29~PA33 absolute-position read path. No
-    real drive involved -- register I/O is mocked."""
+    """PA23/PA28/PA30~PA33 register handling. No real drive involved: register
+    I/O is a small in-memory model (writes update the value the next read
+    returns), so read-back verification and handshakes behave realistically."""
 
-    def _ctrl(self, values):
-        """values: {register name: value or None}; writes succeed."""
+    def _ctrl(self, values=None, reject_writes=(), uap_reads_before_zero=0):
+        """values: initial register values by name. reject_writes: (name, value)
+        pairs the fake drive refuses (as older firmware refuses PA23=2).
+        uap_reads_before_zero: how many reads of PA30 return 1 after it is
+        written before it reads 0 (the PA30 handshake)."""
+        state = {"MCS": 2, "ABS": 0, "UAP": 0, "APST": 0, "APR": 0, "APP": 0}
+        state.update(values or {})
+        pending_uap = {"n": 0}
         ctrl = make_controller()
-        ctrl._write_parameter = MagicMock(return_value=True)
-        ctrl._read_parameter = MagicMock(
-            side_effect=lambda register, words=2, signed=False: values[register.name])
+        ctrl.regs = state
+        ctrl.write_log = []
+
+        def fake_write(register, value):
+            ctrl.write_log.append((register.name, value))
+            if (register.name, value) in reject_writes:
+                return False
+            state[register.name] = value
+            if register.name == "UAP":
+                pending_uap["n"] = uap_reads_before_zero
+            return True
+
+        def fake_read(register, words=2, signed=False):
+            if register.name == "UAP" and pending_uap["n"] > 0:
+                pending_uap["n"] -= 1
+                return 1
+            if register.name == "UAP":
+                state["UAP"] = 0
+            return state[register.name]
+
+        ctrl._write_parameter = MagicMock(side_effect=fake_write)
+        ctrl._read_parameter = MagicMock(side_effect=fake_read)
         ctrl.delay_ms = MagicMock()
         return ctrl
 
+    # ---- PA28 ----
     def test_read_pa28(self):
         self.assertEqual(self._ctrl({"ABS": 1}).read_PA28_Encoder_Mode(), 1)
 
     def test_write_pa28_verifies_by_readback(self):
-        ctrl = self._ctrl({"ABS": 1})
+        ctrl = self._ctrl({"MCS": 0})
         self.assertTrue(ctrl.write_PA28_Encoder_Mode(True))
-        ctrl._write_parameter.assert_called_once_with(PA.ABS, 1)
+        self.assertEqual(ctrl.regs["ABS"], 1)
 
-    def test_write_pa28_fails_if_readback_differs(self):
-        ctrl = self._ctrl({"ABS": 0})
+    def test_write_pa28_fails_if_drive_rejects_it(self):
+        ctrl = self._ctrl({"MCS": 0}, reject_writes=[("ABS", 1)])
         self.assertFalse(ctrl.write_PA28_Encoder_Mode(True))
 
     def test_write_pa28_does_not_flip_active_mode(self):
         # PA28 only takes effect after a power cycle; the software must keep
         # using the incremental path until refresh_encoder_mode() says so.
-        ctrl = self._ctrl({"ABS": 1})
+        ctrl = self._ctrl({"MCS": 0})
         ctrl.write_PA28_Encoder_Mode(True)
         self.assertFalse(ctrl.absolute_mode)
+
+    def test_write_pa28_lifts_eeprom_protection_then_restores_it(self):
+        # With PA23=2 the PA28 write would never reach the EEPROM and would be
+        # lost at the very power cycle meant to apply it.
+        ctrl = self._ctrl({"MCS": 2})
+        self.assertTrue(ctrl.write_PA28_Encoder_Mode(True))
+        names = [w for w in ctrl.write_log]
+        self.assertEqual(names[0], ("MCS", 0))
+        self.assertEqual(names[1], ("ABS", 1))
+        self.assertEqual(names[-1], ("MCS", 2))
+        self.assertEqual(ctrl.regs["MCS"], 2)
+
+    def test_write_pa28_restores_protection_even_when_the_write_fails(self):
+        ctrl = self._ctrl({"MCS": 2}, reject_writes=[("ABS", 1)])
+        self.assertFalse(ctrl.write_PA28_Encoder_Mode(True))
+        self.assertEqual(ctrl.regs["MCS"], 2)
+
+    def test_write_pa28_refused_if_protection_cannot_be_lifted(self):
+        ctrl = self._ctrl({"MCS": 2}, reject_writes=[("MCS", 0)])
+        self.assertFalse(ctrl.write_PA28_Encoder_Mode(True))
+        self.assertNotIn(("ABS", 1), ctrl.write_log)
+
+    def test_write_pa28_refused_if_pa23_unreadable(self):
+        ctrl = self._ctrl()
+        ctrl.read_PA23_Memory_Write_Inhibit = MagicMock(return_value=None)
+        self.assertFalse(ctrl.write_PA28_Encoder_Mode(True))
+        self.assertEqual(ctrl.write_log, [])
 
     def test_refresh_encoder_mode_sets_flag(self):
         ctrl = self._ctrl({"ABS": 1})
@@ -516,34 +570,137 @@ class TestEncoderModeRegisters(unittest.TestCase):
         self.assertTrue(ctrl.absolute_mode)
 
     def test_refresh_encoder_mode_unreadable_keeps_previous_mode(self):
-        ctrl = self._ctrl({"ABS": None})
+        ctrl = self._ctrl()
+        ctrl.read_PA28_Encoder_Mode = MagicMock(return_value=None)
         ctrl.absolute_mode = True
         self.assertIsNone(ctrl.refresh_encoder_mode())
         self.assertTrue(ctrl.absolute_mode)
 
-    def test_absolute_position_combines_signed_revolutions_and_pulses(self):
-        ctrl = self._ctrl({"APST": 0, "APR": -2, "APP": 1000})
-        # profile: 4194304 pulses/rev
+    # ---- PA23 EEPROM write protection ----
+    def test_protection_already_on_writes_nothing(self):
+        for value in (1, 2):
+            ctrl = self._ctrl({"MCS": value})
+            self.assertEqual(ctrl.ensure_eeprom_write_protection(), value)
+            self.assertEqual(ctrl.write_log, [], "PA23=%d" % value)
+
+    def test_unprotected_drive_gets_pa23_2_first(self):
+        ctrl = self._ctrl({"MCS": 0})
+        self.assertEqual(ctrl.ensure_eeprom_write_protection(), 2)
+        self.assertEqual(ctrl.write_log, [("MCS", 2)])
+        self.assertEqual(ctrl.eeprom_protection, 2)
+
+    def test_old_firmware_rejecting_2_falls_back_to_1(self):
+        ctrl = self._ctrl({"MCS": 0}, reject_writes=[("MCS", 2)])
+        self.assertEqual(ctrl.ensure_eeprom_write_protection(), 1)
+        self.assertEqual(ctrl.regs["MCS"], 1)
+
+    def test_firmware_that_accepts_but_ignores_2_is_caught_by_readback(self):
+        ctrl = self._ctrl({"MCS": 0})
+        real_write = ctrl._write_parameter.side_effect
+
+        def clamping_write(register, value):
+            real_write(register, value)
+            if register.name == "MCS" and value == 2:
+                ctrl.regs["MCS"] = 0  # not stored
+            return True
+
+        ctrl._write_parameter = MagicMock(side_effect=clamping_write)
+        self.assertEqual(ctrl.ensure_eeprom_write_protection(), 1)
+
+    def test_protection_impossible_reports_zero_and_does_not_raise(self):
+        ctrl = self._ctrl({"MCS": 0}, reject_writes=[("MCS", 2), ("MCS", 1)])
+        self.assertEqual(ctrl.ensure_eeprom_write_protection(), 0)
+        self.assertEqual(ctrl.eeprom_protection, 0)
+
+    def test_unreadable_pa23_returns_none_and_writes_nothing(self):
+        ctrl = self._ctrl()
+        ctrl.read_PA23_Memory_Write_Inhibit = MagicMock(return_value=None)
+        self.assertIsNone(ctrl.ensure_eeprom_write_protection())
+        self.assertEqual(ctrl.write_log, [])
+
+    def test_max_age_skips_a_recent_check(self):
+        ctrl = self._ctrl({"MCS": 2})
+        ctrl.ensure_eeprom_write_protection()
+        reads_before = ctrl._read_parameter.call_count
+        ctrl.ensure_eeprom_write_protection(max_age_s=30)
+        self.assertEqual(ctrl._read_parameter.call_count, reads_before)
+
+    def test_power_cycle_reverting_pa23_is_reapplied(self):
+        ctrl = self._ctrl({"MCS": 1})
+        ctrl.ensure_eeprom_write_protection()
+        ctrl.regs["MCS"] = 0  # drive was power-cycled: PA23=1 reverts to 0
+        self.assertEqual(ctrl.ensure_eeprom_write_protection(), 2)
+
+    # ---- absolute position read (PA30 handshake, layout, validation) ----
+    # Default layout (Chinese V1.07): PA32 = pulses, PA33 = signed revolutions.
+    def test_absolute_position_combines_revolutions_and_pulses(self):
+        ctrl = self._ctrl({"APR": 1000, "APP": -2})
         self.assertEqual(ctrl.read_absolute_position_pulses(), -2 * 4194304 + 1000)
+
+    def test_absolute_position_layout_can_be_swapped_per_profile(self):
+        ctrl = self._ctrl({"APR": -2, "APP": 1000})
+        ctrl.abs_rev_register = "APR"
+        self.assertEqual(ctrl.read_absolute_position_pulses(), -2 * 4194304 + 1000)
+
+    def test_invalid_abs_rev_register_in_profile_is_rejected(self):
+        with self.assertRaises(ValueError):
+            make_controller(dict(PROFILE_400W, abs_rev_register="PA99"))
+
+    def test_wrong_layout_is_rejected_not_used(self):
+        # Real (rev=3, pulses=1234567) read with the opposite layout looks
+        # like 1234567 revolutions -> outside +-32768 -> refused.
+        ctrl = self._ctrl({"APR": 3, "APP": 1234567})
+        self.assertIsNone(ctrl.read_absolute_position_pulses())
+
+    def test_pulse_word_beyond_one_revolution_is_rejected(self):
+        ctrl = self._ctrl({"APR": 4194304, "APP": 0})
+        self.assertIsNone(ctrl.read_absolute_position_pulses())
+        ctrl = self._ctrl({"APR": -1, "APP": 0})
+        self.assertIsNone(ctrl.read_absolute_position_pulses())
+
+    def test_absolute_position_waits_for_pa30_to_return_to_zero(self):
+        ctrl = self._ctrl({"APR": 5, "APP": 1}, uap_reads_before_zero=3)
+        self.assertEqual(ctrl.read_absolute_position_pulses(), 4194304 + 5)
+        self.assertEqual(ctrl.delay_ms.call_count, 3)
+
+    def test_absolute_position_none_if_pa30_never_returns_to_zero(self):
+        ctrl = self._ctrl({"APR": 5, "APP": 1}, uap_reads_before_zero=10 ** 6)
+        self.assertIsNone(ctrl.read_absolute_position_pulses())
+
+    def test_absolute_position_registers_not_read_before_handshake_completes(self):
+        ctrl = self._ctrl({"APR": 5, "APP": 1}, uap_reads_before_zero=10 ** 6)
+        ctrl.read_absolute_position_pulses()
+        read_names = [c.args[0].name for c in ctrl._read_parameter.call_args_list]
+        self.assertNotIn("APR", read_names)
+        self.assertNotIn("APP", read_names)
 
     def test_absolute_position_refused_when_status_reports_fault(self):
         for bit in (0, 1, 2, 4):
-            ctrl = self._ctrl({"APST": 1 << bit, "APR": 0, "APP": 0})
+            ctrl = self._ctrl({"APST": 1 << bit})
             self.assertIsNone(ctrl.read_absolute_position_pulses(), "bit %d" % bit)
 
     def test_absolute_position_none_when_a_read_fails(self):
-        self.assertIsNone(self._ctrl({"APST": 0, "APR": None, "APP": 5}).read_absolute_position_pulses())
-        self.assertIsNone(self._ctrl({"APST": 0, "APR": 1, "APP": None}).read_absolute_position_pulses())
-        self.assertIsNone(self._ctrl({"APST": None, "APR": 1, "APP": 1}).read_absolute_position_pulses())
+        for name in ("APR", "APP", "APST"):
+            ctrl = self._ctrl()
+            real_read = ctrl._read_parameter.side_effect
+            ctrl._read_parameter = MagicMock(
+                side_effect=lambda register, words=2, signed=False, n=name:
+                    None if register.name == n else real_read(register, words, signed))
+            self.assertIsNone(ctrl.read_absolute_position_pulses(), name)
 
-    def test_absolute_position_none_when_pa30_update_fails(self):
-        ctrl = self._ctrl({"APST": 0, "APR": 0, "APP": 0})
-        ctrl._write_parameter = MagicMock(return_value=False)
+    def test_absolute_position_none_when_pa30_write_fails(self):
+        ctrl = self._ctrl(reject_writes=[("UAP", 1)])
         self.assertIsNone(ctrl.read_absolute_position_pulses())
+
+    def test_absolute_read_verifies_eeprom_protection_first(self):
+        ctrl = self._ctrl({"MCS": 0})
+        ctrl.read_absolute_position_pulses()
+        self.assertEqual(ctrl.write_log[0], ("MCS", 2))
+        self.assertLess(ctrl.write_log.index(("MCS", 2)), ctrl.write_log.index(("UAP", 1)))
 
     def test_pa30_rejects_invalid_mode(self):
         with self.assertRaises(ValueError):
-            self._ctrl({}).write_PA30_Update_Abs_Position(3)
+            self._ctrl().write_PA30_Update_Abs_Position(3)
 
     def test_explain_helpers(self):
         self.assertEqual(PA.explain_APST(0), "normal")
@@ -551,6 +708,8 @@ class TestEncoderModeRegisters(unittest.TestCase):
         self.assertIn("absolute position lost", PA.explain_APST(0b1))
         self.assertIn("incremental", PA.explain_ABS(0))
         self.assertIn("AL.24", PA.explain_ABS(1))
+        self.assertIn("wears", PA.explain_MCS(0))
+        self.assertIn("persists", PA.explain_MCS(2))
 
 
 class TestAbsoluteModePositioning(unittest.TestCase):
@@ -1001,7 +1160,7 @@ class TestReadPosRelatedParameters(unittest.TestCase):
 
         ctrl.Read_Pos_Related_Paremters()
 
-        self.assertEqual(ctrl.modbus_client.build_read_message.call_count, 13)
+        self.assertEqual(ctrl.modbus_client.build_read_message.call_count, 14)
 
 
 class TestPosStepMotionTestAndExecutePositioning(unittest.TestCase):
@@ -1503,7 +1662,7 @@ class TestReadPosRelatedParemters(unittest.TestCase):
 
     def _mock_reads(self, ctrl, values):
         # Read order in Read_Pos_Related_Paremters(): STY, HMOV, PLSS,
-        # ENR, PO1H, POL, SDI, ITST, MCOK, ABS, APST, APR, APP.
+        # ENR, PO1H, POL, SDI, ITST, MCOK, MCS, ABS, APST, APR, APP.
         ctrl.modbus_client = MagicMock()
         ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
         patcher = patch("servo_control.ModbusRTUResponse")
@@ -1520,18 +1679,20 @@ class TestReadPosRelatedParemters(unittest.TestCase):
         # SDI=0x0FFF (all DI communication-controlled),
         # ITST=0x0011 (manual's own worked example: DI1 and DI5 ON),
         # MCOK=0x0011 (hold + AL1B enabled).
-        # ABS=0 (incremental), APST=0 (normal), APR=-3 (signed), APP=1234.
+        # MCS=2, ABS=0 (incremental), APST=0 (normal), APR=1234 (pulses in
+        # the default layout), APP=-3 (signed revolutions).
         self._mock_reads(ctrl, [0x1000, 0x0000, 0x0312, 10000, 0, 0x0111,
-                                 0x0FFF, 0x0011, 0x0011, 0, 0, -3, 1234])
+                                 0x0FFF, 0x0011, 0x0011, 2, 0, 0, 1234, -3])
 
         results = ctrl.Read_Pos_Related_Paremters()
 
         by_name = {entry["name"]: entry for entry in results}
-        self.assertEqual(len(results), 13)
+        self.assertEqual(len(results), 14)
+        self.assertIn("persists", by_name["MCS"]["interpreted"])
         self.assertIn("incremental", by_name["ABS"]["interpreted"])
         self.assertEqual(by_name["APST"]["interpreted"], "normal")
-        self.assertEqual(by_name["APR"]["value"], -3)
-        self.assertIn("1234 pulses", by_name["APP"]["interpreted"])
+        self.assertIn("1234 pulses", by_name["APR"]["interpreted"])
+        self.assertIn("-3 rev", by_name["APP"]["interpreted"])
         self.assertIn("position", by_name["STY"]["interpreted"])
         self.assertIn("A/B phase pulse train", by_name["PLSS"]["interpreted"])
         self.assertEqual(by_name["ENR"]["value"], 10000)
@@ -1552,7 +1713,7 @@ class TestReadPosRelatedParemters(unittest.TestCase):
 
         results = ctrl.Read_Pos_Related_Paremters()
 
-        self.assertEqual(len(results), 13)
+        self.assertEqual(len(results), 14)
         for entry in results:
             self.assertIsNone(entry["value"])
             self.assertEqual(entry["interpreted"], "No response (communication failure)")

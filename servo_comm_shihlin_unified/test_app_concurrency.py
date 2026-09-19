@@ -12,7 +12,7 @@ import unittest
 
 from flask import Flask
 
-from hardware_lock import hardware_serialized
+from hardware_lock import hardware_serialized, run_when_idle
 
 # A throwaway Flask app purely to give jsonify() (used inside
 # hardware_serialized's busy-response path) the application context it
@@ -83,6 +83,38 @@ class TestHardwareSerializedDecorator(unittest.TestCase):
 
         self.assertEqual(first, ("ok", 200))
         self.assertEqual(second, ("ok", 200))
+
+
+class TestRunWhenIdle(unittest.TestCase):
+
+    def test_runs_when_nothing_is_in_flight(self):
+        ran = []
+        self.assertTrue(run_when_idle(lambda: ran.append(1)))
+        self.assertEqual(ran, [1])
+
+    def test_skips_without_waiting_while_a_request_is_in_flight(self):
+        release = threading.Event()
+        started = threading.Event()
+
+        @hardware_serialized
+        def slow():
+            started.set()
+            release.wait(timeout=2)
+            return "ok", 200
+
+        def worker():
+            with _test_app.app_context():
+                slow()
+
+        t = threading.Thread(target=worker)
+        t.start()
+        self.assertTrue(started.wait(timeout=1))
+        ran = []
+        self.assertFalse(run_when_idle(lambda: ran.append(1)))
+        self.assertEqual(ran, [])
+        release.set()
+        t.join(timeout=2)
+        self.assertTrue(run_when_idle(lambda: ran.append(1)))
 
 
 if __name__ == "__main__":

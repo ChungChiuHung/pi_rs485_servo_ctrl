@@ -42,13 +42,22 @@ class PA:
         # PA28 (ABS): 0 = incremental mode, 1 = absolute mode. PA32(APR)/PA33(APP)
         # are only valid when this is 1 (manual p.88-89) — must be confirmed on real
         # hardware before relying on PA32/PA33 for encoder-overflow-safe position reads.
+        # PA23 (MCS), Chinese manual V1.07 (the English manuals list only 0/1):
+        # 0 = parameters written to EEPROM; 1 = no EEPROM writes, and PA23
+        # itself reverts to 0 after power-off; 2 = no EEPROM writes but PA23=2
+        # persists (firmware >= 106 only). EEPROM life is ~100,000 writes.
+        cls.MCS = Register(23, "MCS", "Memory write-inhibit function (0=EEPROM writable, 1=RAM only, resets at power-off; 2=RAM only, persists, fw>=106)", 0, cls.calculate_address(23))
         cls.ABS = Register(28, "ABS", "Absolute encoder settings", 0x0000, cls.calculate_address(28))
         # PA29-PA33 (manual p.88-89): only meaningful when PA28 == 1.
         cls.CAP = Register(29, "CAP", "Absolute homing position (write 1 = current position becomes origin)", 0x0000, cls.calculate_address(29))
         cls.UAP = Register(30, "UAP", "Update encoder absolute position (1 = refresh PA31~PA33; 2 = also clear position error)", 0, cls.calculate_address(30))
         cls.APST = Register(31, "APST", "ABS position status (read only)", 0x0000, cls.calculate_address(31))
-        cls.APR = Register(32, "APR", "Encoder absolute position, revolutions (read only, signed -32768~32767)", 0, cls.calculate_address(32))
-        cls.APP = Register(33, "APP", "Encoder absolute position, pulses within a revolution (read only, 0~2^22-1)", 0, cls.calculate_address(33))
+        # The two manuals DISAGREE on which of PA32/PA33 is which: Chinese
+        # V1.07 says PA32 = pulses within a revolution (0~4194303) and PA33 =
+        # signed revolutions (-32768~32767); the English manuals say the
+        # reverse. ServoController.abs_rev_register selects the layout.
+        cls.APR = Register(32, "APR", "Encoder absolute position word 1 (read only; pulses or revolutions, see abs_rev_register)", 0, cls.calculate_address(32))
+        cls.APP = Register(33, "APP", "Encoder absolute position word 2 (read only; revolutions or pulses, see abs_rev_register)", 0, cls.calculate_address(33))
 
     @classmethod
     def encode_HMOV(cls, z, y, x):
@@ -138,6 +147,14 @@ class PA:
         # output relationship, PA39) is a diagram, not text -- no textual
         # description exists to decode it from, so it's omitted here.
         return f"input pulse/motor direction={x_desc}; encoder output={z_desc}"
+
+    @classmethod
+    def explain_MCS(cls, value):
+        return {
+            0: "EEPROM writable -- every parameter write wears the EEPROM (~100,000 write life)",
+            1: "EEPROM write-inhibited (RAM only); reverts to 0 at the next power-off",
+            2: "EEPROM write-inhibited (RAM only); persists across power-off (firmware >= 106)",
+        }.get(value, f"unexpected value {value}")
 
     @classmethod
     def explain_ABS(cls, value):

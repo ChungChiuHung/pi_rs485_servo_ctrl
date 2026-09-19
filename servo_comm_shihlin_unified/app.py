@@ -11,7 +11,7 @@ from flask import Flask, render_template, request, jsonify, Response, redirect
 from serial_port_manager import SerialPortManager
 from servo_control import ServoController, is_alarm_active, alarm_name
 from motor_profile import load_profiles, resolve_profile
-from hardware_lock import hardware_serialized
+from hardware_lock import hardware_serialized, run_when_idle
 from input_validation import validate_int_range
 from activity_log import ActivityLog, ActivityLogHandler
 from osc_server import OSCInputServer
@@ -102,6 +102,14 @@ def _connect_profile(profile_name: str) -> None:
     serial_manager = new_serial_manager
     servo_ctrller = ServoController(serial_manager, profile)
     current_profile_name = profile_name
+    # First communication after connect: make sure PA23 inhibits EEPROM
+    # writes BEFORE anything below (or any later action) writes PD16/PD25 --
+    # on older firmware PA23=1 reverts to 0 at every power-off, so this is
+    # needed after every boot, not just once.
+    try:
+        servo_ctrller.ensure_eeprom_write_protection()
+    except Exception as e:
+        logging.warning(f"Could not verify EEPROM write protection at connect time ({e}).")
     # Read-only: sync the controller's absolute/incremental mode with the
     # drive's actual PA28 (a fresh process after a power cycle is the normal
     # way a mode change takes effect). Unreadable -> stays incremental.
@@ -206,8 +214,26 @@ def get_status():
         # Cached, no serial traffic. True only once PA28 == 1 has been read
         # from the drive (see /encoder_mode).
         "absolute_mode": servo_ctrller.absolute_mode,
+        # Last known PA23 (EEPROM write inhibit): 0 = NOT protected, 1/2 = protected.
+        "eeprom_protection": servo_ctrller.eeprom_protection,
         "absolute_home_set": servo_ctrller.abs_home_pos_absolute is not None,
     })
+
+
+# Seconds between PA23 (EEPROM write-inhibit) re-checks. OSC/Art-Net handlers
+# call ServoController directly, bypassing /action, so a background guard
+# (started in __main__) keeps PA23 applied for them too -- e.g. after the
+# drive is power-cycled while the app keeps running.
+EEPROM_GUARD_INTERVAL_S = 30
+
+
+def _eeprom_guard_loop():
+    while True:
+        time.sleep(EEPROM_GUARD_INTERVAL_S)
+        try:
+            run_when_idle(lambda: servo_ctrller.ensure_eeprom_write_protection())
+        except Exception as e:
+            logging.warning(f"EEPROM protection guard failed: {e}")
 
 
 # Set by a successful PA28 write; cleared once the user says they power-cycled
@@ -497,6 +523,7 @@ def clear_alarm_12_endpoint():
     # still engaged, this can make the drive treat EMG as released without
     # the physical condition actually being resolved. See README "Alarm 12
     # clear -- safety precondition" before using this.
+    servo_ctrller.ensure_eeprom_write_protection(max_age_s=EEPROM_GUARD_INTERVAL_S)
     servo_ctrller.write_PD_16_Enable_DI_Control()
     servo_ctrller.clear_alarm_12()
     time.sleep(0.1)
@@ -538,6 +565,11 @@ def handle_action():
 
     # Populated only by getMsg -- see the final response below.
     state_values = None
+
+    # PD16/PD25 are EEPROM-backed parameters and are written by nearly every
+    # action; confirm PA23 protection first (throttled: at most one PA23 read
+    # per 30s) so a drive power-cycled mid-session is re-protected.
+    servo_ctrller.ensure_eeprom_write_protection(max_age_s=EEPROM_GUARD_INTERVAL_S)
 
     # Enable the Digital I/O Writable
     servo_ctrller.write_PD_16_Enable_DI_Control()
@@ -663,6 +695,7 @@ def handle_action():
 
 
 if __name__ == "__main__":
+    threading.Thread(target=_eeprom_guard_loop, name="eeprom-guard", daemon=True).start()
     try:
         # use_reloader=False: the reloader re-executes this module in a
         # second process, which would try to open the serial port (and
