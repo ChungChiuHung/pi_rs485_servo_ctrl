@@ -11,7 +11,7 @@
         <script>
             $(document).ready(function(){
                 function clearStatuses(excludeAction){
-                    let actions = ['servoOn','servoOff','getMsg','enablePosMode','posTestStart_CW','posTestStart_CCW','setPoint_1','setPoint_2','Home','enableSpeedCtrlMode','motionStart_CW','motionStart_CCW','motionPause','motionCancel'];
+                    let actions = ['servoOn','servoOff','getMsg','enablePosMode','posTestStart_CW','posTestStart_CCW','setPoint_1','setPoint_2','gotoSetPoint_1','gotoSetPoint_2','Home','enableSpeedCtrlMode','motionStart_CW','motionStart_CCW','motionPause','motionCancel'];
                     actions.forEach(function(action){
                         if(action !== excludeAction){
                             $('#'+action+'_status').text('');
@@ -46,6 +46,22 @@
                 function setButtonsEnabled(enabled) {
                     $('.button[data-action]').prop('disabled', !enabled);
                     $('#clearAlarm12Btn').prop('disabled', !enabled);
+                    // MOVE TO SET POINT 1/2 must stay disabled whenever that
+                    // set point hasn't been recorded, even after this blanket
+                    // re-enable -- otherwise a click on an unrecorded (null)
+                    // set point would fail server-side instead of just being
+                    // unavailable.
+                    if (enabled) {
+                        updateGotoSetPointButtons();
+                    }
+                }
+
+                let setPoint1Value = null;
+                let setPoint2Value = null;
+
+                function updateGotoSetPointButtons() {
+                    $('#gotoSetPoint_1Btn').prop('disabled', setPoint1Value === null);
+                    $('#gotoSetPoint_2Btn').prop('disabled', setPoint2Value === null);
                 }
 
                 function sendCommand(action, extraPayload) {
@@ -360,6 +376,9 @@
                             (response.set_point_1 === null ? 'Not recorded' : response.set_point_1.toFixed(4) + ' deg'));
                         $('#setPoint_2_display').text('Set Point 2: ' +
                             (response.set_point_2 === null ? 'Not recorded' : response.set_point_2.toFixed(4) + ' deg'));
+                        setPoint1Value = response.set_point_1;
+                        setPoint2Value = response.set_point_2;
+                        updateGotoSetPointButtons();
 
                         // servo_on is read fresh from the drive (0x0200
                         // bit0), not inferred -- null means "communication
@@ -567,8 +586,10 @@
                     <div class="button-container"><button class="button" data-action="posTestStart_CCW">POS TEST START CCW</button><span id="posTest_status_CCW"></span></div>
                     <span class="section-note" id="setPoint_1_display">Set Point 1: Not recorded</span>
                     <div class="button-container"><button class="button" data-action="setPoint_1">SET POINT 1</button><span id="setPoint_1_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="gotoSetPoint_1" id="gotoSetPoint_1Btn" disabled>MOVE TO SET POINT 1</button><span id="gotoSetPoint_1_status"></span></div>
                     <span class="section-note" id="setPoint_2_display">Set Point 2: Not recorded</span>
                     <div class="button-container"><button class="button" data-action="setPoint_2">SET POINT 2</button><span id="setPoint_2_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="gotoSetPoint_2" id="gotoSetPoint_2Btn" disabled>MOVE TO SET POINT 2</button><span id="gotoSetPoint_2_status"></span></div>
                     <div class="button-container"><button class="button" data-action="Home">HOME</button><span id="Home_status"></span></div>
                 </nav>
 
