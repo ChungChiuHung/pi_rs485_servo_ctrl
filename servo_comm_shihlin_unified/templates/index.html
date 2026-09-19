@@ -18,7 +18,7 @@
                         }
                     });
                 }
-                
+
 
                 function timestamp() {
                     return new Date().toLocaleTimeString();
@@ -62,7 +62,13 @@
                             setFeedback(action, response.message || 'Action Completed', true);
                             // Update RS485 status values in the UI
                             $('#rs485_send').val(response.RS485_send);
-                            $('#RS485_receive').val(response.RS485_read);
+                            $('#rs485_receive').val(response.RS485_read);
+                            // Only getMsg populates this -- decoded PA/PD
+                            // parameter registers (see
+                            // Read_Pos_Related_Paremters()'s docstring).
+                            if (response.state_values) {
+                                renderStateValues(response.state_values);
+                            }
                         },
                         error: function(xhr){
                             console.error('Error:', xhr);
@@ -86,18 +92,53 @@
                     sendCommand(action);
                 });
 
-                // ENABLE POS MODE needs a pulse count -- validated
-                // client-side against the same range the manual documents
-                // for the underlying registers (0x0905/0x0906: 0~(2^31-1)),
-                // and re-validated server-side in /action (never trust
-                // client-side bounds alone).
+                // ENABLE POS MODE is a toggle, not a one-shot button --
+                // clicking it while position-test mode is already active
+                // sends "disablePosMode" instead. The toggle state itself
+                // is driven by pollStatus()'s ctrl_mode_sel reading (see
+                // updatePosModeButton() below), NOT just "did I last click
+                // enable" -- the drive can (and normally does) exit
+                // position-test mode on its own once a triggered move
+                // settles, and the button must reflect that automatically
+                // rather than getting stuck showing "DISABLE" for a mode
+                // that isn't actually active anymore.
+                let posModeActive = false;
+
+                function updatePosModeButton() {
+                    const btn = $('#enablePosModeBtn');
+                    if (posModeActive) {
+                        btn.text('DISABLE POS MODE').addClass('button-active');
+                    } else {
+                        btn.text('ENABLE POS MODE').removeClass('button-active');
+                    }
+                }
+
                 $('#enablePosModeBtn').click(function(){
+                    if (posModeActive) {
+                        // Status feedback still keys off 'enablePosMode'
+                        // (there's no separate #disablePosMode_status span)
+                        // -- extraPayload's own "action" wins the
+                        // Object.assign in sendCommand(), so the server
+                        // still receives "disablePosMode".
+                        sendCommand('enablePosMode', {action: 'disablePosMode'});
+                        return;
+                    }
+                    // Pulses/speed validated client-side against the same
+                    // ranges the manual documents for the underlying
+                    // registers (0x0905/0x0906: 0~(2^31-1); 0x0903: 0~3000
+                    // rpm), and re-validated server-side in /action (never
+                    // trust client-side bounds alone).
                     const pulses = parseInt($('#posMode_pulses').val(), 10);
                     if (isNaN(pulses) || pulses < 0 || pulses > 2147483647) {
                         setFeedback('enablePosMode', 'Pulses must be a whole number between 0 and 2147483647.', false);
                         return;
                     }
-                    sendCommand('enablePosMode', {pulses: pulses});
+                    const speedRpm = parseInt($('#posMode_speed_rpm').val(), 10);
+                    if (isNaN(speedRpm) || speedRpm < 0 || speedRpm > 3000) {
+                        setFeedback('enablePosMode', 'Speed must be a whole number between 0 and 3000 rpm.', false);
+                        return;
+                    }
+                    sendCommand('enablePosMode', {pulses: pulses, speed_rpm: speedRpm});
                 });
 
                 // ENABLE SPEED CONTROL MODE needs a JOG speed -- manual's
@@ -238,6 +279,9 @@
                         $('#input_server_status_label').text(label);
                         $('#startInputServerBtn').prop('disabled', !!response.active_input_server);
                         $('#stopInputServerBtn').prop('disabled', !response.active_input_server);
+                        if (response.active_input_server !== 'artnet') {
+                            $('#artnetMonitorSection').hide();
+                        }
                     });
                 }
 
@@ -287,7 +331,7 @@
                 });
 
                 pollInputServerStatus();
-                setInterval(pollInputServerStatus, 2000);
+                setInterval(pollInputServerStatus, 1000);
 
                 // Live status panel -- read-only, polled on an interval.
                 // Never sends a write/motion command; see GET /status.
@@ -298,6 +342,24 @@
                         $('#status_reading_active').text(response.reading_active ? 'Yes' : 'No');
                         $('#status_current_angle').text(response.current_angle.toFixed(4) + ' deg');
                         $('#status_current_encoder').text(response.current_encoder);
+                        $('#status_ctrl_mode_sel').text(
+                            {0: 'Idle', 3: 'JOG test', 4: 'Positioning test'}[response.ctrl_mode_sel]
+                            || (response.ctrl_mode_sel === null ? 'unknown' : response.ctrl_mode_sel)
+                        );
+
+                        // ENABLE POS MODE's toggle state reflects reality
+                        // (this live reading), not just "did I last click
+                        // enable" -- position-test mode normally exits on
+                        // its own once a triggered move settles, and the
+                        // button must catch up automatically when that
+                        // happens instead of staying stuck on "DISABLE".
+                        posModeActive = (response.ctrl_mode_sel === 4);
+                        updatePosModeButton();
+
+                        $('#setPoint_1_display').text('Set Point 1: ' +
+                            (response.set_point_1 === null ? 'Not recorded' : response.set_point_1.toFixed(4) + ' deg'));
+                        $('#setPoint_2_display').text('Set Point 2: ' +
+                            (response.set_point_2 === null ? 'Not recorded' : response.set_point_2.toFixed(4) + ' deg'));
 
                         // servo_on is read fresh from the drive (0x0200
                         // bit0), not inferred -- null means "communication
@@ -337,113 +399,181 @@
                 }
 
                 pollStatus();
-                setInterval(pollStatus, 2000);
+                setInterval(pollStatus, 1000);
+
+                // Activity log -- lets a user who isn't watching this
+                // process's own console see what every action (including
+                // ones triggered remotely via OSC/Art-Net) actually did.
+                // Incremental fetch (only entries newer than the last one
+                // seen) keeps this cheap to poll frequently.
+                let lastLogId = 0;
+                function pollActivityLog() {
+                    $.get('/log', {since: lastLogId}, function(response) {
+                        if (!response.entries.length) {
+                            return;
+                        }
+                        const feed = $('#activityLogFeed');
+                        const wasAtBottom = feed.length && (feed[0].scrollHeight - feed.scrollTop() - feed.outerHeight() < 20);
+                        response.entries.forEach(function(entry) {
+                            lastLogId = Math.max(lastLogId, entry.id);
+                            const time = new Date(entry.time * 1000).toLocaleTimeString();
+                            $('<div>')
+                                .addClass('log-entry log-' + entry.level)
+                                .text('[' + time + '] ' + entry.message)
+                                .appendTo(feed);
+                        });
+                        // Cap DOM growth -- this is a live feed, not an
+                        // archive; /log's own ActivityLog already caps
+                        // server-side history separately.
+                        while (feed.children().length > 300) {
+                            feed.children().first().remove();
+                        }
+                        if (wasAtBottom) {
+                            feed.scrollTop(feed[0].scrollHeight);
+                        }
+                    });
+                }
+                pollActivityLog();
+                setInterval(pollActivityLog, 1000);
+
+                // Art-Net Channel Monitor -- shows the interpreted state of
+                // the most recently received DMX frame, so a user driving
+                // this from a lighting console/TouchDesigner/etc. can
+                // confirm what actually arrived without a separate DMX
+                // tool. Only relevant (and only shown) while Art-Net is the
+                // active input server.
+                function pollArtnetChannels() {
+                    $.get('/server/artnet_channels', function(response) {
+                        const section = $('#artnetMonitorSection');
+                        if (!response.active) {
+                            section.hide();
+                            return;
+                        }
+                        section.show();
+                        if (!response.channels) {
+                            $('#artnetLastReceived').text('No frame received yet.');
+                            $('#artnetChannelTableBody').empty();
+                            return;
+                        }
+                        const receivedAt = response.channels.received_at;
+                        $('#artnetLastReceived').text(
+                            'Last frame: ' + (receivedAt ? new Date(receivedAt * 1000).toLocaleTimeString() : '-')
+                        );
+                        const tbody = $('#artnetChannelTableBody');
+                        tbody.empty();
+                        response.channels.channels.forEach(function(ch) {
+                            $('<tr>').append(
+                                $('<td>').text(ch.channel),
+                                $('<td>').text(ch.label),
+                                $('<td>').text(ch.value),
+                                $('<td>').text(ch.interpreted)
+                            ).appendTo(tbody);
+                        });
+                    });
+                }
+                pollArtnetChannels();
+                setInterval(pollArtnetChannels, 1000);
+
+                // GET STATE VALUE -- one-shot render (not polled): a fixed
+                // set of PA/PD parameter registers, decoded server-side
+                // (see Read_Pos_Related_Paremters()'s docstring). Populated
+                // by sendCommand()'s success callback above.
+                function renderStateValues(stateValues) {
+                    $('#stateValuesSection').show();
+                    const tbody = $('#stateValuesTableBody');
+                    tbody.empty();
+                    stateValues.forEach(function(entry) {
+                        $('<tr>').append(
+                            $('<td>').text(entry.address),
+                            $('<td>').text(entry.name),
+                            $('<td>').text(entry.description),
+                            $('<td>').text(entry.value === null ? 'unknown' : entry.value),
+                            $('<td>').text(entry.interpreted || '-')
+                        ).appendTo(tbody);
+                    });
+                }
             });
         </script>
     </head>
     <body>
-        <main>
-            <section class="live-status">
-                <h2>Live Status</h2>
-                <div class="status-grid">
-                    <div class="status-tile">
-                        <span class="label">Port</span>
-                        <span class="value" id="status_connected_port">-</span>
-                    </div>
-                    <div class="status-tile">
-                        <span class="label">Baud</span>
-                        <span class="value" id="status_baud_rate">-</span>
-                    </div>
-                    <div class="status-tile" id="status_alarm_tile">
-                        <span class="label">Alarm Code</span>
-                        <span class="value" id="status_alarm_code">-</span>
-                    </div>
-                    <div class="status-tile" id="status_servo_on_tile">
-                        <span class="label">Servo ON</span>
-                        <span class="value" id="status_servo_on">-</span>
-                    </div>
-                    <div class="status-tile">
-                        <span class="label">Continuous Reading</span>
-                        <span class="value" id="status_reading_active">-</span>
-                    </div>
-                    <div class="status-tile">
-                        <span class="label">Current Angle</span>
-                        <span class="value" id="status_current_angle">-</span>
-                    </div>
-                    <div class="status-tile">
-                        <span class="label">Current Encoder</span>
-                        <span class="value" id="status_current_encoder">-</span>
-                    </div>
+        <div class="app-shell">
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <h1>Servo Control</h1>
                 </div>
-            </section>
-            <section class="motor-profile">
-                <h2>Motor Profile</h2>
-                <div class="form-group">
-                    <label for="profile_select">Active motor:</label>
-                    <select id="profile_select"></select>
-                    <span id="profile_status"></span>
-                </div>
-            </section>
-            <section class="input-server">
-                <h2>Continuous Motion Input</h2>
-                <div class="form-group">
-                    <label for="input_server_type">Protocol:</label>
-                    <select id="input_server_type">
-                        <option value="osc">OSC</option>
-                        <option value="artnet">Art-Net</option>
-                    </select>
-                </div>
-                <div class="form-group osc-only">
-                    <label for="osc_listen_port">OSC listen port:</label>
-                    <input type="number" id="osc_listen_port" value="5005">
-                </div>
-                <div class="form-group artnet-only">
-                    <label for="artnet_listen_port">Art-Net listen port:</label>
-                    <input type="number" id="artnet_listen_port" value="6454">
-                </div>
-                <div class="form-group artnet-only">
-                    <label for="artnet_universe">Art-Net universe:</label>
-                    <input type="number" id="artnet_universe" value="0">
-                </div>
-                <div class="form-group artnet-only">
-                    <label for="artnet_position_max_angle">Art-Net position-mode max angle (deg):</label>
-                    <input type="number" id="artnet_position_max_angle" value="360">
-                </div>
-                <div class="button-container">
-                    <button class="button" id="startInputServerBtn">Start</button>
-                    <button class="button" id="stopInputServerBtn">Stop</button>
-                </div>
-                <p>Active: <span id="input_server_status_label">-</span></p>
-                <span id="input_server_action_status"></span>
-            </section>
-            <section class="Servo Amplifier Controller(RS485)">
-                <div class="rs485">
-                    <h1>RS485 R/W Status</h1>
+
+                <section class="sidebar-section">
+                    <h2>Motor Profile</h2>
                     <div class="form-group">
-                        <label for="rs485_send">RS-485 Send:</label>
-                        <input type="text" id="rs485_send" value="{{ RS485_send }}" readonly>
+                        <label for="profile_select">Active motor:</label>
+                        <select id="profile_select"></select>
                     </div>
+                    <span id="profile_status" class="section-note"></span>
+                </section>
+
+                <section class="sidebar-section">
+                    <h2>Continuous Motion Input</h2>
                     <div class="form-group">
-                        <label for="rs485_receive">RS-485 Receive:</label>
-                        <input type="text" id="rs485_receive" value="{{ RS485_read }}" readonly>
+                        <label for="input_server_type">Protocol:</label>
+                        <select id="input_server_type">
+                            <option value="osc">OSC</option>
+                            <option value="artnet">Art-Net</option>
+                        </select>
                     </div>
-                </div>
-                <div class="commands">
-                    <h2>Commands</h2>
+                    <div class="form-group osc-only">
+                        <label for="osc_listen_port">OSC listen port:</label>
+                        <input type="number" id="osc_listen_port" value="5005">
+                    </div>
+                    <div class="form-group artnet-only">
+                        <label for="artnet_listen_port">Art-Net listen port:</label>
+                        <input type="number" id="artnet_listen_port" value="6454">
+                    </div>
+                    <div class="form-group artnet-only">
+                        <label for="artnet_universe">Art-Net universe:</label>
+                        <input type="number" id="artnet_universe" value="0">
+                    </div>
+                    <div class="form-group artnet-only">
+                        <label for="artnet_position_max_angle">Position-mode max angle (deg):</label>
+                        <input type="number" id="artnet_position_max_angle" value="360">
+                    </div>
+                    <div class="button-container">
+                        <button class="button" id="startInputServerBtn">Start</button>
+                        <button class="button" id="stopInputServerBtn">Stop</button>
+                    </div>
+                    <p class="section-note">Active: <span id="input_server_status_label">-</span></p>
+                    <span id="input_server_action_status" class="section-note"></span>
+                </section>
+
+                <nav class="sidebar-section commands">
+                    <h2>Servo</h2>
                     <div class="button-container"><button class="button" data-action="servoOn">SERVO ON</button><span id="servoOn_status"></span></div>
                     <div class="button-container"><button class="button" data-action="servoOff">SERVO OFF</button><span id="servoOff_status"></span></div>
                     <div class="button-container"><button class="button" data-action="getMsg">GET STATE VALUE</button><span id="getMsg_status"></span></div>
                     <div class="button-container"><button class="button" id="clearAlarm12Btn">CLEAR ALARM 12</button><span id="clearAlarm12_status"></span></div>
+                </nav>
+
+                <nav class="sidebar-section commands">
+                    <h2>Position Mode</h2>
                     <div class="form-group">
                         <label for="posMode_pulses">Pulses:</label>
                         <input type="number" id="posMode_pulses" min="0" max="2147483647" value="1920">
                     </div>
+                    <div class="form-group">
+                        <label for="posMode_speed_rpm">Speed (rpm):</label>
+                        <input type="number" id="posMode_speed_rpm" min="0" max="3000" value="10">
+                    </div>
                     <div class="button-container"><button class="button" id="enablePosModeBtn">ENABLE POS MODE</button><span id="enablePosMode_status"></span></div>
                     <div class="button-container"><button class="button" data-action="posTestStart_CW">POS TEST START CW</button><span id="posTest_status_CW"></span></div>
                     <div class="button-container"><button class="button" data-action="posTestStart_CCW">POS TEST START CCW</button><span id="posTest_status_CCW"></span></div>
+                    <span class="section-note" id="setPoint_1_display">Set Point 1: Not recorded</span>
                     <div class="button-container"><button class="button" data-action="setPoint_1">SET POINT 1</button><span id="setPoint_1_status"></span></div>
+                    <span class="section-note" id="setPoint_2_display">Set Point 2: Not recorded</span>
                     <div class="button-container"><button class="button" data-action="setPoint_2">SET POINT 2</button><span id="setPoint_2_status"></span></div>
                     <div class="button-container"><button class="button" data-action="Home">HOME</button><span id="Home_status"></span></div>
+                </nav>
+
+                <nav class="sidebar-section commands">
+                    <h2>Speed Control (JOG)</h2>
                     <div class="form-group">
                         <label for="speedCtrl_rpm">Speed (rpm):</label>
                         <input type="number" id="speedCtrl_rpm" min="0" max="3000" value="100">
@@ -453,8 +583,87 @@
                     <div class="button-container"><button class="button" data-action="motionStart_CCW">MOTION START CCW</button><span id="motionStart_CCW_status"></span></div>
                     <div class="button-container"><button class="button" data-action="motionPause">MOTION PAUSE</button><span id="motionPause_status"></span></div>
                     <div class="button-container"><button class="button" data-action="motionCancel">MOTION CANCEL</button><span id="motionCancel_status"></span></div>
-                </div>
-            </section>
-        </main>
+                </nav>
+            </aside>
+
+            <main class="main-content">
+                <section class="live-status">
+                    <h2>Live Status</h2>
+                    <div class="status-grid">
+                        <div class="status-tile">
+                            <span class="label">Port</span>
+                            <span class="value" id="status_connected_port">-</span>
+                        </div>
+                        <div class="status-tile">
+                            <span class="label">Baud</span>
+                            <span class="value" id="status_baud_rate">-</span>
+                        </div>
+                        <div class="status-tile" id="status_alarm_tile">
+                            <span class="label">Alarm Code</span>
+                            <span class="value" id="status_alarm_code">-</span>
+                        </div>
+                        <div class="status-tile" id="status_servo_on_tile">
+                            <span class="label">Servo ON</span>
+                            <span class="value" id="status_servo_on">-</span>
+                        </div>
+                        <div class="status-tile">
+                            <span class="label">Mode</span>
+                            <span class="value" id="status_ctrl_mode_sel">-</span>
+                        </div>
+                        <div class="status-tile">
+                            <span class="label">Continuous Reading</span>
+                            <span class="value" id="status_reading_active">-</span>
+                        </div>
+                        <div class="status-tile">
+                            <span class="label">Current Angle</span>
+                            <span class="value" id="status_current_angle">-</span>
+                        </div>
+                        <div class="status-tile">
+                            <span class="label">Current Encoder</span>
+                            <span class="value" id="status_current_encoder">-</span>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="rs485-status">
+                    <h2>Last RS-485 Transaction</h2>
+                    <div class="form-group">
+                        <label for="rs485_send">Sent:</label>
+                        <input type="text" id="rs485_send" value="{{ RS485_send }}" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label for="rs485_receive">Received:</label>
+                        <input type="text" id="rs485_receive" value="{{ RS485_read }}" readonly>
+                    </div>
+                </section>
+
+                <section class="artnet-monitor" id="artnetMonitorSection" style="display:none;">
+                    <h2>Art-Net Channel Monitor</h2>
+                    <p class="section-note" id="artnetLastReceived">No frame received yet.</p>
+                    <table class="channel-table">
+                        <thead>
+                            <tr><th>Ch</th><th>Label</th><th>Value</th><th>Interpreted</th></tr>
+                        </thead>
+                        <tbody id="artnetChannelTableBody"></tbody>
+                    </table>
+                </section>
+
+                <section class="state-values-monitor" id="stateValuesSection" style="display:none;">
+                    <h2>Drive State Values (GET STATE VALUE)</h2>
+                    <p class="section-note">PA/PD parameter registers -- mostly fixed configuration, not live motion feedback.</p>
+                    <table class="channel-table">
+                        <thead>
+                            <tr><th>Reg</th><th>Name</th><th>Description</th><th>Value</th><th>Interpreted</th></tr>
+                        </thead>
+                        <tbody id="stateValuesTableBody"></tbody>
+                    </table>
+                </section>
+
+                <section class="activity-log">
+                    <h2>Activity Log</h2>
+                    <div class="log-feed" id="activityLogFeed"></div>
+                </section>
+            </main>
+        </div>
     </body>
 </html>
