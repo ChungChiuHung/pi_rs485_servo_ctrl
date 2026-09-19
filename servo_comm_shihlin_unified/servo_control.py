@@ -57,6 +57,25 @@ STILL_THRESHOLD_PULSES = 200
 STILL_COUNT_TO_COMPLETE = 12
 
 
+# Alarms relevant to the absolute-encoder system (manual §8.1, alarm table
+# ~line 10498+). Keyed by the code as displayed on the drive (AL.2A -> 0x2A).
+# ASSUMPTION: the 0x0100 register reports the displayed code as-is (the
+# existing tests treat 0x12 as AL.12); not yet observed on hardware for
+# these specific alarms -- confirm the first time one appears.
+ABSOLUTE_SYSTEM_ALARM_NAMES = {
+    0x24: "Encoder type error (PA28=1 with an incremental motor, or absolute position lost)",
+    0x29: "Encoder error 5 (motor revolutions outside -32768~32767)",
+    0x2A: "ABS encoder abnormal 1 (expected once after first PA28=1: power-cycle the drive again)",
+    0x2C: "ABS encoder abnormal 3 (expected after AL.2A: set PA29=1 or home-return to initialise)",
+    0x2D: "Encoder battery voltage low (replace the backup battery)",
+}
+
+
+def alarm_name(alarm_code):
+    """Human-readable name for the alarms this module knows about, else None."""
+    return ABSOLUTE_SYSTEM_ALARM_NAMES.get(alarm_code)
+
+
 def is_alarm_active(alarm_code) -> bool:
     """True if alarm_code represents an active alarm. alarm_code=None
     (communication failure) is deliberately NOT "no alarm" -- callers must
@@ -133,6 +152,25 @@ class ServoController:
         # docstring). None means "never recorded for this profile".
         self.set_point_1 = self._load_config_value("set_point_1")
         self.set_point_2 = self._load_config_value("set_point_2")
+        # Encoder mode the drive is ACTUALLY running in (PA28 == 1). False
+        # (incremental, PA28 == 0) matches the confirmed state of this
+        # project's drive and keeps every existing code path unchanged; it
+        # only becomes True via refresh_encoder_mode() reading PA28 == 1
+        # from the drive. PA28 takes effect only after a drive power cycle
+        # (manual: PA28 is a (*) parameter), so this is deliberately NOT set
+        # by write_PA28_Encoder_Mode() itself.
+        self.absolute_mode = False
+        # Absolute-mode home reference, in absolute encoder pulses
+        # (PA32*pulses_per_rev + PA33). Kept separate from abs_home_pos,
+        # which is in the incremental tracker's scale -- the two scales are
+        # unrelated (the incremental counter restarts at power-on, the
+        # absolute one does not), so one must never be used as the other.
+        self.abs_home_pos_absolute = self._load_config_value("abs_home_pos_absolute")
+        # absolute_pulses - incremental_tracker_cumulative, captured whenever
+        # both are read together. Lets the 100ms continuous-reading loop
+        # (which only reads the cheap raw counter) report positions in the
+        # absolute scale without 4 extra Modbus transactions per poll.
+        self._absolute_offset = None
         self._event_listeners = {
             "on_motion_completed": [],
             "on_moving": [],
@@ -203,7 +241,11 @@ class ServoController:
         # encoder read first so a call right after a process restart (before
         # that thread has ever run) doesn't move relative to a stale
         # default. See _refresh_current_angle_from_hardware()'s docstring.
-        self._refresh_current_angle_from_hardware()
+        if not self._refresh_current_angle_from_hardware():
+            raise ValueError(
+                "Could not read the current position from the drive; refusing to move "
+                "(a relative move from a stale position would land in the wrong place)."
+            )
         logging.info(f"Moving to Set Point {n}: {target_angle} deg")
         self.post_step_motion_by(target_angle, acc_dec_time, speed_rpm)
 
@@ -347,17 +389,61 @@ class ServoController:
         current_angle was still 0.0 post-restart). Returns False (and
         leaves current_angle untouched) on a communication failure."""
         with self.lock:
-            raw_encoder = self.read_encoder_before_gear_ratio()
-            if raw_encoder is None:
-                logging.warning("_refresh_current_angle_from_hardware: empty encoder response.")
+            encoder = self._read_reference_encoder()
+            if encoder is None:
+                logging.warning("_refresh_current_angle_from_hardware: no usable position reading.")
                 return False
-            self.current_encoder = self._encoder_tracker.update(raw_encoder)
-            logging.info(f"Current Encoder Value: {self.current_encoder} (raw: {raw_encoder})")
-            self.current_angle = round(
-                (self.current_encoder - self.abs_home_pos) / self.base_pulse_per_degree, 4
-            )
+            home = self._active_home_pos()
+            if home is None:
+                logging.warning(
+                    "Absolute mode is active but no absolute home position has been set "
+                    "(abs_home_pos_absolute); press SET HOME first. Position not updated."
+                )
+                return False
+            self.current_encoder = encoder
+            logging.info(f"Current Encoder Value: {self.current_encoder}")
+            self.current_angle = round((encoder - home) / self.base_pulse_per_degree, 4)
             logging.info(f"Current Angle: {self.current_angle}")
             return True
+
+    def _active_home_pos(self):
+        """Home reference in the scale of the ACTIVE encoder mode. None in
+        absolute mode until set_home_position() has captured one -- the
+        incremental abs_home_pos is a different scale and must not stand in."""
+        return self.abs_home_pos_absolute if self.absolute_mode else self.abs_home_pos
+
+    def _read_reference_encoder(self):
+        """Fresh position in the active reference scale, or None on any
+        failure. Incremental mode: the wraparound-tracked raw counter (the
+        original behavior). Absolute mode: PA32/PA33 absolute pulses, and the
+        incremental-tracker offset is re-synced from this same moment so the
+        cheap continuous-reading loop can keep reporting in the absolute
+        scale."""
+        raw = self.read_encoder_before_gear_ratio()
+        if raw is None:
+            return None
+        with self.lock:
+            tracker_value = self._encoder_tracker.update(raw)
+            if not self.absolute_mode:
+                return tracker_value
+        absolute_pulses = self.read_absolute_position_pulses()
+        if absolute_pulses is None:
+            return None
+        with self.lock:
+            self._absolute_offset = absolute_pulses - tracker_value
+        return absolute_pulses
+
+    def _encoder_and_angle_for(self, tracker_value: int):
+        """(encoder, angle) for a tracker value read by the continuous loop.
+        Identical to the original computation in incremental mode."""
+        if (self.absolute_mode and self._absolute_offset is not None
+                and self.abs_home_pos_absolute is not None):
+            encoder = tracker_value + self._absolute_offset
+            home = self.abs_home_pos_absolute
+        else:
+            encoder = tracker_value
+            home = self.abs_home_pos
+        return encoder, round((encoder - home) / self.base_pulse_per_degree, 4)
 
     def _read_continuously(self, interval: float) -> None:
         # Software motion-complete detection instead of Read_Motion_Completed_Signal()
@@ -426,11 +512,9 @@ class ServoController:
             # path (closed-loop basis for post_step_motion_by(), design doc
             # §2.2 #4).
             with self.lock:
-                self.current_encoder = self._encoder_tracker.update(encoder)
+                tracker_value = self._encoder_tracker.update(encoder)
+                self.current_encoder, diff_angle = self._encoder_and_angle_for(tracker_value)
                 logger.info(f"Current Encoder Value: {self.current_encoder} (raw: {encoder})")
-                diff_angle = round(
-                    (self.current_encoder - self.abs_home_pos) / self.base_pulse_per_degree, 4
-                )
                 self.current_angle = diff_angle
             logger.info(f"Diff Angle: {diff_angle}")
             self._notify_event_listeners("on_moving", diff_angle)
@@ -472,11 +556,121 @@ class ServoController:
         response_object = ModbusRTUResponse(response)
         logging.info(response_object)
 
+    def _read_parameter(self, register, word_length: int = 2, signed: bool = False):
+        """Reads one PA/PD register and returns its int value, or None on a
+        communication/parse failure (never a guess -- callers treat None as
+        "unknown")."""
+        message = self.modbus_client.build_read_message(register.address, word_length)
+        try:
+            response = self.modbus_client.send_and_receive(message)
+            if response is None:
+                logger.error(f"No response reading {register.name}.")
+                return None
+            return ModbusRTUResponse(response).get_value(signed=signed)
+        except Exception as e:
+            logger.error(f"Failed to read {register.name}: {e}")
+            return None
+
+    def _write_parameter(self, register, value: int) -> bool:
+        message = self.modbus_client.build_write_message(register.address, value)
+        try:
+            response = self.modbus_client.send_and_receive(message)
+            if response is None:
+                logger.error(f"No response writing {register.name}.")
+                return False
+            ModbusRTUResponse(response)  # validates CRC / exception frames
+            return True
+        except Exception as e:
+            logger.error(f"Failed to write {register.name}: {e}")
+            return False
+
+    def read_PA28_Encoder_Mode(self):
+        """PA28 (ABS): 0 = incremental, 1 = absolute. None if unreadable."""
+        return self._read_parameter(PA.ABS)
+
+    def write_PA28_Encoder_Mode(self, absolute: bool) -> bool:
+        """Writes PA28 and verifies it by reading it back. HARDWARE-AFFECTING
+        -- read before calling:
+          * Only takes effect after the drive is power-cycled (PA28 is a (*)
+            parameter, manual p.88); this method does NOT change
+            self.absolute_mode for that reason.
+          * absolute=True on a drive whose motor has no absolute encoder
+            raises AL.24 (encoder type error). Even with the right motor the
+            absolute system needs its backup battery (SDH-BAT-SET), or the
+            position is lost at every power-off.
+          * First-time absolute init is a multi-step sequence: write 1,
+            power-cycle (AL.2A appears), power-cycle again (AL.2C appears),
+            then clear it with PA29=1 (write_PA29_Initial_Abs_Pos()) or a
+            home-return -- manual §8.1 "System initialization".
+        Returns True only if the write succeeded AND read back as requested."""
+        requested = 1 if absolute else 0
+        if not self._write_parameter(PA.ABS, requested):
+            return False
+        readback = self.read_PA28_Encoder_Mode()
+        if readback != requested:
+            logger.error(f"PA28 write not confirmed: wrote {requested}, read back {readback}.")
+            return False
+        logger.warning(
+            f"PA28 set to {requested} ({'absolute' if absolute else 'incremental'}). "
+            "Power-cycle the drive for it to take effect."
+        )
+        return True
+
+    def refresh_encoder_mode(self):
+        """Reads PA28 from the drive and updates self.absolute_mode. Returns
+        the mode as True/False, or None if PA28 couldn't be read (in which
+        case self.absolute_mode is left as it was). Call at connect time and
+        after a power cycle."""
+        value = self.read_PA28_Encoder_Mode()
+        if value is None:
+            return None
+        with self.lock:
+            self.absolute_mode = (value == 1)
+            if not self.absolute_mode:
+                self._absolute_offset = None
+        logger.info(f"Encoder mode: {'absolute' if self.absolute_mode else 'incremental'} (PA28={value}).")
+        return self.absolute_mode
+
+    def read_PA31_Abs_Position_Status(self):
+        return self._read_parameter(PA.APST)
+
+    def write_PA30_Update_Abs_Position(self, mode: int = 1) -> bool:
+        """PA30 (UAP): 1 = refresh PA31~PA33 from the encoder; 2 = also reset
+        the position command to the current position (clears position error
+        -- more invasive, not used by the position-read path)."""
+        if mode not in (1, 2):
+            raise ValueError(f"PA30 mode must be 1 or 2, got {mode!r}.")
+        return self._write_parameter(PA.UAP, mode)
+
+    def read_PA32_Abs_Revolutions(self):
+        return self._read_parameter(PA.APR, 2, signed=True)
+
     def read_PA33_Encoder_ABS_Pos(self):
-        message = self.modbus_client.build_read_message(0x0340, 2)
-        response = self.modbus_client.send_and_receive(message)
-        response_object = ModbusRTUResponse(response)
-        logger.info(response_object)
+        return self._read_parameter(PA.APP, 2)
+
+    def read_absolute_position_pulses(self):
+        """Absolute encoder position in pulses (PA32 * pulses_per_rev + PA33),
+        or None if it can't be trusted: PA31 reports lost position / low
+        battery / overflow / coordinate system not set, or any read fails.
+        Only meaningful when PA28 == 1. Refreshes PA31~PA33 via PA30=1 first
+        (whether the drive needs this before every read is unverified --
+        the manual only says PA30 "updates" them -- so it is done to be
+        safe; verify against real hardware once the absolute system runs)."""
+        if not self.write_PA30_Update_Abs_Position(1):
+            return None
+        self.delay_ms(20)
+        status = self.read_PA31_Abs_Position_Status()
+        if status is None:
+            return None
+        faults = PA.decode_APST(status)
+        if faults:
+            logger.warning(f"Absolute position not trustworthy (PA31={status:#06x}): {'; '.join(faults)}")
+            return None
+        revolutions = self.read_PA32_Abs_Revolutions()
+        pulses = self.read_PA33_Encoder_ABS_Pos()
+        if revolutions is None or pulses is None:
+            return None
+        return revolutions * self.profile["encoder_pulses_per_rev"] + pulses
 
     def write_PA01_Ctrl_Mode(self):
         logger.info(f"Address of PA{PA.STY.no} {PA.STY.name}: {hex(PA.STY.address)}")
@@ -845,7 +1039,12 @@ class ServoController:
         "SDI": PD.explain_SDI,
         "ITST": PD.explain_ITST,
         "MCOK": PD.explain_MCOK,
+        "ABS": PA.explain_ABS,
+        "APST": PA.explain_APST,
     }
+    # 32-bit (2-word) registers; everything else here is read as one word.
+    _READ_WORDS_BY_REGISTER_NAME = {"APR": 2, "APP": 2}
+    _SIGNED_REGISTER_NAMES = frozenset({"APR"})
 
     def Read_Pos_Related_Paremters(self) -> list:
         """Reads a fixed diagnostic set of PA/PD *parameter* registers --
@@ -855,12 +1054,14 @@ class ServoController:
         meaning instead of raw undecoded bytes. Read-only; never writes."""
         read_address_array = [PA.STY, PA.HMOV, PA.PLSS,
                                PA.ENR, PA.PO1H, PA.POL,
-                               PD.SDI, PD.ITST, PD.MCOK]
+                               PD.SDI, PD.ITST, PD.MCOK,
+                               PA.ABS, PA.APST, PA.APR, PA.APP]
 
         results = []
         for address in read_address_array:
             logger.info(f"Read {address.no}: {address.name}: {hex(address.address)}")
-            message = self.modbus_client.build_read_message(address.address, 1)
+            message = self.modbus_client.build_read_message(
+                address.address, self._READ_WORDS_BY_REGISTER_NAME.get(address.name, 1))
             response = self.modbus_client.send_and_receive(message)
             entry = {
                 "no": address.no,
@@ -874,7 +1075,8 @@ class ServoController:
                 entry["interpreted"] = "No response (communication failure)"
             else:
                 try:
-                    value = ModbusRTUResponse(response).get_value()
+                    value = ModbusRTUResponse(response).get_value(
+                        signed=address.name in self._SIGNED_REGISTER_NAMES)
                     entry["value"] = value
                     explain_fn = self._EXPLAIN_FN_BY_REGISTER_NAME.get(address.name)
                     if explain_fn:
@@ -883,6 +1085,10 @@ class ServoController:
                         entry["interpreted"] = f"{value} pulses/rev (or division ratio, per POL's z-bit)"
                     elif address.name == "PO1H":
                         entry["interpreted"] = f"{value} rev"
+                    elif address.name == "APR":
+                        entry["interpreted"] = f"{value} rev (meaningful only when PA28 = 1)"
+                    elif address.name == "APP":
+                        entry["interpreted"] = f"{value} pulses (meaningful only when PA28 = 1)"
                 except Exception as e:
                     logger.error(f"Failed to parse {address.name} response: {e}")
                     entry["interpreted"] = f"Parse error: {e}"
@@ -1007,13 +1213,16 @@ class ServoController:
         # is itself a tracker-derived cumulative value, so comparing it
         # against a raw, wrapping reading would silently break once a wrap
         # has occurred (see design doc §2.4 "Plan C").
-        raw_pos = self.read_encoder_before_gear_ratio()
-        if raw_pos is None:
-            logging.warning("pos_step_motion_by: empty encoder response; not moving.")
+        # In absolute mode target_pos is in the absolute scale (see
+        # _active_home_pos()) and _read_reference_encoder() returns the
+        # matching absolute reading; in incremental mode it is exactly the
+        # tracker-derived value described above.
+        current_pos = self._read_reference_encoder()
+        if current_pos is None:
+            logging.warning("pos_step_motion_by: no usable position reading; not moving.")
             return 0.0
         with self.lock:
-            self.current_encoder = self._encoder_tracker.update(raw_pos)
-            current_pos = self.current_encoder
+            self.current_encoder = current_pos
         logger.info(f"Current Encoder Value: {current_pos}")
 
         diff_pulses = target_pos - current_pos
@@ -1223,6 +1432,9 @@ class ServoController:
         return True
 
     def set_home_position(self):
+        if self.absolute_mode:
+            self._set_home_position_absolute()
+            return
         with self.lock:
             self.current_angle = 0.0
             self.previous_angle = 0.0
@@ -1237,9 +1449,37 @@ class ServoController:
         self.save_abs_home_pos(self.current_encoder)
         logger.info("home position set!!!")
 
+    def _set_home_position_absolute(self):
+        """Absolute-mode SET HOME: captures the current absolute encoder
+        position (PA32/PA33) as the home reference. Refuses (changes
+        nothing) if the absolute position can't be trusted."""
+        raw_encoder = self.read_encoder_before_gear_ratio()
+        absolute_pulses = self.read_absolute_position_pulses()
+        if raw_encoder is None or absolute_pulses is None:
+            logger.error("set_home_position: absolute position unavailable; home NOT set.")
+            return
+        with self.lock:
+            self.current_angle = 0.0
+            self.previous_angle = 0.0
+            self.target_angle = 0.0
+            self.float_error = 0.0
+            self.accumulate_pulse = 0
+            tracker_value = self._encoder_tracker.reset(raw_encoder)
+            self._absolute_offset = absolute_pulses - tracker_value
+            self.previous_encoder = self.current_encoder
+            self.current_encoder = absolute_pulses
+        self.abs_home_pos_absolute = absolute_pulses
+        self._save_config_value("abs_home_pos_absolute", absolute_pulses)
+        logger.info("absolute home position set!!!")
+
     def initial_abs_home(self) -> bool:
         if self.on_initial_home:
             logging.info("Initial absolute home now is running.")
+            return False
+
+        home_pos = self._active_home_pos()
+        if home_pos is None:
+            logging.warning("initial_abs_home: absolute mode is active but no absolute home is set; not moving.")
             return False
 
         try:
@@ -1247,7 +1487,7 @@ class ServoController:
             self.on_initial_home = True
 
             speed_rpm = 12
-            angle_rotated = self.pos_step_motion_by(self.abs_home_pos, 5000, speed_rpm)
+            angle_rotated = self.pos_step_motion_by(home_pos, 5000, speed_rpm)
 
             time_per_revolution = 60 / speed_rpm
             timeout = 1.2 * (angle_rotated / 360) * time_per_revolution

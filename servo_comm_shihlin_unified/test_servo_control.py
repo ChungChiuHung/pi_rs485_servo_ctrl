@@ -478,6 +478,171 @@ class TestRefreshCurrentAngleFromHardware(unittest.TestCase):
         self.assertEqual(ctrl.current_angle, 42.0)
 
 
+class TestEncoderModeRegisters(unittest.TestCase):
+    """PA28 read/write and the PA29~PA33 absolute-position read path. No
+    real drive involved -- register I/O is mocked."""
+
+    def _ctrl(self, values):
+        """values: {register name: value or None}; writes succeed."""
+        ctrl = make_controller()
+        ctrl._write_parameter = MagicMock(return_value=True)
+        ctrl._read_parameter = MagicMock(
+            side_effect=lambda register, words=2, signed=False: values[register.name])
+        ctrl.delay_ms = MagicMock()
+        return ctrl
+
+    def test_read_pa28(self):
+        self.assertEqual(self._ctrl({"ABS": 1}).read_PA28_Encoder_Mode(), 1)
+
+    def test_write_pa28_verifies_by_readback(self):
+        ctrl = self._ctrl({"ABS": 1})
+        self.assertTrue(ctrl.write_PA28_Encoder_Mode(True))
+        ctrl._write_parameter.assert_called_once_with(PA.ABS, 1)
+
+    def test_write_pa28_fails_if_readback_differs(self):
+        ctrl = self._ctrl({"ABS": 0})
+        self.assertFalse(ctrl.write_PA28_Encoder_Mode(True))
+
+    def test_write_pa28_does_not_flip_active_mode(self):
+        # PA28 only takes effect after a power cycle; the software must keep
+        # using the incremental path until refresh_encoder_mode() says so.
+        ctrl = self._ctrl({"ABS": 1})
+        ctrl.write_PA28_Encoder_Mode(True)
+        self.assertFalse(ctrl.absolute_mode)
+
+    def test_refresh_encoder_mode_sets_flag(self):
+        ctrl = self._ctrl({"ABS": 1})
+        self.assertTrue(ctrl.refresh_encoder_mode())
+        self.assertTrue(ctrl.absolute_mode)
+
+    def test_refresh_encoder_mode_unreadable_keeps_previous_mode(self):
+        ctrl = self._ctrl({"ABS": None})
+        ctrl.absolute_mode = True
+        self.assertIsNone(ctrl.refresh_encoder_mode())
+        self.assertTrue(ctrl.absolute_mode)
+
+    def test_absolute_position_combines_signed_revolutions_and_pulses(self):
+        ctrl = self._ctrl({"APST": 0, "APR": -2, "APP": 1000})
+        # profile: 4194304 pulses/rev
+        self.assertEqual(ctrl.read_absolute_position_pulses(), -2 * 4194304 + 1000)
+
+    def test_absolute_position_refused_when_status_reports_fault(self):
+        for bit in (0, 1, 2, 4):
+            ctrl = self._ctrl({"APST": 1 << bit, "APR": 0, "APP": 0})
+            self.assertIsNone(ctrl.read_absolute_position_pulses(), "bit %d" % bit)
+
+    def test_absolute_position_none_when_a_read_fails(self):
+        self.assertIsNone(self._ctrl({"APST": 0, "APR": None, "APP": 5}).read_absolute_position_pulses())
+        self.assertIsNone(self._ctrl({"APST": 0, "APR": 1, "APP": None}).read_absolute_position_pulses())
+        self.assertIsNone(self._ctrl({"APST": None, "APR": 1, "APP": 1}).read_absolute_position_pulses())
+
+    def test_absolute_position_none_when_pa30_update_fails(self):
+        ctrl = self._ctrl({"APST": 0, "APR": 0, "APP": 0})
+        ctrl._write_parameter = MagicMock(return_value=False)
+        self.assertIsNone(ctrl.read_absolute_position_pulses())
+
+    def test_pa30_rejects_invalid_mode(self):
+        with self.assertRaises(ValueError):
+            self._ctrl({}).write_PA30_Update_Abs_Position(3)
+
+    def test_explain_helpers(self):
+        self.assertEqual(PA.explain_APST(0), "normal")
+        self.assertIn("battery low voltage", PA.explain_APST(0b10))
+        self.assertIn("absolute position lost", PA.explain_APST(0b1))
+        self.assertIn("incremental", PA.explain_ABS(0))
+        self.assertIn("AL.24", PA.explain_ABS(1))
+
+
+class TestAbsoluteModePositioning(unittest.TestCase):
+    """Absolute mode changes only where the position reference comes from;
+    incremental behavior (default) is covered by the tests above."""
+
+    def _abs_ctrl(self, tracker_raw=1000, absolute_pulses=5000000, home=4000000):
+        ctrl = make_controller()
+        ctrl.absolute_mode = True
+        ctrl.abs_home_pos_absolute = home
+        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=tracker_raw)
+        ctrl.read_absolute_position_pulses = MagicMock(return_value=absolute_pulses)
+        return ctrl
+
+    def test_refresh_uses_absolute_reading_and_absolute_home(self):
+        ctrl = self._abs_ctrl(absolute_pulses=5000000, home=4000000)
+        self.assertTrue(ctrl._refresh_current_angle_from_hardware())
+        self.assertEqual(ctrl.current_encoder, 5000000)
+        self.assertAlmostEqual(ctrl.current_angle, 1000000 / ctrl.base_pulse_per_degree, places=4)
+
+    def test_refresh_ignores_the_incremental_home(self):
+        ctrl = self._abs_ctrl()
+        ctrl.abs_home_pos = 123  # must not be used in absolute mode
+        ctrl._refresh_current_angle_from_hardware()
+        self.assertAlmostEqual(ctrl.current_angle, 1000000 / ctrl.base_pulse_per_degree, places=4)
+
+    def test_refresh_fails_without_absolute_home(self):
+        ctrl = self._abs_ctrl(home=None)
+        self.assertFalse(ctrl._refresh_current_angle_from_hardware())
+
+    def test_refresh_fails_when_absolute_position_untrustworthy(self):
+        ctrl = self._abs_ctrl(absolute_pulses=None)
+        self.assertFalse(ctrl._refresh_current_angle_from_hardware())
+
+    def test_refresh_records_offset_for_the_continuous_loop(self):
+        ctrl = self._abs_ctrl(tracker_raw=1000, absolute_pulses=5000000)
+        ctrl._refresh_current_angle_from_hardware()
+        # Loop later reads tracker value 1500 -> absolute scale 5000500.
+        encoder, _ = ctrl._encoder_and_angle_for(ctrl._encoder_tracker.update(1500))
+        self.assertEqual(encoder, 5000500)
+
+    def test_loop_helper_is_unchanged_in_incremental_mode(self):
+        ctrl = make_controller()
+        ctrl.abs_home_pos = 1000
+        encoder, angle = ctrl._encoder_and_angle_for(1000 + 349525)
+        self.assertEqual(encoder, 1000 + 349525)
+        self.assertAlmostEqual(angle, 1.0, places=2)
+
+    def test_pos_step_motion_by_targets_the_absolute_scale(self):
+        ctrl = self._abs_ctrl(absolute_pulses=5000000)
+        ctrl._execute_positioning = MagicMock()
+        ctrl.pos_step_motion_by(target_pos=5000000 + 1000)
+        self.assertEqual(ctrl._execute_positioning.call_args[0][0], 1000)
+
+    def test_initial_abs_home_refuses_without_an_absolute_home(self):
+        ctrl = self._abs_ctrl(home=None)
+        ctrl.pos_step_motion_by = MagicMock()
+        self.assertFalse(ctrl.initial_abs_home())
+        ctrl.pos_step_motion_by.assert_not_called()
+
+    def test_set_home_captures_absolute_position_and_persists_it(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ctrl = self._abs_ctrl(absolute_pulses=7777777, home=None)
+            ctrl.config_file = os.path.join(tmp_dir, ctrl.config_file)
+            ctrl.delay_ms = MagicMock()
+
+            ctrl.set_home_position()
+
+            self.assertEqual(ctrl.abs_home_pos_absolute, 7777777)
+            self.assertEqual(ctrl.current_angle, 0.0)
+            import json
+            with open(ctrl.config_file) as f:
+                self.assertEqual(json.load(f)["abs_home_pos_absolute"], 7777777)
+            self.assertEqual(ctrl.abs_home_pos, 62369153)  # incremental home untouched
+
+    def test_set_home_refuses_when_absolute_position_unavailable(self):
+        ctrl = self._abs_ctrl(absolute_pulses=None, home=None)
+        ctrl.current_angle = 42.0
+        ctrl.set_home_position()
+        self.assertIsNone(ctrl.abs_home_pos_absolute)
+        self.assertEqual(ctrl.current_angle, 42.0)
+
+    def test_move_to_set_point_refuses_when_position_unreadable(self):
+        ctrl = make_controller()
+        ctrl.set_point_1 = 10.0
+        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=False)
+        ctrl.post_step_motion_by = MagicMock()
+        with self.assertRaises(ValueError):
+            ctrl.move_to_set_point(1)
+        ctrl.post_step_motion_by.assert_not_called()
+
+
 class TestLockIsReentrant(unittest.TestCase):
 
     def test_lock_is_rlock_not_plain_lock(self):
@@ -836,7 +1001,7 @@ class TestReadPosRelatedParameters(unittest.TestCase):
 
         ctrl.Read_Pos_Related_Paremters()
 
-        self.assertEqual(ctrl.modbus_client.build_read_message.call_count, 9)
+        self.assertEqual(ctrl.modbus_client.build_read_message.call_count, 13)
 
 
 class TestPosStepMotionTestAndExecutePositioning(unittest.TestCase):
@@ -1338,7 +1503,7 @@ class TestReadPosRelatedParemters(unittest.TestCase):
 
     def _mock_reads(self, ctrl, values):
         # Read order in Read_Pos_Related_Paremters(): STY, HMOV, PLSS,
-        # ENR, PO1H, POL, SDI, ITST, MCOK.
+        # ENR, PO1H, POL, SDI, ITST, MCOK, ABS, APST, APR, APP.
         ctrl.modbus_client = MagicMock()
         ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
         patcher = patch("servo_control.ModbusRTUResponse")
@@ -1355,13 +1520,18 @@ class TestReadPosRelatedParemters(unittest.TestCase):
         # SDI=0x0FFF (all DI communication-controlled),
         # ITST=0x0011 (manual's own worked example: DI1 and DI5 ON),
         # MCOK=0x0011 (hold + AL1B enabled).
+        # ABS=0 (incremental), APST=0 (normal), APR=-3 (signed), APP=1234.
         self._mock_reads(ctrl, [0x1000, 0x0000, 0x0312, 10000, 0, 0x0111,
-                                 0x0FFF, 0x0011, 0x0011])
+                                 0x0FFF, 0x0011, 0x0011, 0, 0, -3, 1234])
 
         results = ctrl.Read_Pos_Related_Paremters()
 
         by_name = {entry["name"]: entry for entry in results}
-        self.assertEqual(len(results), 9)
+        self.assertEqual(len(results), 13)
+        self.assertIn("incremental", by_name["ABS"]["interpreted"])
+        self.assertEqual(by_name["APST"]["interpreted"], "normal")
+        self.assertEqual(by_name["APR"]["value"], -3)
+        self.assertIn("1234 pulses", by_name["APP"]["interpreted"])
         self.assertIn("position", by_name["STY"]["interpreted"])
         self.assertIn("A/B phase pulse train", by_name["PLSS"]["interpreted"])
         self.assertEqual(by_name["ENR"]["value"], 10000)
@@ -1382,7 +1552,7 @@ class TestReadPosRelatedParemters(unittest.TestCase):
 
         results = ctrl.Read_Pos_Related_Paremters()
 
-        self.assertEqual(len(results), 9)
+        self.assertEqual(len(results), 13)
         for entry in results:
             self.assertIsNone(entry["value"])
             self.assertEqual(entry["interpreted"], "No response (communication failure)")

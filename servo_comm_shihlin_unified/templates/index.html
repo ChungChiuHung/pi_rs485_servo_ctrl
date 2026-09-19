@@ -236,6 +236,90 @@
                     });
                 });
 
+                // Encoder mode (PA28). Reading is harmless; switching is
+                // armed-then-confirmed like CLEAR ALARM 12, and the backend
+                // additionally requires confirm=true.
+                let encoderModePa28 = null;
+                let encoderSwitchArmed = false;
+                let encoderSwitchTimer = null;
+
+                function disarmEncoderSwitch() {
+                    encoderSwitchArmed = false;
+                    if (encoderSwitchTimer) { clearTimeout(encoderSwitchTimer); encoderSwitchTimer = null; }
+                    updateEncoderSwitchButton();
+                }
+
+                function updateEncoderSwitchButton() {
+                    const btn = $('#encoderModeSwitchBtn');
+                    btn.removeClass('button-armed');
+                    if (encoderModePa28 === null) { btn.text('SWITCH ENCODER MODE').prop('disabled', true); return; }
+                    const target = encoderModePa28 === 1 ? 'INCREMENTAL' : 'ABSOLUTE';
+                    btn.prop('disabled', false);
+                    if (encoderSwitchArmed) {
+                        btn.text('CLICK AGAIN: SET PA28 -> ' + target).addClass('button-armed');
+                    } else {
+                        btn.text('SWITCH TO ' + target + ' MODE');
+                    }
+                }
+
+                function readEncoderMode() {
+                    $.get('/encoder_mode', function(r) {
+                        encoderModePa28 = r.pa28;
+                        let text = 'Drive PA28: ' + (r.pa28 === null ? 'unreadable'
+                            : (r.pa28 === 1 ? '1 (absolute)' : '0 (incremental)'))
+                            + ' | Running as: ' + (r.active_absolute_mode ? 'absolute' : 'incremental');
+                        if (r.pending_power_cycle !== null) {
+                            text += ' | PENDING: power-cycle the drive, then press RE-READ.';
+                        }
+                        if (r.absolute_status && r.absolute_status.length) {
+                            text += ' | Absolute position NOT trusted: ' + r.absolute_status.join('; ');
+                        }
+                        $('#encoderModeStatus').text(text);
+                        updateEncoderSwitchButton();
+                    }).fail(function(xhr) {
+                        $('#encoderModeStatus').text('Could not read (' + xhr.status + ').');
+                    });
+                }
+                $('#encoderModeRefreshBtn').click(readEncoderMode);
+                readEncoderMode();
+
+                $('#encoderModeSwitchBtn').click(function() {
+                    if (!encoderSwitchArmed) {
+                        encoderSwitchArmed = true;
+                        updateEncoderSwitchButton();
+                        encoderSwitchTimer = setTimeout(function() {
+                            disarmEncoderSwitch();
+                            setFeedback('encoderModeSwitch', 'Confirmation timed out; not changed.', false);
+                        }, 5000);
+                        return;
+                    }
+                    const wantAbsolute = (encoderModePa28 !== 1);
+                    disarmEncoderSwitch();
+                    $.ajax({
+                        url: '/encoder_mode', type: 'POST', contentType: 'application/json',
+                        data: JSON.stringify({absolute: wantAbsolute, confirm: true}),
+                        success: function(r) { setFeedback('encoderModeSwitch', r.message, true); readEncoderMode(); },
+                        error: function(xhr) {
+                            setFeedback('encoderModeSwitch',
+                                (xhr.responseJSON && xhr.responseJSON.message) || 'Error', false);
+                        }
+                    });
+                });
+
+                $('#encoderModeAdoptBtn').click(function() {
+                    $.ajax({
+                        url: '/encoder_mode/adopt', type: 'POST',
+                        success: function(r) {
+                            setFeedback('encoderModeAdopt', 'Running as ' + (r.active_absolute_mode ? 'absolute' : 'incremental'), true);
+                            readEncoderMode();
+                        },
+                        error: function(xhr) {
+                            setFeedback('encoderModeAdopt',
+                                (xhr.responseJSON && xhr.responseJSON.message) || 'Error', false);
+                        }
+                    });
+                });
+
                 // Motor profile selection
                 function loadProfile() {
                     $.get('/profile', function(response) {
@@ -408,9 +492,13 @@
                             $('#status_alarm_code').text(response.alarm_code + ' (none)');
                             alarmTile.removeClass('alarm-active');
                         } else {
-                            $('#status_alarm_code').text(response.alarm_code);
+                            $('#status_alarm_code').text(
+                                response.alarm_code + (response.alarm_name ? ' - ' + response.alarm_name : ''));
                             alarmTile.addClass('alarm-active');
                         }
+                        $('#status_encoder_mode').text(response.absolute_mode
+                            ? 'Absolute' + (response.absolute_home_set ? '' : ' (home not set)')
+                            : 'Incremental');
                         $('.status-tile').removeClass('disconnected');
                     }).fail(function() {
                         $('.status-tile').addClass('disconnected');
@@ -572,6 +660,15 @@
                 </nav>
 
                 <nav class="sidebar-section commands">
+                    <h2>Encoder Mode (PA28)</h2>
+                    <span class="section-note" id="encoderModeStatus">Not read yet.</span>
+                    <div class="button-container"><button class="button" id="encoderModeRefreshBtn">READ ENCODER MODE</button></div>
+                    <div class="button-container"><button class="button" id="encoderModeSwitchBtn" disabled>SWITCH ENCODER MODE</button><span id="encoderModeSwitch_status"></span></div>
+                    <div class="button-container"><button class="button" id="encoderModeAdoptBtn">I POWER-CYCLED - RE-READ MODE</button><span id="encoderModeAdopt_status"></span></div>
+                    <span class="section-note">Absolute mode needs an absolute-encoder motor AND the encoder backup battery (SDH-BAT-SET); the change takes effect only after power-cycling the drive (AL.2A then AL.2C appear during first-time init). JOG keeps using the incremental counter.</span>
+                </nav>
+
+                <nav class="sidebar-section commands">
                     <h2>Position Mode</h2>
                     <div class="form-group">
                         <label for="posMode_pulses">Pulses:</label>
@@ -630,6 +727,10 @@
                         <div class="status-tile">
                             <span class="label">Mode</span>
                             <span class="value" id="status_ctrl_mode_sel">-</span>
+                        </div>
+                        <div class="status-tile">
+                            <span class="label">Encoder Mode</span>
+                            <span class="value" id="status_encoder_mode">-</span>
                         </div>
                         <div class="status-tile">
                             <span class="label">Continuous Reading</span>

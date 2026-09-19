@@ -9,7 +9,7 @@ from functools import wraps
 from flask import Flask, render_template, request, jsonify, Response, redirect
 
 from serial_port_manager import SerialPortManager
-from servo_control import ServoController, is_alarm_active
+from servo_control import ServoController, is_alarm_active, alarm_name
 from motor_profile import load_profiles, resolve_profile
 from hardware_lock import hardware_serialized
 from input_validation import validate_int_range
@@ -32,6 +32,8 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your keys')
 # Dedicated logger for the /alarm/clear endpoint (CLAUDE.md hardware-safety
 # section: every call that can write live state to the motor must be logged).
 alarm_logger = logging.getLogger("alarm_clear")
+# Same requirement for PA28 (encoder mode) writes: hardware-affecting, must be logged.
+encoder_mode_logger = logging.getLogger("encoder_mode")
 
 # Web UI activity feed for a user who isn't watching this process's own
 # console -- captures every existing logging call across the codebase (see
@@ -100,6 +102,13 @@ def _connect_profile(profile_name: str) -> None:
     serial_manager = new_serial_manager
     servo_ctrller = ServoController(serial_manager, profile)
     current_profile_name = profile_name
+    # Read-only: sync the controller's absolute/incremental mode with the
+    # drive's actual PA28 (a fresh process after a power cycle is the normal
+    # way a mode change takes effect). Unreadable -> stays incremental.
+    try:
+        servo_ctrller.refresh_encoder_mode()
+    except Exception as e:
+        logging.warning(f"Could not read PA28 at connect time ({e}); assuming incremental mode.")
     logging.info(
         f"Active profile: {profile_name} -- connected "
         f"{serial_manager.get_connected_port()} @ {profile['baud_rate']} baud"
@@ -192,7 +201,88 @@ def get_status():
         # (255), not 0, for "no alarm" (see servo_control.NO_ALARM_CODES).
         # The UI should key off this, not "alarm_code != 0".
         "alarm_active": is_alarm_active(alarm_code),
+        # Known absolute-system alarm explanation (None for other codes).
+        "alarm_name": alarm_name(alarm_code),
+        # Cached, no serial traffic. True only once PA28 == 1 has been read
+        # from the drive (see /encoder_mode).
+        "absolute_mode": servo_ctrller.absolute_mode,
+        "absolute_home_set": servo_ctrller.abs_home_pos_absolute is not None,
     })
+
+
+# Set by a successful PA28 write; cleared once the user says they power-cycled
+# the drive and the mode is re-read. Until then the running process keeps
+# using the mode the drive is actually in.
+_encoder_mode_pending_power_cycle = None
+
+
+@app.route('/encoder_mode', methods=['GET'])
+@hardware_serialized
+def get_encoder_mode():
+    """Read-only diagnostic: PA28 as configured in the drive, the mode this
+    process is actually using, and (when configured absolute) PA31's
+    absolute-position health flags. Never writes to the drive."""
+    from servo_p_register import PA
+    pa28 = servo_ctrller.read_PA28_Encoder_Mode()
+    apst = servo_ctrller.read_PA31_Abs_Position_Status() if pa28 == 1 else None
+    return jsonify({
+        "pa28": pa28,
+        "active_absolute_mode": servo_ctrller.absolute_mode,
+        "pending_power_cycle": _encoder_mode_pending_power_cycle,
+        "absolute_status": None if apst is None else PA.decode_APST(apst),
+        "absolute_home_set": servo_ctrller.abs_home_pos_absolute is not None,
+    })
+
+
+@app.route('/encoder_mode', methods=['POST'])
+@hardware_serialized
+def set_encoder_mode():
+    """Writes PA28 (0 = incremental, 1 = absolute). HARDWARE-AFFECTING --
+    see ServoController.write_PA28_Encoder_Mode()'s docstring for the
+    prerequisites (absolute-encoder motor, backup battery) and the required
+    power cycles. Requires {"absolute": bool, "confirm": true}. Takes effect
+    only after a drive power cycle; the running process keeps its current
+    mode until /encoder_mode/adopt is called afterwards."""
+    global _encoder_mode_pending_power_cycle
+    caller_ip = request.remote_addr
+    payload = request.get_json(silent=True) or {}
+
+    if payload.get('confirm') is not True:
+        encoder_mode_logger.warning("Rejected PA28 write from %s: missing confirm=true.", caller_ip)
+        return jsonify({"status": "error",
+                        "message": 'Missing or false "confirm" field. POST {"absolute": bool, "confirm": true}.'}), 400
+    if not isinstance(payload.get('absolute'), bool):
+        return jsonify({"status": "error", "message": '"absolute" must be true or false.'}), 400
+    if servo_ctrller.reading_active or active_input_server is not None:
+        return jsonify({"status": "error",
+                        "message": "Stop motion and any OSC/Art-Net server before changing the encoder mode."}), 409
+
+    absolute = payload['absolute']
+    encoder_mode_logger.warning("PA28 write requested by %s: absolute=%s", caller_ip, absolute)
+    if not servo_ctrller.write_PA28_Encoder_Mode(absolute):
+        return jsonify({"status": "error",
+                        "message": "PA28 write was not confirmed by the drive. Nothing was changed."}), 502
+
+    _encoder_mode_pending_power_cycle = absolute
+    if absolute:
+        next_steps = ("Power-cycle the drive. AL.2A is then expected: power-cycle again. "
+                      "AL.2C is then expected: press SET HOME (or write PA29=1) to initialise. "
+                      "Finally press 'I POWER-CYCLED - RE-READ MODE'.")
+    else:
+        next_steps = "Power-cycle the drive, then press 'I POWER-CYCLED - RE-READ MODE'."
+    return jsonify({"status": "success", "pa28_written": 1 if absolute else 0, "message": next_steps})
+
+
+@app.route('/encoder_mode/adopt', methods=['POST'])
+@hardware_serialized
+def adopt_encoder_mode():
+    """Re-reads PA28 and makes this process use it. Call after a power cycle."""
+    global _encoder_mode_pending_power_cycle
+    mode = servo_ctrller.refresh_encoder_mode()
+    if mode is None:
+        return jsonify({"status": "error", "message": "Could not read PA28 (communication failure)."}), 503
+    _encoder_mode_pending_power_cycle = None
+    return jsonify({"status": "success", "active_absolute_mode": mode})
 
 
 @app.route('/profile', methods=['POST'])

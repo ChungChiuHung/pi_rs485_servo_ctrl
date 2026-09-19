@@ -43,6 +43,12 @@ class PA:
         # are only valid when this is 1 (manual p.88-89) — must be confirmed on real
         # hardware before relying on PA32/PA33 for encoder-overflow-safe position reads.
         cls.ABS = Register(28, "ABS", "Absolute encoder settings", 0x0000, cls.calculate_address(28))
+        # PA29-PA33 (manual p.88-89): only meaningful when PA28 == 1.
+        cls.CAP = Register(29, "CAP", "Absolute homing position (write 1 = current position becomes origin)", 0x0000, cls.calculate_address(29))
+        cls.UAP = Register(30, "UAP", "Update encoder absolute position (1 = refresh PA31~PA33; 2 = also clear position error)", 0, cls.calculate_address(30))
+        cls.APST = Register(31, "APST", "ABS position status (read only)", 0x0000, cls.calculate_address(31))
+        cls.APR = Register(32, "APR", "Encoder absolute position, revolutions (read only, signed -32768~32767)", 0, cls.calculate_address(32))
+        cls.APP = Register(33, "APP", "Encoder absolute position, pulses within a revolution (read only, 0~2^22-1)", 0, cls.calculate_address(33))
 
     @classmethod
     def encode_HMOV(cls, z, y, x):
@@ -132,6 +138,33 @@ class PA:
         # output relationship, PA39) is a diagram, not text -- no textual
         # description exists to decode it from, so it's omitted here.
         return f"input pulse/motor direction={x_desc}; encoder output={z_desc}"
+
+    @classmethod
+    def explain_ABS(cls, value):
+        if value == 0:
+            return "incremental mode (an absolute-encoder motor is operated as incremental)"
+        if value == 1:
+            return "absolute mode (valid only with an absolute-encoder motor; otherwise AL.24)"
+        return f"unexpected value {value} (manual documents only 0 or 1)"
+
+    # PA31 (APST) bit layout, manual p.88. Any of bit0/bit1/bit2/bit4 set
+    # means PA32/PA33 must not be trusted as a position reference.
+    APST_BAD_BITS = {
+        0: "absolute position lost",
+        1: "battery low voltage",
+        2: "overflow",
+        4: "absolute coordinate system not yet set",
+    }
+
+    @classmethod
+    def decode_APST(cls, value):
+        """Returns the list of active fault descriptions (empty = all clear)."""
+        return [text for bit, text in cls.APST_BAD_BITS.items() if (value >> bit) & 1]
+
+    @classmethod
+    def explain_APST(cls, value):
+        faults = cls.decode_APST(value)
+        return "normal" if not faults else "; ".join(faults)
 
 
 class PC:

@@ -63,17 +63,24 @@ class ModbusRTUResponse:
         self.start_address = body[2:4]
         self.data_content = body[4:6]
 
-    def get_value(self) -> Union[int, None]:
+    def get_value(self, signed: bool = False) -> Union[int, None]:
         """Same word-swap convention as ModbusResponse.get_value(): the
         driver returns 32-bit values as [low word][high word], so the two
         words are swapped back before combining into one big-endian int.
+
+        signed=True interprets the result as two's complement -- needed for
+        registers documented as signed, e.g. PA32 (APR, absolute-encoder
+        revolution count, -32768~32767). Defaults to unsigned so every
+        existing caller keeps its behavior.
         """
         if not hasattr(self, 'data_bytes'):
             return None
 
         high_byte = self.data_bytes[2:4]
         low_byte = self.data_bytes[0:2]
-        return int.from_bytes(bytes(high_byte) + bytes(low_byte), byteorder='big')
+        return int.from_bytes(
+            bytes(high_byte) + bytes(low_byte), byteorder='big', signed=signed
+        )
 
     def __str__(self):
         if hasattr(self, 'data_bytes'):
