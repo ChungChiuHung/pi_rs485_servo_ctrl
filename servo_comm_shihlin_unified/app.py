@@ -428,6 +428,11 @@ def handle_action():
         pulses, error = validate_int_range(data.get('pulses', 1920), 0, 2**31 - 1, 'pulses')
         if error:
             return jsonify({"status": "error", "action": action, "message": error}), 400
+        # Positioning speed command (0x0903): manual's documented range is
+        # 0~3000 rpm -- see docs/en_manual.txt:10367-10373.
+        speed_rpm, error = validate_int_range(data.get('speed_rpm', 10), 0, 3000, 'speed_rpm')
+        if error:
+            return jsonify({"status": "error", "action": action, "message": error}), 400
         # Positioning-test mode requires "no alarm occurrence or Servo ON
         # activated" (docs/en_manual.txt:10390) -- same precondition as JOG
         # mode; see _execute_positioning()'s comment in servo_control.py.
@@ -437,7 +442,7 @@ def handle_action():
         time.sleep(0.05)
         servo_ctrller.config_acc_dec_0x0902(0)
         time.sleep(0.05)
-        servo_ctrller.config_speed_0x0903(10)
+        servo_ctrller.config_speed_0x0903(speed_rpm)
         time.sleep(0.05)
         servo_ctrller.config_pulses_0x0905_low_byte(pulses & 0xFFFF)
         time.sleep(0.05)
