@@ -481,6 +481,19 @@ def handle_action():
         servo_ctrller.config_pulses_0x0906_high_byte((pulses >> 16) & 0xFFFF)
         time.sleep(0.05)
         servo_ctrller.start_continuous_reading(0.1)
+    elif action == "disablePosMode":
+        # Explicit exit -- pairs with "enablePosMode" as a toggle in the
+        # web UI. Note that position-test mode also exits on its own once
+        # a triggered move (POS TEST START CW/CCW) settles (the software
+        # auto-stop detects stillness and stops the keep-alive polling,
+        # after which the drive's own ~1s communication-timeout drops it
+        # out of test mode) -- this action is for exiting deliberately
+        # before that happens, or for cleanliness afterward. Same calls as
+        # "motionCancel" (which serves the JOG/speed-control section);
+        # Enable_Position_Mode(False) is the documented generic "quit
+        # test mode" write regardless of which mode was active.
+        servo_ctrller.stop_continuous_reading()
+        servo_ctrller.Enable_Position_Mode(False)
     elif action == "posTestStart_CW":
         servo_ctrller.pos_step_motion_test(CW=True)
     elif action == "posTestStart_CCW":
