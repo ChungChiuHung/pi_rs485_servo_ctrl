@@ -13,6 +13,7 @@ from servo_control import ServoController, is_alarm_active
 from motor_profile import load_profiles, resolve_profile
 from hardware_lock import hardware_serialized
 from input_validation import validate_int_range
+from activity_log import ActivityLog, ActivityLogHandler
 from osc_server import OSCInputServer
 from artnet_server import ArtNetInputServer
 
@@ -31,6 +32,16 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your keys')
 # Dedicated logger for the /alarm/clear endpoint (CLAUDE.md hardware-safety
 # section: every call that can write live state to the motor must be logged).
 alarm_logger = logging.getLogger("alarm_clear")
+
+# Web UI activity feed for a user who isn't watching this process's own
+# console -- captures every existing logging call across the codebase (see
+# activity_log.py). Attached to the root logger before anything else runs
+# so startup messages (profile connection, GPIO availability) are captured
+# too.
+activity_log = ActivityLog()
+_activity_log_handler = ActivityLogHandler(activity_log)
+_activity_log_handler.setFormatter(logging.Formatter('%(message)s'))
+logging.getLogger().addHandler(_activity_log_handler)
 
 gpio_utils = None
 if GPIOUtils is not None:
@@ -219,6 +230,15 @@ def get_input_server_status():
         "active_input_server": active_input_server,
         "is_running": _input_server_instance.is_running if _input_server_instance else False,
     })
+
+
+@app.route('/log', methods=['GET'])
+def get_activity_log():
+    """Incremental activity feed for a user not watching this process's
+    own console -- pass `since` (an entry id from a previous call) to get
+    only what's new. Never triggers any write/motion command."""
+    since = request.args.get('since', default=0, type=int) or 0
+    return jsonify({"entries": activity_log.get_since(since)})
 
 
 @app.route('/server/start', methods=['POST'])
