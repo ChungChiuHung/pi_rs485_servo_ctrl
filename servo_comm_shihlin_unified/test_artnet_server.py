@@ -767,5 +767,108 @@ class TestStartStopLifecycle(unittest.TestCase):
             server.stop()
 
 
+def relative_frame(delta_centideg, duration_centisec, trigger=255):
+    """16-channel frame: trigger on channel 4, relative angle on 13-14 (32768 =
+    no move), duration on 15-16; channels 5-7 hold values that must be ignored."""
+    angle_raw = delta_centideg + 32768
+    return bytes([0, 0, 0, trigger, 200, 200, 200, 0, 0, 0, 0, 0,
+                  angle_raw >> 8, angle_raw & 0xFF,
+                  duration_centisec >> 8, duration_centisec & 0xFF])
+
+
+def make_geared_server(gear_ratio=30, **kwargs):
+    """Server whose mock controller has a real profile's pulse constants."""
+    server, ctrl = make_server(**kwargs)
+    ctrl.base_pulse_per_degree = 4194304 * gear_ratio / 360
+    ctrl.profile = {"encoder_pulses_per_rev": 4194304}
+    return server, ctrl
+
+
+class TestRelativeMoveByAngleInTime(unittest.TestCase):
+    """Channels 13-16: "move BY this angle in this many seconds" -- rpm is
+    calculated from pulses, then handed to the same post_step_motion_by()."""
+
+    def test_rpm_is_derived_from_angle_and_time(self):
+        server, ctrl = make_geared_server(max_speed_rpm=1000, acc_time=5000)
+        # 90 deg of output shaft at 30:1 = 7.5 motor revolutions in 3 s = 150 rpm
+        server._handle_dmx(universe=0, data=relative_frame(9000, 300))
+        ctrl.post_step_motion_by.assert_called_once_with(90.0, 5000, 150, relative=True)
+
+    def test_gear_ratio_is_taken_into_account(self):
+        server, ctrl = make_geared_server(gear_ratio=10, max_speed_rpm=1000)
+        # 90 deg at 10:1 = 2.5 revolutions in 3 s = 50 rpm
+        server._handle_dmx(universe=0, data=relative_frame(9000, 300))
+        self.assertEqual(ctrl.post_step_motion_by.call_args[0][2], 50)
+
+    def test_negative_angle_moves_the_other_way_at_the_same_rpm(self):
+        server, ctrl = make_geared_server(max_speed_rpm=1000)
+        server._handle_dmx(universe=0, data=relative_frame(-9000, 300))
+        ctrl.post_step_motion_by.assert_called_once_with(-90.0, 5000, 150, relative=True)
+
+    def test_channels_5_to_7_are_ignored_when_a_time_is_given(self):
+        server, ctrl = make_geared_server(max_speed_rpm=1000)
+        server._handle_dmx(universe=0, data=relative_frame(3600, 200))
+        (angle, _acc, rpm), kwargs = ctrl.post_step_motion_by.call_args
+        self.assertEqual((angle, rpm, kwargs), (36.0, 90, {"relative": True}))
+
+    def test_rpm_is_capped_at_max_speed_rpm(self):
+        server, ctrl = make_geared_server(max_speed_rpm=100)
+        server._handle_dmx(universe=0, data=relative_frame(9000, 100))  # would need 450 rpm
+        self.assertEqual(ctrl.post_step_motion_by.call_args[0][2], 100)
+
+    def test_tiny_move_over_a_long_time_is_at_least_1_rpm(self):
+        server, ctrl = make_geared_server()
+        server._handle_dmx(universe=0, data=relative_frame(1, 65535))
+        self.assertEqual(ctrl.post_step_motion_by.call_args[0][2], 1)
+
+    def test_zero_time_falls_back_to_the_absolute_channels_5_to_7(self):
+        server, ctrl = make_geared_server(max_speed_rpm=100)
+        server._handle_dmx(universe=0, data=relative_frame(9000, 0))
+        # channels 5-6 = 0xC8C8, channel 7 = 200 -- the legacy path, no relative kwarg
+        args, kwargs = ctrl.post_step_motion_by.call_args
+        self.assertEqual(kwargs, {})
+        self.assertEqual(args[2], round(200 / 255 * 100))
+
+    def test_short_frame_without_channels_13_to_16_uses_the_legacy_path(self):
+        server, ctrl = make_geared_server()
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, 0, 0, 0]))
+        self.assertEqual(ctrl.post_step_motion_by.call_args[1], {})
+
+    def test_zero_move_sends_nothing(self):
+        server, ctrl = make_geared_server()
+        server._handle_dmx(universe=0, data=relative_frame(0, 300))
+        ctrl.post_step_motion_by.assert_not_called()
+
+    def test_zero_time_never_divides_by_zero(self):
+        server, _ = make_geared_server()
+        with self.assertRaises(ValueError):
+            server.calculate_move_rpm(9000, 0)
+
+    def test_fires_once_per_rising_edge(self):
+        server, ctrl = make_geared_server()
+        for _ in range(5):
+            server._handle_dmx(universe=0, data=relative_frame(3600, 200))
+        ctrl.post_step_motion_by.assert_called_once()
+        server._handle_dmx(universe=0, data=relative_frame(3600, 200, trigger=0))
+        server._handle_dmx(universe=0, data=relative_frame(3600, 200))
+        self.assertEqual(ctrl.post_step_motion_by.call_count, 2)
+
+    def test_a_refused_move_is_not_retried_every_frame(self):
+        server, ctrl = make_geared_server()
+        ctrl.post_step_motion_by.side_effect = ValueError("position unreadable")
+        for _ in range(5):
+            server._handle_dmx(universe=0, data=relative_frame(3600, 200))
+        ctrl.post_step_motion_by.assert_called_once()
+
+    def test_snapshot_shows_channels_13_to_16_and_the_calculated_rpm(self):
+        server, _ = make_geared_server(max_speed_rpm=1000)
+        server._handle_dmx(universe=0, data=relative_frame(9000, 300))
+        channels = server.get_channel_snapshot()["channels"]
+        self.assertEqual([c["channel"] for c in channels], list(range(1, 17)))
+        self.assertIn("+90.00 deg", channels[12]["interpreted"])
+        self.assertIn("3 s", channels[14]["interpreted"])
+        self.assertIn("150 rpm", channels[15]["interpreted"])
+
+
 if __name__ == "__main__":
     unittest.main()

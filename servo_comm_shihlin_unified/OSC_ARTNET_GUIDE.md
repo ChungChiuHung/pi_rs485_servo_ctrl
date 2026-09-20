@@ -120,6 +120,22 @@ channel numbers if they conflict with something else in your universe.
 | 10 | Back home | `0` = idle; a `0→nonzero` edge triggers a real move back to the saved home position |
 | 11 | Set home | `0` = idle; a `0→nonzero` edge **persists** the current position as the new home reference |
 | 12 | Reset initial absolute position | `0` = idle; a `0→nonzero` edge writes PA29 |
+| 13-14 | Move **by** angle (high byte, low byte) | 16-bit, `32768` = no move, one step = 0.01°: `32768+n` = `+n/100°`, `32768-n` = `-n/100°` (about ±327°; the 180° guard still applies). Used only when channels 15-16 are non-zero |
+| 15-16 | Move time (high byte, low byte) | 16-bit, one step = 0.01 s (0.01–655.35 s). `0` = off: channel 4 uses channels 5-7 as before |
+
+**Move by an angle in a time (channels 13-16).** With a non-zero time in
+channels 15-16, the channel-4 trigger moves to *(current angle + channels
+13-14)* and ignores channels 5-7. The rpm is calculated for you from the
+angle and the time, including the motor profile's gear ratio (90° in 3 s
+on the 30:1 motor = 150 rpm). It is rounded to a whole rpm, at least 1 and
+at most the server's `max_speed_rpm` (default 100): if the time you ask for
+would need more than that, the move is done at `max_speed_rpm` and takes
+longer. The acceleration ramp (`acc_time`) is in addition to the time you
+ask for, so short times end up longer than requested. A zero move
+(channels 13-14 = 32768) does nothing. Channels 13-16 are only read from
+frames that are at least 16 channels long, so a sender that stops at
+channel 12 (or 7) is unaffected; but a sender that transmits a full
+universe must keep channels 15-16 at 0 unless it wants this mode.
 
 Channels 10-12 (back home, set home, reset absolute position) are
 **ignored unless "Enable channels 10-12" is ticked when starting the
@@ -208,6 +224,19 @@ speed_rpm = 50
 speed_channel = round(speed_rpm / 100 * 255)  # 100 = this server's max_speed_rpm
 # frame: [enable, direction, cancel, trigger, high, low, speed]
 sock.sendto(build_artdmx_packet(0, bytes([0, 0, 0, 255, high, low, speed_channel])), ("<HOST>", 6454))
+```
+
+### Encoding "move by an angle in a time" (channels 13-16)
+
+```python
+move_deg, seconds = -45.0, 2.5           # negative = the other direction
+angle_raw = 32768 + round(move_deg * 100)        # 32768 = no move, 0.01 deg per step
+time_raw = round(seconds * 100)                  # 0.01 s per step, must be > 0
+frame = bytes([0, 0, 0, 255, 0, 0, 0,            # channels 1-7 (5-7 are ignored here)
+               0, 0, 0, 0, 0,                    # channels 8-12
+               angle_raw >> 8, angle_raw & 0xFF,  # channels 13-14
+               time_raw >> 8, time_raw & 0xFF])   # channels 15-16
+sock.sendto(build_artdmx_packet(0, frame), ("<HOST>", 6454))
 ```
 
 ---

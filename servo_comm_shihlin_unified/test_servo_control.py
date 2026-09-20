@@ -164,6 +164,36 @@ class TestPostStepMotionByClosedLoop(unittest.TestCase):
         diff_angle_arg = ctrl._execute_positioning.call_args[0][0]
         self.assertAlmostEqual(diff_angle_arg, 20.0)
 
+    def test_relative_move_goes_by_the_amount_from_the_position_just_read(self):
+        ctrl = make_controller()
+        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)
+        ctrl._execute_positioning = MagicMock()
+        ctrl.current_angle = 30.0
+
+        ctrl.post_step_motion_by(angle=-12.5, speed_rpm=5, relative=True)
+
+        self.assertAlmostEqual(ctrl.target_angle, 17.5)
+        self.assertAlmostEqual(ctrl._execute_positioning.call_args[0][0], -12.5)
+
+    def test_relative_move_still_obeys_the_180_degree_guard(self):
+        ctrl = make_controller()
+        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)
+        ctrl._execute_positioning = MagicMock()
+        ctrl.current_angle = 100.0
+
+        ctrl.post_step_motion_by(angle=200.0, relative=True)
+
+        ctrl._execute_positioning.assert_not_called()
+
+    def test_relative_move_refuses_when_the_position_is_unreadable(self):
+        ctrl = make_controller()
+        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=False)
+        ctrl._execute_positioning = MagicMock()
+
+        with self.assertRaises(PositionUnavailableError):
+            ctrl.post_step_motion_by(angle=10.0, relative=True)
+        ctrl._execute_positioning.assert_not_called()
+
     def test_180_degree_guard_blocks_large_positive_change(self):
         ctrl = make_controller()
         ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)

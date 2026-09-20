@@ -42,6 +42,25 @@ a standard):
       mirroring OSC's /reset_initial_abs_position.
   Channels 8-12 are optional, like 4-7 -- a sender filling only channels
   1-3 (or 1-7) still works, these are just never triggered.
+  Channels 13-14 (relative move angle) and 15-16 (move time): an alternative
+  to channels 5-7 for the channel-4 trigger -- "move BY this angle in this
+  many seconds" instead of "go to this absolute angle at this rpm". The rpm
+  is calculated here, so the sender never has to know the gear ratio.
+    Channel 13-14 (high byte/low byte): 16-bit value, 32768 = no move; each
+        step is 0.01 deg, so 32768+n = +n/100 deg and 32768-n = -n/100 deg
+        (range about +-327 deg; the drive's 180 deg guard still applies).
+        Positive = the direction in which the tracked angle increases.
+    Channel 15-16 (high byte/low byte): 16-bit duration in 0.01 s steps
+        (0.01 .. 655.35 s). 0 = not used: the trigger falls back to
+        channels 5-7 exactly as before.
+  With a non-zero duration the trigger moves to (current angle + relative
+  angle) and ignores channels 5-7. rpm = motor revolutions / seconds * 60,
+  worked out from PULSES (angle * base_pulse_per_degree, which already
+  includes the gear ratio) so no division by an angle is needed and the only
+  divisor (the duration) is checked to be non-zero first; it is then rounded
+  to a whole rpm, at least 1 and at most `max_speed_rpm` (if the requested
+  time is too short for that limit, the move simply takes longer). The
+  acceleration ramp (`acc_time`) is not part of the requested time.
 
 All channels are edge-triggered against the previously-seen frame, not
 re-sent on every DMX refresh (a real Art-Net source typically resends the
@@ -80,6 +99,22 @@ DEFAULT_UNIVERSE = 1
 DEFAULT_SIGNAL_TIMEOUT_S = 2.0
 ARTNET_ID = b"Art-Net\x00"
 OP_OUTPUT_DMX = 0x5000
+
+# Channels 13-16 (relative move by angle over a time): units and midpoint.
+RELATIVE_ANGLE_CENTER = 32768   # raw value meaning "no move"
+RELATIVE_ANGLE_STEP_DEG = 0.01  # degrees per raw step
+DURATION_STEP_S = 0.01          # seconds per raw step of channels 15-16
+
+
+def decode_relative_move(data: bytes):
+    """(delta_centideg, duration_centisec) from channels 13-16, or None if the
+    frame is shorter than 16 channels. Both are integers (hundredths of a
+    degree / of a second) so nothing below needs floating-point angles."""
+    if len(data) < 16:
+        return None
+    delta_centideg = ((data[12] << 8) | data[13]) - RELATIVE_ANGLE_CENTER
+    duration_centisec = (data[14] << 8) | data[15]
+    return delta_centideg, duration_centisec
 
 
 class ArtNetInputServer:
@@ -237,6 +272,11 @@ class ArtNetInputServer:
         angle_high_byte, angle_low_byte, speed_channel = data[4], data[5], data[6]
 
         if position_trigger_channel > 0 and self._last_position_trigger_channel == 0:
+            relative = decode_relative_move(data)
+            if relative is not None and relative[1] > 0:
+                self._last_position_trigger_channel = position_trigger_channel
+                self._move_by_angle_in_time(*relative)
+                return
             angle_raw = (angle_high_byte << 8) | angle_low_byte
             angle = angle_raw / 65535 * self.position_mode_max_angle
             speed_rpm = max(1, round(speed_channel / 255 * self.max_speed_rpm))
@@ -253,6 +293,49 @@ class ArtNetInputServer:
                 f"(channel 4 rising edge, channels 5-6 = {angle_raw}, channel 7 = {speed_channel})."
             )
         self._last_position_trigger_channel = position_trigger_channel
+
+    def calculate_move_rpm(self, delta_centideg: int, duration_centisec: int) -> int:
+        """rpm needed to turn the output shaft by delta_centideg (hundredths of
+        a degree) in duration_centisec (hundredths of a second), as a whole
+        number in [1, max_speed_rpm].
+
+        Done in pulses: pulses = |angle| * base_pulse_per_degree (already
+        includes the gear ratio), motor revolutions = pulses / encoder pulses
+        per rev, so
+            rpm = pulses / pulses_per_rev / (centisec / 100) * 60
+                = pulses * 6000 / (pulses_per_rev * centisec).
+        The divisor is a positive constant times the duration, and the
+        duration is rejected when it is not positive -- there is no way to
+        divide by zero, whatever the angle is (a zero angle simply gives the
+        minimum rpm and is not moved by the caller anyway)."""
+        if duration_centisec <= 0:
+            raise ValueError("duration must be greater than zero")
+        pulses = round(abs(delta_centideg) * self.servo_ctrller.base_pulse_per_degree / 100)
+        pulses_per_rev = self.servo_ctrller.profile["encoder_pulses_per_rev"]
+        rpm = round(pulses * 6000 / (pulses_per_rev * duration_centisec))
+        return max(1, min(rpm, self.max_speed_rpm))
+
+    def _move_by_angle_in_time(self, delta_centideg: int, duration_centisec: int) -> None:
+        """Channel-4 trigger with channels 13-16: relative move over a time.
+        The trigger edge was consumed by the caller, so a refused move is not
+        retried on every frame."""
+        if delta_centideg == 0:
+            logger.info("Art-Net: relative move of 0 deg ignored (channels 13-14 = 32768).")
+            return
+        try:
+            speed_rpm = self.calculate_move_rpm(delta_centideg, duration_centisec)
+            delta_deg = delta_centideg * RELATIVE_ANGLE_STEP_DEG
+            self.servo_ctrller.post_step_motion_by(
+                delta_deg, self.acc_time, speed_rpm, relative=True)
+        except Exception as e:
+            logger.error(
+                f"Art-Net: relative move of {delta_centideg / 100:+.2f} deg in "
+                f"{duration_centisec / 100:g} s refused: {e}")
+            return
+        logger.info(
+            f"Art-Net: relative move {delta_centideg / 100:+.2f} deg in "
+            f"{duration_centisec / 100:g} s -> {speed_rpm} rpm (channel 4 rising edge)."
+        )
 
     def _handle_extended_channels(self, data: bytes) -> None:
         """Channels 8-12 -- servo on/off, clear alarm, back home, set home,
@@ -403,6 +486,24 @@ class ArtNetInputServer:
             channels.append(entry(10, "Back home", back_home, ("triggered" + note) if back_home > 0 else "idle"))
             channels.append(entry(11, "Set home", set_home, ("triggered" + note) if set_home > 0 else "idle"))
             channels.append(entry(12, "Reset initial abs pos", reset_abs, ("triggered" + note) if reset_abs > 0 else "idle"))
+
+        relative = decode_relative_move(data)
+        if relative is not None:
+            delta_centideg, duration_centisec = relative
+            if duration_centisec > 0:
+                rpm = self.calculate_move_rpm(delta_centideg, duration_centisec)
+                summary = f"{delta_centideg / 100:+.2f} deg in {duration_centisec / 100:g} s = {rpm} rpm"
+                angle_note = f"{delta_centideg / 100:+.2f} deg (combined w/ ch 14)"
+                time_note = f"{duration_centisec / 100:g} s (combined w/ ch 16)"
+                trigger_note = summary
+            else:
+                angle_note = f"{delta_centideg / 100:+.2f} deg (unused: ch 15-16 = 0, ch 5-7 apply)"
+                time_note = "0 = off (ch 5-7 apply)"
+                trigger_note = None
+            channels.append(entry(13, "Move by angle (high byte)", data[12], angle_note))
+            channels.append(entry(14, "Move by angle (low byte)", data[13], ""))
+            channels.append(entry(15, "Move time (high byte)", data[14], time_note))
+            channels.append(entry(16, "Move time (low byte)", data[15], trigger_note or ""))
 
         return {"received_at": self._last_frame_time, "channels": channels}
 

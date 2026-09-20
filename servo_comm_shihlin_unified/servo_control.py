@@ -1470,9 +1470,13 @@ class ServoController:
         logging.info(f"Angle Rotated: {angle_rotated}")
         return angle_rotated
 
-    def post_step_motion_by(self, angle: float = 0.0, acc_dec_time: int = 5000, speed_rpm: int = 10):
+    def post_step_motion_by(self, angle: float = 0.0, acc_dec_time: int = 5000, speed_rpm: int = 10,
+                            relative: bool = False):
         """Moves to the absolute `angle` (degrees from home) by commanding the
-        RELATIVE difference from the drive's current angle. Every caller (web
+        RELATIVE difference from the drive's current angle. With
+        relative=True, `angle` is instead the amount to move BY, measured
+        from the position just read from the drive (Art-Net channels 13-16).
+        Every caller (web
         HOME, MOVE TO SET POINT, OSC /set_point, Art-Net ch4) needs that
         difference computed from the REAL position: current_angle is
         otherwise only updated by the continuous-reading thread, so right
@@ -1488,7 +1492,7 @@ class ServoController:
             )
         with self.lock:
             self.previous_angle = self.current_angle
-            self.target_angle = angle
+            self.target_angle = self.current_angle + angle if relative else angle
             diff_angle = self.target_angle - self.current_angle
 
         logger.info(
