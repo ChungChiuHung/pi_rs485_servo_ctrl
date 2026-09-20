@@ -4,6 +4,19 @@ from modbus_command_code import CmdCode
 from modbus_utils import ModbusUtils
 
 
+class ModbusExceptionResponse(ValueError):
+    """The drive answered, but with a Modbus exception (function code | 0x80):
+    01 = command code error, 02 = parameter address error, 03 = parameter
+    range error (manual §9, exception codes). Distinct from "no answer" so a
+    caller can retry a rejected request in another form (see
+    ServoController._write_parameter()) without retrying a dead line."""
+
+    def __init__(self, message, function_code, exception_code):
+        super().__init__(message)
+        self.function_code = function_code
+        self.exception_code = exception_code
+
+
 class ModbusRTUResponse:
     """Parses a raw Modbus RTU binary response (device addr + function code +
     payload + CRC16, no ':'/hex-ASCII framing -- unlike ModbusResponse, which
@@ -43,9 +56,10 @@ class ModbusRTUResponse:
 
         if self.cmd_value & 0x80:
             self.exception_code = body[2] if len(body) > 2 else None
-            raise ValueError(
+            raise ModbusExceptionResponse(
                 f"Modbus exception response: function {hex(self.cmd_value & 0x7F)}, "
-                f"exception code {self.exception_code}"
+                f"exception code {self.exception_code}",
+                self.cmd_value & 0x7F, self.exception_code,
             )
 
         if self.cmd_value == CmdCode.READ_DATA.value:

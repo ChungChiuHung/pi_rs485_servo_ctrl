@@ -6,7 +6,7 @@ from typing import Union, Callable
 from threading import Thread, Event
 from serial import SerialException
 from modbus_rtu_client import ModbusRTUClient
-from modbus_rtu_response import ModbusRTUResponse
+from modbus_rtu_response import ModbusRTUResponse, ModbusExceptionResponse
 from encoder_pulse_tracker import EncoderPulseTracker
 from servo_utility import ServoUtility
 from servo_control_registers import ServoControlRegistry
@@ -193,6 +193,9 @@ class ServoController:
         # Last known PA23 (EEPROM write-inhibit) value; None = never read.
         self.eeprom_protection = None
         self._eeprom_checked_at = None
+        # Set once a function-0x10 parameter write succeeds after 0x06 was
+        # rejected -- see _write_parameter().
+        self._prefer_multi_word_write = False
         self._event_listeners = {
             "on_motion_completed": [],
             "on_moving": [],
@@ -594,17 +597,45 @@ class ServoController:
             return None
 
     def _write_parameter(self, register, value: int) -> bool:
-        message = self.modbus_client.build_write_message(register.address, value)
-        try:
-            response = self.modbus_client.send_and_receive(message)
-            if response is None:
-                logger.error(f"No response writing {register.name}.")
+        """Writes one PA/PD register value. Every parameter group is 2 words
+        (32-bit) in the manual, but function 0x06 (single word) is what has
+        been verified on this drive -- PD16/PD25, also 2-word parameters, are
+        written that way on every servo on/off. For our values (all fit in
+        16 bits) 0x06 sets the whole value, so it goes first. If the drive
+        answers with a Modbus EXCEPTION (it rejects 0x06 for this register),
+        the write is retried once with function 0x10 as [low word, high word]
+        and, if that works, 0x10 is used for all later writes. A missing
+        answer is a dead line, not a rejected frame, and is not retried.
+        Callers verify important writes by reading back."""
+        low, high = value & 0xFFFF, (value >> 16) & 0xFFFF
+        attempts = [
+            ("0x06", lambda: self.modbus_client.build_write_message(register.address, value)),
+            ("0x10", lambda: self.modbus_client.build_write_multiple_message(
+                register.address, [low, high])),
+        ]
+        if high:
+            attempts = attempts[1:]  # does not fit one word: 0x06 cannot carry it
+        elif self._prefer_multi_word_write:
+            attempts.reverse()
+        for label, build in attempts:
+            try:
+                response = self.modbus_client.send_and_receive(build())
+                if response is None:
+                    logger.error(f"No response writing {register.name}.")
+                    return False
+                ModbusRTUResponse(response)  # validates CRC / exception frames
+            except ModbusExceptionResponse as e:
+                logger.warning(f"Drive rejected function {label} write of {register.name}: {e}")
+                continue
+            except Exception as e:
+                logger.error(f"Failed to write {register.name}: {e}")
                 return False
-            ModbusRTUResponse(response)  # validates CRC / exception frames
+            if label == "0x10" and not self._prefer_multi_word_write:
+                self._prefer_multi_word_write = True
+                logger.warning("Function 0x06 was rejected but 0x10 worked: using 0x10 for parameter writes.")
             return True
-        except Exception as e:
-            logger.error(f"Failed to write {register.name}: {e}")
-            return False
+        logger.error(f"Failed to write {register.name}: rejected by the drive with both 0x06 and 0x10.")
+        return False
 
     def read_PA23_Memory_Write_Inhibit(self):
         return self._read_parameter(PA.MCS)
@@ -802,14 +833,8 @@ class ServoController:
 
     def write_PA29_Initial_Abs_Pos(self):
         logger.info("Address of PA29: Initial Absolute Position")
-        message = self.modbus_client.build_write_message(0x0338, 1)
-        try:
-            response = self.modbus_client.send_and_receive(message)
-            logger.info(f"Initial Absolute Position Set!:{response}")
-        except SerialException as e:
-            logger.error(f"Serial connection error: {e}")
-        except Exception as e:
-            logger.error(f"Error during Modbus communication: {e}")
+        if self._write_parameter(PA.CAP, 1):
+            logger.info("Initial Absolute Position Set!")
 
     def write_PD_16_Enable_DI_Control(self):
         logger.info(f"Address of PD{PD.SDI.no} {PD.SDI.name}: {hex(PD.SDI.address)}")

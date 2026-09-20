@@ -296,5 +296,25 @@ class TestSendAndReceiveIsThreadSafe(unittest.TestCase):
         self.assertEqual(fake_serial.write_count, len(addresses))
 
 
+class TestBuildWriteMultipleMessage(unittest.TestCase):
+    """Function 0x10 for 32-bit parameters (PA23/PA28/... are 2 words)."""
+
+    def test_frame_layout_for_a_two_word_parameter(self):
+        client, _ = make_client_with_fake_serial()
+        message = client.build_write_multiple_message(0x032C, [2, 0])
+        body = bytes([1, 0x10, 0x03, 0x2C, 0x00, 0x02, 0x04, 0x00, 0x02, 0x00, 0x00])
+        self.assertEqual(message, body + ModbusUtils().calculate_crc(body))
+
+    def test_words_are_masked_to_16_bits(self):
+        client, _ = make_client_with_fake_serial()
+        message = client.build_write_multiple_message(0x0336, [0x1FFFF])
+        self.assertEqual(message[7:9], b'\xff\xff')
+
+    def test_response_length_is_the_eight_byte_echo(self):
+        client, _ = make_client_with_fake_serial()
+        message = client.build_write_multiple_message(0x032C, [2, 0])
+        self.assertEqual(client._infer_expected_length(message), 8)
+
+
 if __name__ == "__main__":
     unittest.main()

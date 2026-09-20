@@ -71,6 +71,16 @@ class ModbusRTUClient:
         packed = struct.pack('>H', data)
         return self._build_message(CmdCode.WRITE_DATA.value, address, packed)
 
+    def build_write_multiple_message(self, address: int, words) -> bytes:
+        """Function 0x10 ("write data, multiple words"): start address, word
+        count, byte count, then the words, each big-endian. For a 32-bit
+        parameter the drive's word order is [low word][high word] (the same
+        order reads come back in)."""
+        words = list(words)
+        payload = struct.pack('>H', len(words)) + struct.pack('B', len(words) * 2)
+        payload += b''.join(struct.pack('>H', w & 0xFFFF) for w in words)
+        return self._build_message(CmdCode.WRITE_MULTI_DATA.value, address, payload)
+
     def _build_message(self, command_code: int, address: int, data: bytes) -> bytes:
         adr = struct.pack('B', self.device_number)
         cmd = struct.pack('B', command_code)

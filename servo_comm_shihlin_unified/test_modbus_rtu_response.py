@@ -1,6 +1,6 @@
 import unittest
 
-from modbus_rtu_response import ModbusRTUResponse
+from modbus_rtu_response import ModbusRTUResponse, ModbusExceptionResponse
 from modbus_utils import ModbusUtils
 
 
@@ -30,6 +30,29 @@ class TestGetValueSigned(unittest.TestCase):
     def test_signed_single_word(self):
         response = ModbusRTUResponse(read_response(b'\xff\xfe'))
         self.assertEqual(response.get_value(signed=True), -2)
+
+
+class TestExceptionResponse(unittest.TestCase):
+
+    def _exception_frame(self, function, code):
+        body = bytes([1, function | 0x80, code])
+        return body + ModbusUtils().calculate_crc(body)
+
+    def test_exception_frame_raises_a_typed_error_carrying_the_code(self):
+        with self.assertRaises(ModbusExceptionResponse) as ctx:
+            ModbusRTUResponse(self._exception_frame(0x06, 0x02))
+        self.assertEqual(ctx.exception.function_code, 0x06)
+        self.assertEqual(ctx.exception.exception_code, 0x02)
+
+    def test_it_is_still_a_value_error_for_existing_callers(self):
+        self.assertTrue(issubclass(ModbusExceptionResponse, ValueError))
+
+    def test_a_bad_crc_is_not_reported_as_a_drive_exception(self):
+        frame = bytearray(self._exception_frame(0x06, 0x02))
+        frame[-1] ^= 0xFF
+        with self.assertRaises(ValueError) as ctx:
+            ModbusRTUResponse(bytes(frame))
+        self.assertNotIsInstance(ctx.exception, ModbusExceptionResponse)
 
 
 if __name__ == "__main__":

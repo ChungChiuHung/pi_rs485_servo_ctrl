@@ -26,6 +26,8 @@ from servo_control import (
     ServoController, is_alarm_active, NO_ALARM_CODES,
     STILL_THRESHOLD_PULSES, STILL_COUNT_TO_COMPLETE,
 )
+from modbus_utils import ModbusUtils
+from modbus_rtu_client import ModbusRTUClient
 from servo_utility import ServoUtility
 from servo_control_registers import ServoControlRegistry
 from servo_p_register import PA, PD, PF
@@ -1717,6 +1719,90 @@ class TestReadPosRelatedParemters(unittest.TestCase):
         for entry in results:
             self.assertIsNone(entry["value"])
             self.assertEqual(entry["interpreted"], "No response (communication failure)")
+
+
+class TestWriteParameterFunctionCodes(unittest.TestCase):
+    """_write_parameter(): function 0x06 first (verified on this drive for
+    the equally 2-word PD16/PD25), 0x10 only if the drive rejects it with a
+    Modbus exception."""
+
+    @staticmethod
+    def _frame(body):
+        return body + ModbusUtils().calculate_crc(body)
+
+    def _ctrl(self, replies):
+        real = ModbusRTUClient(1, MagicMock())
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.build_write_message = real.build_write_message
+        ctrl.modbus_client.build_write_multiple_message = real.build_write_multiple_message
+        ctrl.modbus_client.send_and_receive = MagicMock(side_effect=replies)
+        return ctrl
+
+    def _sent(self, ctrl):
+        return [c.args[0] for c in ctrl.modbus_client.send_and_receive.call_args_list]
+
+    OK_06 = None  # filled per test (an 0x06 reply echoes the request)
+
+    def test_uses_function_0x06_when_the_drive_accepts_it(self):
+        ok = self._frame(bytes([1, 0x06, 0x03, 0x2C, 0x00, 0x02]))
+        ctrl = self._ctrl([ok])
+        self.assertTrue(ctrl._write_parameter(PA.MCS, 2))
+        sent = self._sent(ctrl)
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0][1], 0x06)
+        self.assertFalse(ctrl._prefer_multi_word_write)
+
+    def test_falls_back_to_0x10_when_0x06_is_rejected_with_an_exception(self):
+        rejected = self._frame(bytes([1, 0x86, 0x02]))
+        ok10 = self._frame(bytes([1, 0x10, 0x03, 0x2C, 0x00, 0x02]))
+        ctrl = self._ctrl([rejected, ok10])
+        self.assertTrue(ctrl._write_parameter(PA.MCS, 2))
+        sent = self._sent(ctrl)
+        self.assertEqual([m[1] for m in sent], [0x06, 0x10])
+        # value 2 as [low word, high word] = 0002 0000
+        self.assertEqual(sent[1][6:11], bytes([0x04, 0x00, 0x02, 0x00, 0x00]))
+        self.assertTrue(ctrl._prefer_multi_word_write)
+
+    def test_after_a_successful_fallback_0x10_is_used_first(self):
+        rejected = self._frame(bytes([1, 0x86, 0x02]))
+        ok10 = self._frame(bytes([1, 0x10, 0x03, 0x2C, 0x00, 0x02]))
+        ctrl = self._ctrl([rejected, ok10, ok10])
+        ctrl._write_parameter(PA.MCS, 2)
+        ctrl._write_parameter(PA.MCS, 1)
+        self.assertEqual([m[1] for m in self._sent(ctrl)], [0x06, 0x10, 0x10])
+
+    def test_a_value_wider_than_one_word_goes_straight_to_0x10(self):
+        ok10 = self._frame(bytes([1, 0x10, 0x03, 0x2C, 0x00, 0x02]))
+        ctrl = self._ctrl([ok10])
+        self.assertTrue(ctrl._write_parameter(PA.MCS, 0x00030001))
+        sent = self._sent(ctrl)
+        self.assertEqual([m[1] for m in sent], [0x10])
+        self.assertEqual(sent[0][7:11], bytes([0x00, 0x01, 0x00, 0x03]))  # low word, high word
+
+    def test_both_rejected_reports_failure(self):
+        rejected06 = self._frame(bytes([1, 0x86, 0x02]))
+        rejected10 = self._frame(bytes([1, 0x90, 0x02]))
+        ctrl = self._ctrl([rejected06, rejected10])
+        self.assertFalse(ctrl._write_parameter(PA.MCS, 2))
+        self.assertFalse(ctrl._prefer_multi_word_write)
+
+    def test_no_response_is_a_dead_line_and_is_not_retried(self):
+        ctrl = self._ctrl([None])
+        self.assertFalse(ctrl._write_parameter(PA.MCS, 2))
+        self.assertEqual(len(self._sent(ctrl)), 1)
+
+    def test_a_corrupt_reply_is_not_retried_with_another_function(self):
+        ctrl = self._ctrl([b"\x01\x06\x03\x2c\x00\x02\x00\x00"])  # bad CRC
+        self.assertFalse(ctrl._write_parameter(PA.MCS, 2))
+        self.assertEqual(len(self._sent(ctrl)), 1)
+
+    def test_pa29_home_write_goes_through_the_same_checked_path(self):
+        rejected = self._frame(bytes([1, 0x86, 0x02]))
+        ok10 = self._frame(bytes([1, 0x10, 0x03, 0x38, 0x00, 0x02]))
+        ctrl = self._ctrl([rejected, ok10])
+        ctrl.write_PA29_Initial_Abs_Pos()
+        self.assertEqual([m[1] for m in self._sent(ctrl)], [0x06, 0x10])
 
 
 if __name__ == "__main__":
