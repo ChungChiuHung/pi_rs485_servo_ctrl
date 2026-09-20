@@ -49,6 +49,14 @@ full frame 30-44 times/second even when nothing changed) -- otherwise e.g.
 enable_speed_ctrl() or post_step_motion_by() would fire on every single
 frame instead of once per real state change.
 
+Network safety (see OSC_ARTNET_GUIDE.md, "Network setup and safety"): this
+is a pure receiver -- it never sends a packet. Frames are accepted only for
+one universe (default 1, not the 0 other DMX equipment usually uses) and,
+optionally, only from listed sender IPs; bind listen_ip to the NIC address
+the sender unicasts to; continuous rotation is stopped if the signal is lost
+(signal_timeout_s) and does not restart by itself; channels 10-12 are ignored
+unless enable_dangerous_channels is set.
+
 No external Art-Net library dependency: ArtDMX's binary header is small
 and stable, so it's parsed by hand rather than adding a new
 requirements.txt entry for it.
@@ -58,21 +66,45 @@ import socket
 import struct
 import threading
 import time
+from collections import deque
 
 logger = logging.getLogger(__name__)
 
 ARTNET_PORT = 6454
+# Default universe for THIS server. 0 is what other DMX equipment on the same
+# network usually listens on; using it here risks that equipment reading our
+# motor channels (and us reading its data).
+DEFAULT_UNIVERSE = 1
+# No frame for our universe for this long -> stop continuous rotation.
+# Comfortably above Wi-Fi latency spikes; 0 disables.
+DEFAULT_SIGNAL_TIMEOUT_S = 2.0
 ARTNET_ID = b"Art-Net\x00"
 OP_OUTPUT_DMX = 0x5000
 
 
 class ArtNetInputServer:
     def __init__(self, servo_ctrller, listen_ip="0.0.0.0", listen_port=ARTNET_PORT,
-                 universe=0, max_speed_rpm=100, acc_time=5000, position_mode_max_angle=360):
+                 universe=DEFAULT_UNIVERSE, max_speed_rpm=100, acc_time=5000,
+                 position_mode_max_angle=360, signal_timeout_s=DEFAULT_SIGNAL_TIMEOUT_S,
+                 allowed_sources=None, enable_dangerous_channels=False):
+        """listen_ip: bind to the NIC address the sender unicasts to (a
+        specific address only receives unicast; Linux does not deliver
+        broadcast to a socket bound to a unicast address). universe: default
+        1 -- other DMX equipment on the same network commonly sits on 0, and
+        if it sees these frames it would drive its outputs from our motor
+        channels. signal_timeout_s: stop continuous rotation if no frame for
+        our universe arrives for this long (0 disables). allowed_sources:
+        only accept frames from these sender IPs (None/empty = any).
+        enable_dangerous_channels: channels 10-12 (back home = real move,
+        set home = overwrites the saved home, reset abs position) are
+        ignored unless this is True."""
         self.servo_ctrller = servo_ctrller
         self.listen_ip = listen_ip
         self.listen_port = listen_port
         self.universe = universe
+        self.signal_timeout_s = float(signal_timeout_s or 0)
+        self.allowed_sources = frozenset(allowed_sources or ())
+        self.enable_dangerous_channels = bool(enable_dangerous_channels)
         self.max_speed_rpm = max_speed_rpm
         self.acc_time = acc_time
         self.position_mode_max_angle = position_mode_max_angle
@@ -99,6 +131,16 @@ class ArtNetInputServer:
         self._last_frame_data = None
         self._last_frame_time = None
 
+        # Loss-of-signal protection and receive statistics -- see
+        # _check_signal_watchdog() / get_stats().
+        self._last_valid_frame_monotonic = None
+        self._watchdog_tripped = False
+        self._frame_times = deque(maxlen=64)
+        self._last_sequence = None
+        self._last_sequence_time = 0.0
+        self._stats = {"frames_ok": 0, "dropped_source": 0, "dropped_universe": 0,
+                       "dropped_sequence": 0, "watchdog_trips": 0}
+
     @property
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
@@ -120,11 +162,18 @@ class ArtNetInputServer:
         return universe, data
 
     def _handle_dmx(self, universe: int, data: bytes) -> None:
-        if universe != self.universe or len(data) < 3:
+        if universe != self.universe:
+            self._stats["dropped_universe"] += 1
+            return
+        if len(data) < 3:
             return
 
         self._last_frame_data = data
         self._last_frame_time = time.time()
+        now = time.monotonic()
+        self._last_valid_frame_monotonic = now
+        self._frame_times.append(now)
+        self._stats["frames_ok"] += 1
 
         enable_channel, direction_channel, cancel_channel = data[0], data[1], data[2]
 
@@ -139,6 +188,16 @@ class ArtNetInputServer:
 
             if len(data) >= 12:
                 self._handle_extended_channels(data)
+
+            if self._watchdog_tripped:
+                # The signal was lost and rotation was stopped. Resuming by
+                # itself when the sender comes back would be a surprise start,
+                # so continuous motion stays stopped until the sender
+                # explicitly sets channel 1 to 0 (which re-arms it).
+                if enable_channel != 0:
+                    return
+                self._watchdog_tripped = False
+                logger.info("Art-Net: signal restored and channel 1 = 0; continuous motion re-armed.")
 
             if enable_channel == 0:
                 if self._last_enable_channel not in (None, 0):
@@ -222,20 +281,82 @@ class ArtNetInputServer:
             logger.info("Art-Net: clear alarm 12 triggered (channel 9 rising edge).")
         self._last_clear_alarm_channel = clear_alarm_channel
 
+        # Channels 10-12 can make a real move / overwrite the saved home, so
+        # they are ignored (with a log line per rising edge) unless the
+        # server was started with enable_dangerous_channels.
         if back_home_channel > 0 and self._last_back_home_channel == 0:
-            self.servo_ctrller.initial_abs_home()
-            logger.info("Art-Net: back home triggered (channel 10 rising edge).")
+            if self._dangerous_channel_allowed(10, "back home"):
+                self.servo_ctrller.initial_abs_home()
+                logger.info("Art-Net: back home triggered (channel 10 rising edge).")
         self._last_back_home_channel = back_home_channel
 
         if set_home_channel > 0 and self._last_set_home_channel == 0:
-            self.servo_ctrller.set_home_position()
-            logger.info("Art-Net: set home triggered (channel 11 rising edge).")
+            if self._dangerous_channel_allowed(11, "set home"):
+                self.servo_ctrller.set_home_position()
+                logger.info("Art-Net: set home triggered (channel 11 rising edge).")
         self._last_set_home_channel = set_home_channel
 
         if reset_initial_abs_pos_channel > 0 and self._last_reset_initial_abs_pos_channel == 0:
-            self.servo_ctrller.write_PA29_Initial_Abs_Pos()
-            logger.info("Art-Net: reset initial absolute position triggered (channel 12 rising edge).")
+            if self._dangerous_channel_allowed(12, "reset initial absolute position"):
+                self.servo_ctrller.write_PA29_Initial_Abs_Pos()
+                logger.info("Art-Net: reset initial absolute position triggered (channel 12 rising edge).")
         self._last_reset_initial_abs_pos_channel = reset_initial_abs_pos_channel
+
+    def _dangerous_channel_allowed(self, channel: int, what: str) -> bool:
+        if self.enable_dangerous_channels:
+            return True
+        logger.warning(
+            f"Art-Net: channel {channel} ({what}) ignored -- dangerous channels 10-12 are "
+            "disabled (enable them when starting the Art-Net server)."
+        )
+        return False
+
+    def _check_signal_watchdog(self, now=None) -> None:
+        """Stops continuous rotation when frames for our universe have stopped
+        arriving (sender crashed, cable pulled, Wi-Fi dropped). Without this
+        the last commanded rotation would simply continue: the drive's own
+        communication timeout cannot help because this app keeps polling it.
+        Only acts while continuous motion is active; latches (see
+        _handle_dmx) so it does not restart by itself."""
+        if not self.signal_timeout_s or self._watchdog_tripped:
+            return
+        if self._last_enable_channel in (None, 0) or self._last_valid_frame_monotonic is None:
+            return
+        now = time.monotonic() if now is None else now
+        if now - self._last_valid_frame_monotonic < self.signal_timeout_s:
+            return
+        self._watchdog_tripped = True
+        self._stats["watchdog_trips"] += 1
+        logger.warning(
+            f"Art-Net: no frame for universe {self.universe} for {self.signal_timeout_s:g}s -- "
+            "stopping continuous rotation."
+        )
+        try:
+            self.servo_ctrller.speed_ctrl_action(0)
+        except Exception as e:
+            logger.error(f"Art-Net: failed to stop rotation after signal loss: {e}")
+        self._last_direction_channel = 0
+
+    def get_stats(self) -> dict:
+        """Receive statistics for the web UI: lets a user see the sender's real
+        frame rate and whether stray/foreign packets are being dropped."""
+        now = time.monotonic()
+        age = None if self._last_valid_frame_monotonic is None else now - self._last_valid_frame_monotonic
+        fps = None
+        if len(self._frame_times) >= 2 and age is not None and age < 5:
+            span = self._frame_times[-1] - self._frame_times[0]
+            fps = (len(self._frame_times) - 1) / span if span > 0 else None
+        return {
+            **self._stats,
+            "frame_age_s": age,
+            "frames_per_s": fps,
+            "signal_timeout_s": self.signal_timeout_s,
+            "watchdog_tripped": self._watchdog_tripped,
+            "allowed_sources": sorted(self.allowed_sources),
+            "dangerous_channels_enabled": self.enable_dangerous_channels,
+            "listen_ip": self.listen_ip,
+            "universe": self.universe,
+        }
 
     def get_channel_snapshot(self):
         """Interpreted state of the most recently received DMX frame, for
@@ -278,26 +399,59 @@ class ArtNetInputServer:
             servo, clear, back_home, set_home, reset_abs = data[7], data[8], data[9], data[10], data[11]
             channels.append(entry(8, "Servo on/off", servo, "on" if servo > 0 else "off"))
             channels.append(entry(9, "Clear Alarm 12", clear, "triggered" if clear > 0 else "idle"))
-            channels.append(entry(10, "Back home", back_home, "triggered" if back_home > 0 else "idle"))
-            channels.append(entry(11, "Set home", set_home, "triggered" if set_home > 0 else "idle"))
-            channels.append(entry(12, "Reset initial abs pos", reset_abs, "triggered" if reset_abs > 0 else "idle"))
+            note = "" if self.enable_dangerous_channels else " - IGNORED (channels 10-12 disabled)"
+            channels.append(entry(10, "Back home", back_home, ("triggered" + note) if back_home > 0 else "idle"))
+            channels.append(entry(11, "Set home", set_home, ("triggered" + note) if set_home > 0 else "idle"))
+            channels.append(entry(12, "Reset initial abs pos", reset_abs, ("triggered" + note) if reset_abs > 0 else "idle"))
 
         return {"received_at": self._last_frame_time, "channels": channels}
+
+    def _process_packet(self, packet: bytes, source_ip: str) -> None:
+        """One received UDP datagram: source filter, ArtDMX parse, sequence
+        check, then the per-universe handling. Never sends anything."""
+        if self.allowed_sources and source_ip not in self.allowed_sources:
+            self._stats["dropped_source"] += 1
+            return
+        parsed = self.parse_artdmx(packet)
+        if parsed is None:
+            return
+        universe, data = parsed
+        if universe == self.universe and not self._sequence_is_current(packet[12]):
+            self._stats["dropped_sequence"] += 1
+            return
+        self._handle_dmx(universe, data)
+
+    def _sequence_is_current(self, sequence: int) -> bool:
+        """Art-Net sequence byte (0 = disabled). Drops a packet that is
+        slightly BEHIND the last one (reordered by the network) so a stale
+        frame cannot overwrite a newer one. A sender that restarted (its
+        counter resets) is accepted after a quiet second."""
+        if sequence == 0:
+            return True
+        now = time.monotonic()
+        if self._last_sequence is not None and now - self._last_sequence_time <= 1.0:
+            behind = (self._last_sequence - sequence) % 256
+            if 0 < behind < 128:
+                return False
+        self._last_sequence = sequence
+        self._last_sequence_time = now
+        return True
 
     def _serve(self) -> None:
         self._sock.settimeout(0.5)
         while not self._stop_event.is_set():
             try:
-                packet, _addr = self._sock.recvfrom(1024)
+                packet, addr = self._sock.recvfrom(1024)
             except socket.timeout:
-                continue
+                packet = None
             except OSError:
                 break
-            parsed = self.parse_artdmx(packet)
-            if parsed is None:
-                continue
-            universe, data = parsed
-            self._handle_dmx(universe, data)
+            if packet is not None:
+                self._process_packet(packet, addr[0])
+            # Every iteration (a timeout, or a foreign-universe packet
+            # arriving in a stream) -- the check must not depend on a
+            # packet for OUR universe showing up.
+            self._check_signal_watchdog()
 
     def start(self) -> None:
         if self.is_running:
@@ -314,14 +468,23 @@ class ArtNetInputServer:
         self._last_reset_initial_abs_pos_channel = 0
         self._last_frame_data = None
         self._last_frame_time = None
+        self._last_valid_frame_monotonic = None
+        self._watchdog_tripped = False
+        self._frame_times.clear()
+        self._last_sequence = None
+        self._stats = {key: 0 for key in self._stats}
+        # No SO_REUSEADDR: for UDP it lets a second process bind the same
+        # port and silently take frames (e.g. an accidentally duplicated
+        # service); a clear "address in use" error is what we want instead.
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._sock.bind((self.listen_ip, self.listen_port))
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
         logger.info(
             f"Art-Net server listening on {self.listen_ip}:{self.listen_port} "
-            f"(universe {self.universe})"
+            f"(universe {self.universe}, signal timeout {self.signal_timeout_s:g}s, "
+            f"sources {sorted(self.allowed_sources) or 'any'}, "
+            f"channels 10-12 {'ENABLED' if self.enable_dangerous_channels else 'disabled'})"
         )
 
     def stop(self) -> None:

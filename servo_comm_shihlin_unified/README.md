@@ -131,6 +131,24 @@ Alarm-12 side effect of servo-off, absolute vs. cumulative angle
 tracking, the 180° safety guard, and the continuous-motion
 direction-reversal fail-safe).
 
+## Web UI access
+
+The web UI can move the motor, set home and write drive parameters, and has
+no login of its own. Configure it with environment variables before starting
+`app.py`:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `SERVO_WEB_PASSWORD` | *(unset = no login)* | Turns on HTTP Basic auth for every route |
+| `SERVO_WEB_USER` | `servo` | User name for that login |
+| `SERVO_WEB_HOST` | `0.0.0.0` | Interface to listen on; use `127.0.0.1` for local-only |
+| `SERVO_WEB_PORT` | `5000` | Port |
+| `SERVO_WEB_DEBUG` | *(unset)* | `1` enables Flask's debugger — never on a shared network (it allows arbitrary code execution) |
+
+When the UI is reachable from the network without a password, startup logs a
+warning (visible in the Activity Log). Flask's built-in server is still a
+development server; see the deployment notes for the Pi.
+
 ## Hardware safety
 
 Any code path that can enable/move/write live state to the motor has

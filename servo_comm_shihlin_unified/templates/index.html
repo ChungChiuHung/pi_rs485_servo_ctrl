@@ -429,7 +429,13 @@
                         payload.listen_port = parseInt($('#osc_listen_port').val(), 10) || 5005;
                     } else {
                         payload.listen_port = parseInt($('#artnet_listen_port').val(), 10) || 6454;
-                        payload.universe = parseInt($('#artnet_universe').val(), 10) || 0;
+                        const universe = parseInt($('#artnet_universe').val(), 10);
+                        payload.universe = isNaN(universe) ? 1 : universe;
+                        payload.listen_ip = $('#artnet_listen_ip').val().trim() || '0.0.0.0';
+                        payload.allowed_sources = $('#artnet_allowed_sources').val().trim();
+                        const timeout = parseFloat($('#artnet_signal_timeout').val());
+                        payload.signal_timeout_s = isNaN(timeout) ? 2 : timeout;
+                        payload.enable_dangerous_channels = $('#artnet_dangerous_channels').is(':checked');
                         payload.position_mode_max_angle = parseFloat($('#artnet_position_max_angle').val()) || 360;
                     }
                     $('#input_server_action_status').text('Starting ' + type + '...');
@@ -625,6 +631,30 @@
                 // confirm what actually arrived without a separate DMX
                 // tool. Only relevant (and only shown) while Art-Net is the
                 // active input server.
+                // Receive statistics: the sender's real frame rate (worth a look
+                // when tuning TouchDesigner's output rate), how old the last
+                // frame is, and what was dropped -- other universes or unlisted
+                // senders reaching this port show up here instead of silently.
+                function renderArtnetStats(stats) {
+                    const el = $('#artnetStats');
+                    if (!stats) { el.text(''); return; }
+                    const parts = [
+                        'Universe ' + stats.universe + ' on ' + stats.listen_ip,
+                        (stats.frames_per_s ? stats.frames_per_s.toFixed(1) : '-') + ' frames/s',
+                        'last frame ' + (stats.frame_age_s === null ? '-' : stats.frame_age_s.toFixed(1) + ' s ago'),
+                        'dropped: ' + stats.dropped_universe + ' other-universe, '
+                            + stats.dropped_source + ' unlisted-sender, '
+                            + stats.dropped_sequence + ' out-of-order',
+                        stats.signal_timeout_s ? ('signal timeout ' + stats.signal_timeout_s + ' s') : 'signal timeout OFF',
+                        stats.dangerous_channels_enabled ? 'channels 10-12 ENABLED' : 'channels 10-12 disabled'
+                    ];
+                    let text = parts.join(' | ');
+                    if (stats.watchdog_tripped) {
+                        text = 'SIGNAL LOST - rotation stopped; set channel 1 to 0 to re-arm. | ' + text;
+                    }
+                    el.text(text).css('color', stats.watchdog_tripped ? '#e74c3c' : '');
+                }
+
                 function pollArtnetChannels() {
                     $.get('/server/artnet_channels', function(response) {
                         const section = $('#artnetMonitorSection');
@@ -633,6 +663,7 @@
                             return;
                         }
                         section.show();
+                        renderArtnetStats(response.stats);
                         if (!response.channels) {
                             $('#artnetLastReceived').text('No frame received yet.');
                             $('#artnetChannelTableBody').empty();
@@ -727,9 +758,29 @@
                         <input type="number" id="artnet_listen_port" value="6454">
                     </div>
                     <div class="form-group artnet-only">
-                        <label for="artnet_universe">Art-Net universe:</label>
-                        <input type="number" id="artnet_universe" value="0">
+                        <label for="artnet_listen_ip">Bind to IP:</label>
+                        <input type="text" id="artnet_listen_ip" value="0.0.0.0" placeholder="this Pi's IP, e.g. 192.168.1.50">
                     </div>
+                    <span class="section-note artnet-only">A specific IP receives unicast only (set TouchDesigner's Art-Net Out to Unicast to this address); 0.0.0.0 also accepts broadcast.</span>
+                    <div class="form-group artnet-only">
+                        <label for="artnet_universe">Art-Net universe:</label>
+                        <input type="number" id="artnet_universe" value="1" min="0" max="32767">
+                    </div>
+                    <span class="section-note artnet-only">Keep this different from other DMX equipment on the network (usually universe 0).</span>
+                    <div class="form-group artnet-only">
+                        <label for="artnet_allowed_sources">Only accept from:</label>
+                        <input type="text" id="artnet_allowed_sources" value="" placeholder="sender IP(s), comma-separated; empty = any">
+                    </div>
+                    <div class="form-group artnet-only">
+                        <label for="artnet_signal_timeout">Stop rotation if no signal for (s):</label>
+                        <input type="number" id="artnet_signal_timeout" value="2" min="0" max="60" step="0.5">
+                    </div>
+                    <span class="section-note artnet-only">0 disables. Rotation does not restart by itself after a loss: set channel 1 to 0, then start again.</span>
+                    <div class="form-group artnet-only">
+                        <label for="artnet_dangerous_channels">Enable channels 10-12:</label>
+                        <input type="checkbox" id="artnet_dangerous_channels">
+                    </div>
+                    <span class="section-note artnet-only">Back home (real move), set home (overwrites the saved home) and reset absolute position. Ignored unless ticked.</span>
                     <div class="form-group artnet-only">
                         <label for="artnet_position_max_angle">Position-mode max angle (deg):</label>
                         <input type="number" id="artnet_position_max_angle" value="360">
@@ -866,6 +917,7 @@
                 <section class="artnet-monitor" id="artnetMonitorSection" style="display:none;">
                     <h2>Art-Net Channel Monitor</h2>
                     <p class="section-note" id="artnetLastReceived">No frame received yet.</p>
+                    <p class="section-note" id="artnetStats"></p>
                     <table class="channel-table">
                         <thead>
                             <tr><th>Ch</th><th>Label</th><th>Value</th><th>Interpreted</th></tr>

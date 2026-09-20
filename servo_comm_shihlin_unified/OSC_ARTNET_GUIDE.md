@@ -31,7 +31,7 @@ curl -X POST http://<HOST>:5000/server/start \
 # Start Art-Net (listens on UDP 6454, the Art-Net standard port)
 curl -X POST http://<HOST>:5000/server/start \
      -H "Content-Type: application/json" \
-     -d '{"type": "artnet", "listen_port": 6454, "universe": 0, "max_speed_rpm": 100, "acc_time": 5000, "position_mode_max_angle": 360}'
+     -d '{"type": "artnet", "listen_ip": "192.168.1.50", "universe": 1, "allowed_sources": "192.168.1.10", "signal_timeout_s": 2, "max_speed_rpm": 100, "acc_time": 5000, "position_mode_max_angle": 360}'
 
 # Stop whichever is running
 curl -X POST http://<HOST>:5000/server/stop
@@ -100,7 +100,7 @@ OSC gets no feedback message about the refusal currently.
 ## Art-Net
 
 Default listen port: **6454** (the Art-Net standard, UDP). Channels are
-1-indexed DMX slots within the configured universe (default `0`).
+1-indexed DMX slots within the configured universe (default **`1`**).
 Handled by `ArtNetInputServer` in `artnet_server.py`. **This channel
 layout is a project-specific convention, not an Art-Net/DMX standard** —
 adjust the constructor args (`max_speed_rpm`, `acc_time`,
@@ -121,6 +121,13 @@ channel numbers if they conflict with something else in your universe.
 | 11 | Set home | `0` = idle; a `0→nonzero` edge **persists** the current position as the new home reference |
 | 12 | Reset initial absolute position | `0` = idle; a `0→nonzero` edge writes PA29 |
 
+Channels 10-12 (back home, set home, reset absolute position) are
+**ignored unless "Enable channels 10-12" is ticked when starting the
+server** (`"enable_dangerous_channels": true` in the HTTP API): they make
+a real move or overwrite the saved home, and a lighting console sending a
+full universe can hit them by accident. The Channel Monitor marks them
+`IGNORED` while disabled.
+
 Channels 4-12 are optional and independent: a sender filling only
 channels 1-3 (continuous motion only) still works, channels 4-12 are
 simply never triggered. All edge-triggered channels compare against the
@@ -128,6 +135,49 @@ simply never triggered. All edge-triggered channels compare against the
 real Art-Net sources typically resend the full frame 30-44 times/second
 even when nothing changed; without edge-detection, every field would
 re-fire on every single frame.
+
+### Network setup and safety
+
+The Art-Net server is a **pure receiver**: it never sends anything (no
+ArtPollReply, no echo), so it cannot disturb other devices by itself. What
+can go wrong is other traffic reaching it, or it losing the sender:
+
+* **One Art-Net Out per destination, in Unicast.** In TouchDesigner use a
+  separate Art-Net Out for the motor (unicast to this Pi's IP) and one for
+  any other DMX gear (unicast to that box). Avoid broadcast: every device
+  and Wi-Fi client then receives every universe.
+* **Different universes.** This server defaults to universe **1**; other
+  DMX equipment on the network usually listens on 0. If both used the same
+  universe, that equipment would drive its outputs from the motor channels
+  (and this server would react to its data). Packets for other universes
+  are dropped and counted.
+* **Bind to the Pi's IP** ("Bind to IP", `listen_ip`) so only unicast to that
+  address is received. Linux does not deliver broadcast to a socket bound to
+  a specific unicast address, so the sender must be set to unicast. `0.0.0.0`
+  accepts broadcast too.
+* **Only accept from** (`allowed_sources`): a comma-separated list of sender
+  IPs; anything else is dropped and counted ("unlisted-sender").
+* **Loss-of-signal stop** (`signal_timeout_s`, default 2 s, `0` = off). If no
+  frame for this universe arrives for that long while continuous rotation is
+  active, rotation is stopped. It does **not** restart by itself when the
+  signal returns: set channel 1 to `0` (this re-arms), then start again. Pick
+  a value above your Wi-Fi's worst latency spikes. Note that the check assumes
+  the sender keeps sending frames while values are static; if your sender only
+  transmits on change, use `0` or the watchdog will stop a steady rotation.
+  The Channel Monitor shows the real frame rate and the age of the last frame
+  so you can check.
+* **Frame rate.** Edge detection works at any rate. Lowering the sender to
+  ~30 fps (or less) reduces load on a Wi-Fi link; keep the timeout well above
+  a few frame intervals.
+* Out-of-order packets (Art-Net sequence byte, `0` = unused) that arrive
+  behind a newer one are dropped, so a stale frame cannot overwrite a newer
+  one.
+* On a Raspberry Pi over Wi-Fi, disable Wi-Fi power saving
+  (`sudo iw dev wlan0 set power_save off`) to avoid latency spikes.
+
+The web UI itself can move the motor and has no login: set
+`SERVO_WEB_PASSWORD` (see README, "Web UI access") before exposing it to a
+network.
 
 ### Constructing a test packet (Python)
 

@@ -9,7 +9,7 @@ import socket
 import struct
 import time
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 from artnet_server import ArtNetInputServer, ARTNET_ID, OP_OUTPUT_DMX
 
@@ -28,6 +28,11 @@ def build_artdmx_packet(universe: int, dmx_data: bytes, sequence=0, physical=0) 
 
 
 def make_server(**kwargs):
+    # The legacy tests below address universe 0 and exercise channels 10-12;
+    # the server's own defaults (universe 1, channels 10-12 off) are covered
+    # explicitly in TestSafetyDefaults.
+    kwargs.setdefault("universe", 0)
+    kwargs.setdefault("enable_dangerous_channels", True)
     servo_ctrller = MagicMock()
     server = ArtNetInputServer(servo_ctrller, listen_ip="127.0.0.1", listen_port=0, **kwargs)
     return server, servo_ctrller
@@ -422,6 +427,249 @@ class TestGetChannelSnapshot(unittest.TestCase):
         self.assertIsNotNone(server.get_channel_snapshot()["received_at"])
 
 
+class TestSafetyDefaults(unittest.TestCase):
+    """The defaults are the safe ones: universe 1 (not the 0 other DMX gear
+    usually listens on), channels 10-12 off, loss-of-signal stop on."""
+
+    def test_default_universe_is_1(self):
+        server = ArtNetInputServer(MagicMock())
+        self.assertEqual(server.universe, 1)
+
+    def test_default_signal_timeout_is_on(self):
+        self.assertGreater(ArtNetInputServer(MagicMock()).signal_timeout_s, 0)
+
+    def test_dangerous_channels_are_ignored_by_default(self):
+        ctrl = MagicMock()
+        server = ArtNetInputServer(ctrl, universe=0)
+        server._handle_dmx(0, bytes([0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255]))
+        ctrl.initial_abs_home.assert_not_called()
+        ctrl.set_home_position.assert_not_called()
+        ctrl.write_PA29_Initial_Abs_Pos.assert_not_called()
+
+    def test_non_dangerous_channels_still_work_by_default(self):
+        ctrl = MagicMock()
+        server = ArtNetInputServer(ctrl, universe=0)
+        server._handle_dmx(0, bytes([0, 0, 0, 0, 0, 0, 0, 200, 255, 0, 0, 0]))
+        ctrl.servo_on.assert_called_once()
+        ctrl.clear_alarm_12.assert_called_once()
+
+    def test_dangerous_channels_work_once_enabled(self):
+        ctrl = MagicMock()
+        server = ArtNetInputServer(ctrl, universe=0, enable_dangerous_channels=True)
+        server._handle_dmx(0, bytes([0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255]))
+        ctrl.initial_abs_home.assert_called_once()
+        ctrl.set_home_position.assert_called_once()
+        ctrl.write_PA29_Initial_Abs_Pos.assert_called_once()
+
+    def test_monitor_marks_ignored_dangerous_channels(self):
+        server = ArtNetInputServer(MagicMock(), universe=0)
+        server._handle_dmx(0, bytes([0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 0, 0]))
+        ch10 = server.get_channel_snapshot()["channels"][9]
+        self.assertIn("IGNORED", ch10["interpreted"])
+
+    def test_the_module_never_sends_anything(self):
+        """Pure receiver: no ArtPollReply, no echo, nothing that could
+        disturb other devices on the network."""
+        import inspect
+        import artnet_server
+        source = inspect.getsource(artnet_server)
+        for forbidden in ("sendto", ".send(", "SO_BROADCAST"):
+            self.assertNotIn(forbidden, source)
+
+    def test_socket_does_not_set_reuseaddr(self):
+        import inspect
+        import artnet_server
+        self.assertNotIn("setsockopt", inspect.getsource(artnet_server.ArtNetInputServer.start))
+
+
+class TestSignalWatchdog(unittest.TestCase):
+    """Continuous rotation must stop when frames stop arriving, and must not
+    restart by itself when they come back."""
+
+    def _running_server(self, timeout=2.0):
+        server, ctrl = make_server(signal_timeout_s=timeout)
+        server._handle_dmx(0, bytes([255, 200, 0]))  # rotating CW
+        ctrl.speed_ctrl_action.reset_mock()
+        ctrl.enable_speed_ctrl.reset_mock()
+        return server, ctrl
+
+    def test_stops_rotation_after_the_timeout(self):
+        server, ctrl = self._running_server(timeout=2.0)
+        server._check_signal_watchdog(now=server._last_valid_frame_monotonic + 2.5)
+        ctrl.speed_ctrl_action.assert_called_once_with(0)
+        self.assertTrue(server.get_stats()["watchdog_tripped"])
+        self.assertEqual(server.get_stats()["watchdog_trips"], 1)
+
+    def test_does_nothing_before_the_timeout(self):
+        server, ctrl = self._running_server(timeout=2.0)
+        server._check_signal_watchdog(now=server._last_valid_frame_monotonic + 1.5)
+        ctrl.speed_ctrl_action.assert_not_called()
+
+    def test_fires_only_once(self):
+        server, ctrl = self._running_server()
+        late = server._last_valid_frame_monotonic + 10
+        server._check_signal_watchdog(now=late)
+        server._check_signal_watchdog(now=late + 1)
+        ctrl.speed_ctrl_action.assert_called_once_with(0)
+
+    def test_idle_server_is_left_alone(self):
+        # Nothing rotating (channel 1 = 0): silence is not an emergency.
+        server, ctrl = make_server(signal_timeout_s=2.0)
+        server._handle_dmx(0, bytes([0, 0, 0]))
+        server._check_signal_watchdog(now=server._last_valid_frame_monotonic + 60)
+        ctrl.speed_ctrl_action.assert_not_called()
+
+    def test_never_armed_before_the_first_frame(self):
+        server, ctrl = make_server(signal_timeout_s=2.0)
+        server._check_signal_watchdog(now=time.monotonic() + 60)
+        ctrl.speed_ctrl_action.assert_not_called()
+
+    def test_timeout_zero_disables_it(self):
+        server, ctrl = self._running_server(timeout=0)
+        server._check_signal_watchdog(now=server._last_valid_frame_monotonic + 600)
+        ctrl.speed_ctrl_action.assert_not_called()
+
+    def test_does_not_restart_by_itself_when_the_signal_returns(self):
+        server, ctrl = self._running_server()
+        server._check_signal_watchdog(now=server._last_valid_frame_monotonic + 10)
+        ctrl.speed_ctrl_action.reset_mock()
+
+        server._handle_dmx(0, bytes([255, 200, 0]))  # sender back, still "enabled"
+
+        ctrl.enable_speed_ctrl.assert_not_called()
+        ctrl.speed_ctrl_action.assert_not_called()
+
+    def test_channel_1_zero_rearms_and_motion_can_start_again(self):
+        server, ctrl = self._running_server()
+        server._check_signal_watchdog(now=server._last_valid_frame_monotonic + 10)
+        server._handle_dmx(0, bytes([0, 0, 0]))          # explicit disable
+        self.assertFalse(server.get_stats()["watchdog_tripped"])
+        ctrl.enable_speed_ctrl.reset_mock()
+
+        server._handle_dmx(0, bytes([255, 200, 0]))      # deliberate restart
+
+        ctrl.enable_speed_ctrl.assert_called_once()
+
+    def test_other_channels_keep_working_while_tripped(self):
+        server, ctrl = self._running_server()
+        server._check_signal_watchdog(now=server._last_valid_frame_monotonic + 10)
+        server._handle_dmx(0, bytes([255, 200, 255]))    # cancel channel goes high
+        ctrl.cancel_continuous_reading.assert_called_once()
+
+    def test_a_failing_stop_command_is_logged_not_raised(self):
+        server, ctrl = self._running_server()
+        ctrl.speed_ctrl_action.side_effect = RuntimeError("serial down")
+        server._check_signal_watchdog(now=server._last_valid_frame_monotonic + 10)  # must not raise
+        self.assertTrue(server.get_stats()["watchdog_tripped"])
+
+    def test_foreign_universe_traffic_does_not_keep_the_watchdog_quiet(self):
+        server, ctrl = self._running_server(timeout=2.0)
+        for _ in range(50):
+            server._handle_dmx(7, bytes([1, 2, 3]))      # someone else's universe
+        server._check_signal_watchdog(now=server._last_valid_frame_monotonic + 3)
+        ctrl.speed_ctrl_action.assert_called_once_with(0)
+
+
+class TestSourceAllowList(unittest.TestCase):
+
+    def _packet(self):
+        return build_artdmx_packet(0, bytes([0, 0, 0]))
+
+    def test_any_source_accepted_when_no_list(self):
+        server, ctrl = make_server()
+        server._process_packet(self._packet(), "10.0.0.99")
+        self.assertEqual(server.get_stats()["frames_ok"], 1)
+
+    def test_listed_source_accepted(self):
+        server, ctrl = make_server(allowed_sources=["10.0.0.5"])
+        server._process_packet(self._packet(), "10.0.0.5")
+        self.assertEqual(server.get_stats()["frames_ok"], 1)
+
+    def test_unlisted_source_is_dropped_and_counted(self):
+        server, ctrl = make_server(allowed_sources=["10.0.0.5"])
+        server._process_packet(self._packet(), "10.0.0.6")
+        self.assertEqual(server.get_stats()["frames_ok"], 0)
+        self.assertEqual(server.get_stats()["dropped_source"], 1)
+        self.assertIsNone(server.get_channel_snapshot())
+
+    def test_dropped_source_cannot_trigger_anything(self):
+        server, ctrl = make_server(allowed_sources=["10.0.0.5"])
+        packet = build_artdmx_packet(0, bytes([255, 200, 0, 0, 0, 0, 0, 200, 255, 255, 255, 255]))
+        server._process_packet(packet, "10.0.0.66")
+        self.assertEqual(ctrl.method_calls, [])
+
+
+class TestUniverseFilterAndStats(unittest.TestCase):
+
+    def test_other_universe_is_dropped_before_any_handling_and_counted(self):
+        server, ctrl = make_server(universe=1)
+        server._process_packet(build_artdmx_packet(0, bytes([255, 200, 0])), "10.0.0.5")
+        self.assertEqual(server.get_stats()["dropped_universe"], 1)
+        self.assertEqual(ctrl.method_calls, [])
+        self.assertIsNone(server.get_channel_snapshot())
+
+    def test_full_15_bit_port_address_is_compared(self):
+        # Universe 1 with a non-zero Net byte is a different port address.
+        server, ctrl = make_server(universe=1)
+        server._process_packet(build_artdmx_packet(0x0101, bytes([255, 200, 0])), "10.0.0.5")
+        self.assertEqual(server.get_stats()["frames_ok"], 0)
+
+    def test_frame_rate_is_estimated_from_recent_frames(self):
+        server, _ = make_server()
+        base = time.monotonic()
+        server._frame_times.extend(base - 1.0 + i * 0.1 for i in range(11))  # 10 fps, ending now
+        server._last_valid_frame_monotonic = server._frame_times[-1]
+        fps = server.get_stats()["frames_per_s"]
+        self.assertAlmostEqual(fps, 10.0, places=3)
+
+    def test_stats_report_configuration(self):
+        server, _ = make_server(signal_timeout_s=3, allowed_sources=["10.0.0.5"])
+        stats = server.get_stats()
+        self.assertEqual(stats["signal_timeout_s"], 3)
+        self.assertEqual(stats["allowed_sources"], ["10.0.0.5"])
+        self.assertTrue(stats["dangerous_channels_enabled"])
+
+
+class TestSequenceNumbers(unittest.TestCase):
+
+    def _send(self, server, sequence, first_channel=0):
+        packet = build_artdmx_packet(0, bytes([first_channel, 0, 0]), sequence=sequence)
+        server._process_packet(packet, "10.0.0.5")
+
+    def test_in_order_frames_accepted(self):
+        server, _ = make_server()
+        for seq in (1, 2, 3):
+            self._send(server, seq)
+        self.assertEqual(server.get_stats()["frames_ok"], 3)
+
+    def test_a_reordered_older_frame_is_dropped_and_does_not_overwrite(self):
+        server, _ = make_server()
+        self._send(server, 10, first_channel=0)
+        self._send(server, 9, first_channel=0)    # arrives late
+        self.assertEqual(server.get_stats()["dropped_sequence"], 1)
+        self.assertEqual(server.get_stats()["frames_ok"], 1)
+
+    def test_sequence_zero_means_disabled_and_is_always_accepted(self):
+        server, _ = make_server()
+        self._send(server, 50)
+        self._send(server, 0)
+        self.assertEqual(server.get_stats()["frames_ok"], 2)
+
+    def test_counter_wraparound_is_handled(self):
+        server, _ = make_server()
+        self._send(server, 254)
+        self._send(server, 255)
+        self._send(server, 1)                      # wrapped past 255 (0 is skipped)
+        self.assertEqual(server.get_stats()["frames_ok"], 3)
+
+    def test_a_restarted_sender_is_accepted_after_a_quiet_second(self):
+        server, _ = make_server()
+        self._send(server, 100)
+        server._last_sequence_time -= 2.0          # >1s of silence
+        self._send(server, 1)                      # counter restarted
+        self.assertEqual(server.get_stats()["frames_ok"], 2)
+
+
 class TestStartStopLifecycle(unittest.TestCase):
 
     def test_start_sets_is_running_and_stop_clears_it(self):
@@ -445,6 +693,58 @@ class TestStartStopLifecycle(unittest.TestCase):
     def test_stop_when_not_running_is_a_noop(self):
         server, ctrl = make_server()
         server.stop()  # must not raise
+
+    def _send_udp(self, port, packet):
+        sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sender.sendto(packet, ("127.0.0.1", port))
+        finally:
+            sender.close()
+
+    def _wait_for(self, condition, seconds=3.0):
+        deadline = time.time() + seconds
+        while not condition() and time.time() < deadline:
+            time.sleep(0.02)
+        return condition()
+
+    def test_real_udp_signal_loss_stops_rotation_end_to_end(self):
+        """Real socket + background thread: a sender that starts a rotation
+        and then goes silent must get the rotation stopped by the watchdog."""
+        server, ctrl = make_server(universe=0, signal_timeout_s=0.5)
+        server.start()
+        try:
+            port = server._sock.getsockname()[1]
+            self._send_udp(port, build_artdmx_packet(0, bytes([255, 200, 0])))
+            self.assertTrue(self._wait_for(lambda: ctrl.enable_speed_ctrl.called))
+            # (the initial CW command is also a speed_ctrl_action call, so
+            # wait for the specific stop)
+            self.assertTrue(self._wait_for(lambda: call(0) in ctrl.speed_ctrl_action.call_args_list))
+        finally:
+            server.stop()
+
+    def test_real_udp_stream_of_foreign_universe_does_not_defeat_the_watchdog(self):
+        server, ctrl = make_server(universe=0, signal_timeout_s=0.5)
+        server.start()
+        try:
+            port = server._sock.getsockname()[1]
+            self._send_udp(port, build_artdmx_packet(0, bytes([255, 200, 0])))
+            self.assertTrue(self._wait_for(lambda: ctrl.enable_speed_ctrl.called))
+            deadline = time.time() + 3
+            while call(0) not in ctrl.speed_ctrl_action.call_args_list and time.time() < deadline:
+                self._send_udp(port, build_artdmx_packet(5, bytes([1, 2, 3])))  # never our universe
+                time.sleep(0.05)
+            self.assertIn(call(0), ctrl.speed_ctrl_action.call_args_list)
+        finally:
+            server.stop()
+
+    def test_binds_to_the_configured_address_only(self):
+        server, ctrl = make_server(universe=0)
+        server.listen_ip = "127.0.0.1"
+        server.start()
+        try:
+            self.assertEqual(server._sock.getsockname()[0], "127.0.0.1")
+        finally:
+            server.stop()
 
     def test_real_udp_packet_reaches_handler(self):
         server, ctrl = make_server(universe=0)

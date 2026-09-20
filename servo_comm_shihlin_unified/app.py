@@ -1,3 +1,5 @@
+import hmac
+import ipaddress
 import os
 import time
 import logging
@@ -15,7 +17,7 @@ from hardware_lock import hardware_serialized, run_when_idle
 from input_validation import validate_int_range
 from activity_log import ActivityLog, ActivityLogHandler
 from osc_server import OSCInputServer
-from artnet_server import ArtNetInputServer
+from artnet_server import ArtNetInputServer, DEFAULT_UNIVERSE, DEFAULT_SIGNAL_TIMEOUT_S
 
 # GPIO only imports successfully on real Raspberry Pi hardware (RPi.GPIO).
 # Made optional so this app can be developed/tested off-Pi (e.g. this
@@ -28,6 +30,28 @@ except ImportError:
 
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your keys')
+
+# The web UI can move a motor, set home and rewrite drive parameters, and has
+# no login of its own. Setting SERVO_WEB_PASSWORD turns on HTTP Basic auth for
+# every route (user: SERVO_WEB_USER, default "servo"). Off by default so local
+# development keeps working; the startup log warns when the UI is reachable
+# from the network without it.
+WEB_USER = os.getenv('SERVO_WEB_USER', 'servo')
+WEB_PASSWORD = os.getenv('SERVO_WEB_PASSWORD', '')
+
+
+@app.before_request
+def _require_web_password():
+    if not WEB_PASSWORD:
+        return None
+    auth = request.authorization
+    if (auth is not None
+            and hmac.compare_digest((auth.username or '').encode('utf-8'), WEB_USER.encode('utf-8'))
+            and hmac.compare_digest((auth.password or '').encode('utf-8'), WEB_PASSWORD.encode('utf-8'))):
+        return None
+    return Response('Authentication required.', 401,
+                    {'WWW-Authenticate': 'Basic realm="Servo Control"'})
+
 
 # Dedicated logger for the /alarm/clear endpoint (CLAUDE.md hardware-safety
 # section: every call that can write live state to the motor must be logged).
@@ -379,8 +403,12 @@ def get_artnet_channels():
     Read-only; never touches the driver. `active: false` (with
     `channels: null`) whenever Art-Net isn't the running input server."""
     if active_input_server != "artnet" or _input_server_instance is None:
-        return jsonify({"active": False, "channels": None})
-    return jsonify({"active": True, "channels": _input_server_instance.get_channel_snapshot()})
+        return jsonify({"active": False, "channels": None, "stats": None})
+    return jsonify({
+        "active": True,
+        "channels": _input_server_instance.get_channel_snapshot(),
+        "stats": _input_server_instance.get_stats(),
+    })
 
 
 @app.route('/log', methods=['GET'])
@@ -390,6 +418,57 @@ def get_activity_log():
     only what's new. Never triggers any write/motion command."""
     since = request.args.get('since', default=0, type=int) or 0
     return jsonify({"entries": activity_log.get_since(since)})
+
+
+def _parse_artnet_options(payload):
+    """Validates the Art-Net start request. Returns (ArtNetInputServer kwargs,
+    None) or (None, error message). The safe values are the defaults:
+    universe 1, a 2s loss-of-signal stop, channels 10-12 ignored."""
+    def number(key, default, lo, hi, kind=int):
+        raw = payload.get(key, default)
+        try:
+            value = kind(raw)
+        except (TypeError, ValueError):
+            return None, f"{key} must be a number."
+        if not (lo <= value <= hi):
+            return None, f"{key} must be between {lo} and {hi}."
+        return value, None
+
+    listen_ip = payload.get("listen_ip") or "0.0.0.0"
+    try:
+        ipaddress.IPv4Address(listen_ip)
+    except ValueError:
+        return None, "listen_ip must be an IPv4 address (e.g. 192.168.1.50 or 0.0.0.0)."
+
+    sources = payload.get("allowed_sources") or []
+    if isinstance(sources, str):
+        sources = [item.strip() for item in sources.split(",") if item.strip()]
+    if not isinstance(sources, (list, tuple)):
+        return None, "allowed_sources must be a list or comma-separated IPv4 addresses."
+    for item in sources:
+        try:
+            ipaddress.IPv4Address(item)
+        except ValueError:
+            return None, f"allowed_sources contains an invalid IPv4 address: {item!r}."
+
+    dangerous = payload.get("enable_dangerous_channels", False)
+    if not isinstance(dangerous, bool):
+        return None, "enable_dangerous_channels must be true or false."
+
+    options = {"listen_ip": listen_ip, "allowed_sources": list(sources),
+               "enable_dangerous_channels": dangerous}
+    for key, default, lo, hi, kind in (
+            ("listen_port", 6454, 1, 65535, int),
+            ("universe", DEFAULT_UNIVERSE, 0, 32767, int),
+            ("max_speed_rpm", 100, 1, 3000, int),
+            ("acc_time", 5000, 0, 60000, int),
+            ("position_mode_max_angle", 360, 1, 100000, float),
+            ("signal_timeout_s", DEFAULT_SIGNAL_TIMEOUT_S, 0, 60, float)):
+        value, error = number(key, default, lo, hi, kind)
+        if error:
+            return None, error
+        options[key] = value
+    return options, None
 
 
 @app.route('/server/start', methods=['POST'])
@@ -441,19 +520,15 @@ def start_input_server():
         })
 
     elif server_type == "artnet":
-        listen_ip = payload.get("listen_ip", "0.0.0.0")
-        listen_port = int(payload.get("listen_port", 6454))
-        universe = int(payload.get("universe", 0))
-        max_speed_rpm = int(payload.get("max_speed_rpm", 100))
-        acc_time = int(payload.get("acc_time", 5000))
-        position_mode_max_angle = float(payload.get("position_mode_max_angle", 360))
+        options, error = _parse_artnet_options(payload)
+        if error:
+            return jsonify({"status": "error", "message": error}), 400
+        listen_ip = options["listen_ip"]
+        listen_port = options["listen_port"]
+        universe = options["universe"]
 
         with _state_lock:
-            server = ArtNetInputServer(
-                servo_ctrller, listen_ip=listen_ip, listen_port=listen_port,
-                universe=universe, max_speed_rpm=max_speed_rpm, acc_time=acc_time,
-                position_mode_max_angle=position_mode_max_angle,
-            )
+            server = ArtNetInputServer(servo_ctrller, **options)
             try:
                 server.start()
             except Exception as e:
@@ -468,6 +543,9 @@ def start_input_server():
             "listen_ip": listen_ip,
             "listen_port": listen_port,
             "universe": universe,
+            "signal_timeout_s": options["signal_timeout_s"],
+            "allowed_sources": sorted(options["allowed_sources"]),
+            "enable_dangerous_channels": options["enable_dangerous_channels"],
         })
 
     else:
@@ -733,11 +811,24 @@ def handle_action():
 
 if __name__ == "__main__":
     threading.Thread(target=_eeprom_guard_loop, name="eeprom-guard", daemon=True).start()
+    web_host = os.getenv('SERVO_WEB_HOST', '0.0.0.0')
+    web_port = int(os.getenv('SERVO_WEB_PORT', '5000'))
+    # Flask's debug mode exposes an interactive debugger (arbitrary code
+    # execution) to anyone who can reach the port -- opt-in only.
+    web_debug = os.getenv('SERVO_WEB_DEBUG') == '1'
+    if not WEB_PASSWORD and web_host not in ('127.0.0.1', 'localhost', '::1'):
+        logging.warning(
+            f"Web UI is reachable from the network ({web_host}:{web_port}) WITHOUT a password: "
+            "anyone on the LAN can move the motor. Set SERVO_WEB_PASSWORD (and optionally "
+            "SERVO_WEB_HOST=127.0.0.1) to restrict it."
+        )
+    if web_debug:
+        logging.warning("SERVO_WEB_DEBUG=1: Flask debugger enabled -- never do this on a shared network.")
     try:
         # use_reloader=False: the reloader re-executes this module in a
         # second process, which would try to open the serial port (and
         # initialize GPIO) twice.
-        app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)
+        app.run(host=web_host, port=web_port, debug=web_debug, use_reloader=False)
     finally:
         if gpio_utils is not None:
             gpio_utils.cleanup_gpio()
