@@ -34,22 +34,117 @@
                             $('#rs485_send').val(response.RS485_send);
                             $('#RS485_receive').val(response.RS485_read);
                         },
-                        error: function(error){
-                            console.error('Error:', error);
-                            $('#' + action + '_status').text('Error performing action');
+                        error: function(xhr){
+                            console.error('Error:', xhr);
+                            // The server explains refusals (no serial port, move
+                            // blocked because the position could not be read, ...).
+                            $('#' + action + '_status').text(
+                                (xhr.responseJSON && xhr.responseJSON.message) || 'Error performing action');
                         }
                     });
                 }
 
-                // Bind sendCommand function to buttons
-                $('.button').click(function(){
+                // Bind sendCommand function to buttons. SET HOME goes through the
+                // confirmation dialog instead of firing straight away.
+                $('.button[data-action]').click(function(){
                     const action = $(this).attr('data-action');
+                    if (action === 'setHome') { openHomeModal('button'); return; }
                     sendCommand(action);
+                });
+
+                // --- SET HOME dialog -------------------------------------------
+                function openHomeModal(reason) {
+                    $('#homeModalIntro').text(reason === 'startup'
+                        ? 'The encoder counter restarts when the drive is powered on, so the home saved by an earlier run may no longer match the shaft.'
+                        : 'Set the current shaft position as home (0 degrees).');
+                    $('#homeModal').css('display', 'flex');
+                }
+                function closeHomeModal() { $('#homeModal').hide(); }
+                $('#homeModalLaterBtn').click(closeHomeModal);
+                $(document).keydown(function(e){ if (e.key === 'Escape') { closeHomeModal(); } });
+                $('#homeModalConfirmBtn').click(function(){
+                    closeHomeModal();
+                    sendCommand('setHome');
+                });
+
+                // --- Live status (read-only; no serial traffic) ----------------
+                let homeReminderChecked = false;
+                function pollStatus() {
+                    $.get('/status', function(status) {
+                        if (status.connected === false) {
+                            $('#serialBanner').show();
+                            $('#serialBannerReason').text(status.connection_error || '');
+                            $('#statusStrip').hide();
+                            return;
+                        }
+                        $('#serialBanner').hide();
+                        $('#statusStrip').css('display', 'flex');
+                        $('#st_port').text(status.connected_port);
+                        $('#st_angle').text(status.current_angle.toFixed(4) + ' deg');
+                        const gearTile = $('#st_gear_tile');
+                        if (status.electronic_gear_ok === false) {
+                            $('#st_gear').text('CMX/CDV = ' + status.electronic_gear.join('/') + ' - must be 1:1!');
+                            gearTile.addClass('alert');
+                        } else {
+                            $('#st_gear').text(status.electronic_gear_ok === true ? '1:1' : 'unknown');
+                            gearTile.removeClass('alert');
+                        }
+                        const homeTile = $('#st_home_tile');
+                        if (status.home_reminder_needed) {
+                            $('#st_home').text('NOT SET - press SET HOME');
+                            homeTile.addClass('alert');
+                        } else {
+                            $('#st_home').text('Set');
+                            homeTile.removeClass('alert');
+                        }
+                        // Remind the operator once per page load while home has
+                        // not been set since the server started.
+                        if (!homeReminderChecked) {
+                            homeReminderChecked = true;
+                            if (status.home_reminder_needed) { openHomeModal('startup'); }
+                        }
+                    });
+                }
+                pollStatus();
+                setInterval(pollStatus, 1000);
+
+                // Retry opening the serial port (never moves the motor).
+                $('#reconnectBtn').click(function(){
+                    $('#reconnectStatus').text('Connecting...');
+                    $.ajax({
+                        url: '/reconnect',
+                        type: 'POST',
+                        success: function(){ $('#reconnectStatus').text(''); pollStatus(); },
+                        error: function(xhr){
+                            $('#reconnectStatus').text('Failed: ' +
+                                ((xhr.responseJSON && xhr.responseJSON.message) || 'error'));
+                        }
+                    });
                 });
             });
         </script>
     </head>
     <body>
+        <div class="modal-overlay" id="homeModal" style="display:none;" role="dialog" aria-modal="true">
+            <div class="modal">
+                <h2>Set home position</h2>
+                <p id="homeModalIntro"></p>
+                <p>Move the motor to the mechanical home position first, then press
+                   <strong>SET HOME NOW</strong>: the current shaft position becomes 0&deg;
+                   and is saved as home. Nothing moves.</p>
+                <div class="modal-actions">
+                    <button class="button" id="homeModalConfirmBtn">SET HOME NOW</button>
+                    <button class="button" id="homeModalLaterBtn">Remind me later</button>
+                </div>
+            </div>
+        </div>
+        <div class="connection-banner" id="serialBanner" style="display:none;" role="alert">
+            <span><strong>No RS-485 serial port connection.</strong>
+                  Motor control is unavailable; nothing is being sent to the drive.
+                  <span id="serialBannerReason"></span></span>
+            <button class="banner-button" id="reconnectBtn">Reconnect</button>
+            <span id="reconnectStatus"></span>
+        </div>
         <div class="navbar">
             <a href="/">Home</a>
             <a href="/index">Config</a>
@@ -67,6 +162,12 @@
                         <input type="text" id="rs485_receive" value="{{ RS485_read }}" readonly>
                     </div>
                 </div>
+                <div class="status-strip" id="statusStrip" style="display:none;">
+                    <div class="tile"><span class="label">Port</span><span class="value" id="st_port">-</span></div>
+                    <div class="tile"><span class="label">Angle</span><span class="value" id="st_angle">-</span></div>
+                    <div class="tile" id="st_gear_tile"><span class="label">Electronic gear</span><span class="value" id="st_gear">-</span></div>
+                    <div class="tile" id="st_home_tile"><span class="label">Home (this session)</span><span class="value" id="st_home">-</span></div>
+                </div>
                 <div class="commands">
                     <h2>Commands</h2>
                     <div class="button-container"><button class="button" data-action="servoOn">SERVO ON</button><span id="servoOn_status"></span></div>
@@ -78,6 +179,7 @@
                     <div class="button-container"><button class="button" data-action="posTestStart_CCW">POS TEST START CCW</button><span id="posTest_status_CCW"></span></div>
                     <div class="button-container"><button class="button" data-action="setPoint_1">SET POINT 1</button><span id="setPoint_1_status"></span></div>
                     <div class="button-container"><button class="button" data-action="setPoint_2">SET POINT 2</button><span id="setPoint_2_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="setHome">SET HOME</button><span id="setHome_status"></span></div>
                     <div class="button-container"><button class="button" data-action="Home">HOME</button><span id="Home_status"></span></div>
                     <div class="button-container"><button class="button" data-action="enableSpeedCtrlMode">ENABLE SPEED CONTROL MODE</button><span id="enableSpeedCtrlMode_status"></span></div>
                     <div class="button-container"><button class="button" data-action="motionStart_CW">MOTION START CW</button><span id="motionStart_CW_status"></span></div>

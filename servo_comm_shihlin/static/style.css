@@ -199,3 +199,64 @@ main {
 /* This media query targets screens with a max-width of 600px, optimizing the layout for mobile devices. The adjustments include stacking form elements vertically, ensuring buttons and navbar links are full width for easier interaction, and adjusting margins and paddings for compactness. */
 
 /* The :active pseudo-class adds a tactile feedback effect for buttons, and the @media (hover: hover) query ensures hover effects apply only to devices that support hovering, improving the user experience on touch devices. */
+
+/* Shown across the top while the app has no serial port connection. */
+.connection-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding: 10px 16px;
+    background: #7a1f1f;
+    color: #fff;
+    font-size: 14px;
+    border-radius: 4px;
+}
+.connection-banner .banner-button {
+    padding: 6px 14px;
+    border: 1px solid #fff;
+    border-radius: 4px;
+    background: transparent;
+    color: #fff;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+/* Live status strip. */
+.status-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 12px 0;
+}
+.status-strip .tile {
+    background: #252526;
+    border-left: 4px solid #3c3c3c;
+    border-radius: 4px;
+    padding: 8px 12px;
+    min-width: 140px;
+}
+.status-strip .tile .label { display: block; font-size: 11px; color: #808080; text-transform: uppercase; }
+.status-strip .tile .value { display: block; font-size: 16px; font-weight: bold; color: #dcdcdc; }
+.status-strip .tile.alert { border-left-color: #e74c3c; }
+.status-strip .tile.alert .value { color: #e74c3c; }
+
+/* Modal dialog (SET HOME reminder/confirmation). */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.75);
+    align-items: center;
+    justify-content: center;
+}
+.modal {
+    max-width: 480px;
+    padding: 20px 24px;
+    background: #1E1E1E;
+    border: 1px solid #3c3c3c;
+    border-radius: 8px;
+    color: #dcdcdc;
+}
+.modal-actions { margin-top: 12px; }
