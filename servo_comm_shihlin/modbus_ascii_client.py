@@ -36,8 +36,15 @@ class ModbusASCIIClient:
     def _initialize(self, device_number: int, serial_port_manager: SerialPortManager):
         """Initialize the Modbus ASCII client."""
         if hasattr(self, '_is_initialized') and self._is_initialized:
+            # The client is a singleton, so a reconnect (a new
+            # SerialPortManager after the port was missing or the profile
+            # changed) must re-bind it: otherwise it keeps talking through the
+            # old, closed manager forever.
+            if serial_port_manager is not None and serial_port_manager is not self.serial_port_manager:
+                self.serial_port_manager = serial_port_manager
+                logger.info("ModbusASCIIClient re-bound to a new serial port manager.")
             return
-        
+
         if device_number is None or serial_port_manager is None:
             raise ValueError("Device number and serial port manager must be provided.")
         
