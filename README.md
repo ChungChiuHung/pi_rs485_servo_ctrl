@@ -108,7 +108,13 @@ number 1. Set the driver parameters to match (manual §9.2):
 git clone https://github.com/ChungChiuHung/pi_rs485_servo_ctrl.git
 cd pi_rs485_servo_ctrl
 pip3 install -r requirements.txt
+sudo apt install python3-rpi.gpio   # GPIO; not in requirements.txt (pip can't always build it)
 ```
+
+> On Raspberry Pi OS Bookworm a global `pip3 install` is refused (PEP 668).
+> Use a virtual environment that can still see the apt GPIO package:
+> `python3 -m venv --system-site-packages .venv && . .venv/bin/activate`, then
+> run the `pip3 install` line above.
 
 > **Pushing changes back:** the HTTPS clone above works fine for pulling, but
 > GitHub no longer accepts password authentication for `git push` over

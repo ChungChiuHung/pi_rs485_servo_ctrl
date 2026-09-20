@@ -1,5 +1,13 @@
 # Raspberry Pi install. On a PC or Mac use servo_comm_shihlin_unified/requirements_pc.txt
-# (or the launcher next to it), which is the same list without RPi.GPIO.
+# (or the launcher next to it); it is the same list.
+#
+# RPi.GPIO is deliberately NOT listed: pip cannot build it on some setups
+# ("Failed building wheel for RPi.GPIO" -- Python 3.12+, a Pi 5, or a non-Pi
+# aarch64 machine), and Raspberry Pi OS already provides it:
+#     sudo apt install python3-rpi.gpio
+# (in a venv, create it with --system-site-packages so it can see that package;
+# a Pi 5 needs the drop-in `rpi-lgpio` instead). The apps import GPIO inside a
+# try, so they also start without it.
 #
 # Lower bounds only, no lockfile. Tested with Flask 2.3.2 and 3.1.3 (Werkzeug
 # 2.3.4 / 3.1.8), pyserial 3.5, python-osc 1.8.3 on Python 3.9. Flask 2.3 is the
@@ -8,6 +16,3 @@
 pyserial>=3.5
 flask>=2.3
 python-osc>=1.7.0
-# Only builds/imports on a Raspberry Pi; skipped elsewhere so this file no longer
-# fails to install on a PC. The apps treat GPIO as optional.
-RPi.GPIO>=0.7.1; platform_machine == "armv7l" or platform_machine == "aarch64"

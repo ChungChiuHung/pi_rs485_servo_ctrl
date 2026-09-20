@@ -57,9 +57,8 @@ syntax-checked only.
 3. The servo drive wired to the adapter and powered on.
 
 > Use `servo_comm_shihlin_unified/requirements_pc.txt` (the launchers already
-> do). The repo-root `requirements.txt` is the Raspberry Pi list: it only
-> installs `RPi.GPIO` on a Pi (`platform_machine` marker), so it no longer
-> fails on a PC, but this file is the one to keep in step for PC use.
+> do). The repo-root `requirements.txt` is the same list for the Raspberry Pi;
+> neither installs `RPi.GPIO` (on a Pi it comes from apt).
 
 ## Quick start
 
@@ -93,8 +92,8 @@ section, or the HTTP API. Full reference: `OSC_ARTNET_GUIDE.md`.
   PATH. Reinstall from python.org with "Add to PATH" checked, or use the
   `py` launcher (`py app.py`) if that's what your install provides.
 - **`pip install` fails on `RPi.GPIO`** — an older checkout of the root
-  `requirements.txt` (before it skipped `RPi.GPIO` off-Pi). Use this
-  folder's `requirements_pc.txt`. The app doesn't need the package off-Pi; it
+  `requirements.txt`, which listed it. Update, or use this folder's
+  `requirements_pc.txt`. The app doesn't need the package off-Pi; it
   degrades gracefully without it (see `app.py`'s GPIO import).
 - **Serial port / COM port errors, or `/status` shows
   `"connected_port": "Not connected"`** — most often another copy of
