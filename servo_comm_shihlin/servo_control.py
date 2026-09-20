@@ -67,6 +67,10 @@ class ServoController:
         self.completed_cnt = 0
         #self.abs_home_pos = 1184347
         self.abs_home_pos = self.load_abs_home_pos()
+        # Recorded by SET POINT 1/2 (degrees from home, None = never recorded)
+        # and persisted next to abs_home_pos in servo_config.json.
+        self.set_point_1 = self._load_config_value("set_point_1")
+        self.set_point_2 = self._load_config_value("set_point_2")
         # PA06/PA07 as (cmx, cdv), and whether they are 1:1 (None = unread):
         # see check_electronic_gear_ratio().
         self.electronic_gear = None
@@ -77,25 +81,71 @@ class ServoController:
         self.home_set_since_start = False
         self._event_listeners = {"on_motion_completed": [], "on_moving": []}
 
-    def load_abs_home_pos(self) -> int:
+    def _load_config_dict(self) -> dict:
         try:
             with open(self.CONFIG_FILE, 'r') as file:
-                config = json.load(file)
-            return config.get("abs_home_pos", 1184347)
+                return json.load(file)
         except FileNotFoundError:
             logging.warning("Config file not found.")
-            return 1184347
+            return {}
         except json.JSONDecodeError as e:
             logging.error(f"Error parsing configuration file: {e}.")
-            return 1184347
-        
-    def save_abs_home_pos(self, abs_home_pos: int):
+            return {}
+
+    def _load_config_value(self, key: str, default=None):
+        return self._load_config_dict().get(key, default)
+
+    def _save_config_value(self, key: str, value) -> None:
+        """Read-modify-write the whole config dict: this file holds several
+        independent values (abs_home_pos, set_point_1, set_point_2), and
+        rewriting it with only one key would silently erase the others (the
+        old save_abs_home_pos() did exactly that)."""
+        config = self._load_config_dict()
+        config[key] = value
         try:
             with open(self.CONFIG_FILE, 'w') as file:
-                json.dump({"abs_home_pos": abs_home_pos}, file)
-            logging.info(f"Saved abs_home_pos: {abs_home_pos} to {self.CONFIG_FILE}")
+                json.dump(config, file)
+            logging.info(f"Saved {key}: {value} to {self.CONFIG_FILE}")
         except Exception as e:
-            logging.error(f"Error saving abs_home_pos: {e}")
+            logging.error(f"Error saving {key}: {e}")
+
+    def load_abs_home_pos(self) -> int:
+        return self._load_config_value("abs_home_pos", 1184347)
+
+    def save_abs_home_pos(self, abs_home_pos: int):
+        self._save_config_value("abs_home_pos", abs_home_pos)
+
+    def record_set_point(self, n: int) -> float:
+        """Persists the drive's CURRENT angle as Set Point 1 or 2 -- does not
+        move the motor. The position is read from the drive first (the
+        tracked current_angle is only kept fresh by the reading thread, so
+        right after a start it is 0.0); if it cannot be read, nothing is
+        recorded and PositionUnavailableError is raised. Returns the angle."""
+        if n not in (1, 2):
+            raise ValueError(f"Set Point must be 1 or 2, got {n!r}.")
+        if not self._refresh_current_angle_from_hardware():
+            raise PositionUnavailableError(
+                "Could not read the current position from the drive; Set Point not recorded."
+            )
+        with self.lock:
+            angle = self.current_angle
+        self._save_config_value(f"set_point_{n}", angle)
+        setattr(self, f"set_point_{n}", angle)
+        logging.info(f"Set Point {n} recorded: {angle} deg")
+        return angle
+
+    def move_to_set_point(self, n: int, acc_dec_time: int = 5000, speed_rpm: int = 10) -> None:
+        """Commands a move to the previously recorded Set Point 1 or 2 via the
+        same closed-loop post_step_motion_by() path as HOME. Raises ValueError
+        if n isn't 1/2, or if that set point has never been recorded -- a
+        default target (e.g. 0) must never be used in that case."""
+        if n not in (1, 2):
+            raise ValueError(f"Set Point must be 1 or 2, got {n!r}.")
+        target_angle = getattr(self, f"set_point_{n}")
+        if target_angle is None:
+            raise ValueError(f"Set Point {n} has not been recorded yet.")
+        logging.info(f"Moving to Set Point {n}: {target_angle} deg")
+        self.post_step_motion_by(target_angle, acc_dec_time, speed_rpm)
 
     def register_event_listener(self, event_name: str, callback: Callable):
         """Register a callback for a specific event."""
