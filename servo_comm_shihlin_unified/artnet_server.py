@@ -181,7 +181,14 @@ class ArtNetInputServer:
             angle_raw = (angle_high_byte << 8) | angle_low_byte
             angle = angle_raw / 65535 * self.position_mode_max_angle
             speed_rpm = max(1, round(speed_channel / 255 * self.max_speed_rpm))
-            self.servo_ctrller.post_step_motion_by(angle, self.acc_time, speed_rpm)
+            # Consume the edge BEFORE moving: a refused move (position
+            # unreadable) must not be retried on every frame at 30-44 fps.
+            self._last_position_trigger_channel = position_trigger_channel
+            try:
+                self.servo_ctrller.post_step_motion_by(angle, self.acc_time, speed_rpm)
+            except Exception as e:
+                logger.error(f"Art-Net: position-mode move to {angle:.2f} deg refused: {e}")
+                return
             logger.info(
                 f"Art-Net: position-mode move to {angle:.2f} deg at {speed_rpm} rpm "
                 f"(channel 4 rising edge, channels 5-6 = {angle_raw}, channel 7 = {speed_channel})."

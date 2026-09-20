@@ -23,7 +23,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from servo_control import (
-    ServoController, is_alarm_active, NO_ALARM_CODES,
+    ServoController, PositionUnavailableError, is_alarm_active, NO_ALARM_CODES,
     STILL_THRESHOLD_PULSES, STILL_COUNT_TO_COMPLETE,
 )
 from modbus_utils import ModbusUtils
@@ -150,6 +150,7 @@ class TestPostStepMotionByClosedLoop(unittest.TestCase):
 
     def test_diff_uses_target_minus_current_angle(self):
         ctrl = make_controller()
+        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)
         ctrl._execute_positioning = MagicMock()
         ctrl.current_angle = 30.0  # as if fed by the continuous-reading loop
 
@@ -165,6 +166,7 @@ class TestPostStepMotionByClosedLoop(unittest.TestCase):
 
     def test_180_degree_guard_blocks_large_positive_change(self):
         ctrl = make_controller()
+        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)
         ctrl._execute_positioning = MagicMock()
         ctrl.current_angle = 0.0
 
@@ -174,6 +176,7 @@ class TestPostStepMotionByClosedLoop(unittest.TestCase):
 
     def test_180_degree_guard_blocks_large_negative_change(self):
         ctrl = make_controller()
+        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)
         ctrl._execute_positioning = MagicMock()
         ctrl.current_angle = 0.0
 
@@ -183,6 +186,7 @@ class TestPostStepMotionByClosedLoop(unittest.TestCase):
 
     def test_directional_float_error_accumulation(self):
         ctrl = make_controller()
+        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)
         ctrl._execute_positioning = MagicMock()
         ctrl.current_angle = 0.0
         ctrl.float_error = 0.0
@@ -201,6 +205,7 @@ class TestPostStepMotionByClosedLoop(unittest.TestCase):
 
     def test_accumulate_pulse_increases_with_motion(self):
         ctrl = make_controller()
+        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)
         ctrl._execute_positioning = MagicMock()
         ctrl.current_angle = 0.0
         ctrl.accumulate_pulse = 0
@@ -208,6 +213,56 @@ class TestPostStepMotionByClosedLoop(unittest.TestCase):
         ctrl.post_step_motion_by(angle=10.0)
 
         self.assertGreater(ctrl.accumulate_pulse, 0)
+
+
+    def test_reads_the_real_position_before_computing_the_move(self):
+        """Regression test for E1 (docs §7.E1): current_angle is stale (0.0)
+        right after a process start. Real position 14.43 deg, target 20 deg:
+        the move must be 5.57 deg, not 20."""
+        ctrl = make_controller()
+        ctrl._execute_positioning = MagicMock()
+        ctrl.current_angle = 0.0  # stale __init__ default
+
+        def fake_refresh():
+            ctrl.current_angle = 14.43
+            return True
+
+        ctrl._refresh_current_angle_from_hardware = MagicMock(side_effect=fake_refresh)
+
+        ctrl.post_step_motion_by(angle=20.0)
+
+        self.assertAlmostEqual(ctrl._execute_positioning.call_args[0][0], 5.57, places=4)
+
+    def test_already_at_target_after_refresh_does_not_move(self):
+        # The exact 2026-09-19 case: motor really at 14.43 = target.
+        ctrl = make_controller()
+        ctrl._execute_positioning = MagicMock()
+        ctrl.current_angle = 0.0
+
+        def fake_refresh():
+            ctrl.current_angle = 14.43
+            return True
+
+        ctrl._refresh_current_angle_from_hardware = MagicMock(side_effect=fake_refresh)
+
+        ctrl.post_step_motion_by(angle=14.43)
+
+        ctrl._execute_positioning.assert_not_called()
+
+    def test_refuses_to_move_when_the_position_cannot_be_read(self):
+        ctrl = make_controller()
+        ctrl._execute_positioning = MagicMock()
+        ctrl.current_angle = 0.0
+        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=False)
+
+        with self.assertRaises(PositionUnavailableError):
+            ctrl.post_step_motion_by(angle=20.0)
+
+        ctrl._execute_positioning.assert_not_called()
+
+    def test_position_unavailable_is_a_value_error(self):
+        # move_to_set_point()'s callers already turn ValueError into a 400.
+        self.assertTrue(issubclass(PositionUnavailableError, ValueError))
 
 
 class TestCancelContinuousReading(unittest.TestCase):
@@ -421,22 +476,18 @@ class TestMoveToSetPoint(unittest.TestCase):
 
         ctrl.post_step_motion_by.assert_called_once_with(99.0, 5000, 10)
 
-    def test_refreshes_current_angle_before_moving(self):
-        """Regression test: move_to_set_point() must refresh current_angle
-        from a real encoder read before computing the move -- otherwise a
-        call right after a process restart (before the continuous-reading
-        thread has ever run) moves relative to the stale __init__ default
-        (0.0) instead of the real position. Confirmed live 2026-09-19: a
-        move-to-14.43deg landed at 28.86deg, exactly double, because of
-        this."""
+    def test_unreadable_position_refuses_the_move_end_to_end(self):
+        """With the real post_step_motion_by(): a position that can't be read
+        must surface as a ValueError and never reach the positioning code."""
         ctrl = make_controller()
         ctrl.set_point_1 = 45.5
-        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)
-        ctrl.post_step_motion_by = MagicMock()
+        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=False)
+        ctrl._execute_positioning = MagicMock()
 
-        ctrl.move_to_set_point(1)
+        with self.assertRaises(ValueError):
+            ctrl.move_to_set_point(1)
 
-        ctrl._refresh_current_angle_from_hardware.assert_called_once()
+        ctrl._execute_positioning.assert_not_called()
 
     def test_unrecorded_set_point_raises_without_moving(self):
         ctrl = make_controller()
@@ -448,7 +499,6 @@ class TestMoveToSetPoint(unittest.TestCase):
             ctrl.move_to_set_point(1)
 
         ctrl.post_step_motion_by.assert_not_called()
-        ctrl._refresh_current_angle_from_hardware.assert_not_called()
 
     def test_invalid_set_point_number_raises(self):
         ctrl = make_controller()
@@ -794,14 +844,6 @@ class TestAbsoluteModePositioning(unittest.TestCase):
         self.assertIsNone(ctrl.abs_home_pos_absolute)
         self.assertEqual(ctrl.current_angle, 42.0)
 
-    def test_move_to_set_point_refuses_when_position_unreadable(self):
-        ctrl = make_controller()
-        ctrl.set_point_1 = 10.0
-        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=False)
-        ctrl.post_step_motion_by = MagicMock()
-        with self.assertRaises(ValueError):
-            ctrl.move_to_set_point(1)
-        ctrl.post_step_motion_by.assert_not_called()
 
 class TestFeedbackReadersAndGearRatio(unittest.TestCase):
 

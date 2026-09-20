@@ -230,6 +230,17 @@ class HomeReminderAndSetHomeTests(unittest.TestCase):
         # says a reminder is needed.
         self.assertIn('id="homeModal" style="display:none;"', html)
 
+    def test_home_reports_502_when_the_position_cannot_be_read(self):
+        self.ctrl.post_step_motion_by.side_effect = app_module.PositionUnavailableError("no position")
+        response = self.client.post("/action", json={"action": "Home"})
+        self.assertEqual(response.status_code, 502)
+        self.assertIn("no position", response.get_json()["message"])
+
+    def test_home_moves_when_the_position_is_readable(self):
+        response = self.client.post("/action", json={"action": "Home"})
+        self.assertEqual(response.status_code, 200)
+        self.ctrl.post_step_motion_by.assert_called_once_with(0)
+
     def test_set_home_refused_while_motion_is_running(self):
         self.ctrl.reading_active = True
         response = self.client.post("/action", json={"action": "setHome"})

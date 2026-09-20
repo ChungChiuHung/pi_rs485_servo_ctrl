@@ -9,7 +9,7 @@ from functools import wraps
 from flask import Flask, render_template, request, jsonify, Response, redirect
 
 from serial_port_manager import SerialPortManager
-from servo_control import ServoController, is_alarm_active, alarm_name
+from servo_control import ServoController, PositionUnavailableError, is_alarm_active, alarm_name
 from motor_profile import load_profiles, resolve_profile
 from hardware_lock import hardware_serialized, run_when_idle
 from input_validation import validate_int_range
@@ -679,7 +679,10 @@ def handle_action():
                 "message": "Home was NOT set: the position could not be read from the drive.",
             }), 502
     elif action == "Home":
-        servo_ctrller.post_step_motion_by(0)
+        try:
+            servo_ctrller.post_step_motion_by(0)
+        except PositionUnavailableError as e:
+            return jsonify({"status": "error", "action": action, "message": str(e)}), 502
     elif action == "enableSpeedCtrlMode":
         # JOG speed command (0x0903): manual's documented range is 0~3000
         # rpm -- see docs/en_manual.txt:10367-10373.

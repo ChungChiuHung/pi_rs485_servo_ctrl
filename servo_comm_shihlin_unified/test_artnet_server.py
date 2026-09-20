@@ -227,6 +227,22 @@ def frame12(servo=0, clear=0, back_home=0, set_home=0, reset_abs=0):
     return bytes([0, 0, 0, 0, 0, 0, 0, servo, clear, back_home, set_home, reset_abs])
 
 
+    def test_refused_move_is_not_retried_and_does_not_block_other_channels(self):
+        """A position-mode move that is refused (drive position unreadable,
+        PositionUnavailableError) must consume the trigger edge -- otherwise
+        it is retried on every 30-44 fps frame -- and must not abort the
+        rest of the frame (here: servo-on on channel 8)."""
+        server, ctrl = make_server()
+        ctrl.post_step_motion_by.side_effect = ValueError("position unavailable")
+        frame = bytes([0, 0, 0, 255, 0x80, 0x00, 128, 200, 0, 0, 0, 0])
+
+        server._handle_dmx(universe=0, data=frame)
+        server._handle_dmx(universe=0, data=frame)
+
+        self.assertEqual(ctrl.post_step_motion_by.call_count, 1)
+        ctrl.servo_on.assert_called_once()
+
+
 class TestExtendedChannels(unittest.TestCase):
     """Channels 8-12 -- servo on/off, clear alarm, back home, set home,
     reset initial absolute position. Mirrors OSC's /servo, /clear,

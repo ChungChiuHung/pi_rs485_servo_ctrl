@@ -80,6 +80,12 @@ ABSOLUTE_SYSTEM_ALARM_NAMES = {
 }
 
 
+class PositionUnavailableError(ValueError):
+    """The drive's current position could not be read (or, in absolute mode,
+    cannot be trusted), so a position-relative move was refused rather than
+    computed from a stale angle."""
+
+
 def alarm_name(alarm_code):
     """Human-readable name for the alarms this module knows about, else None."""
     return ABSOLUTE_SYSTEM_ALARM_NAMES.get(alarm_code)
@@ -269,17 +275,8 @@ class ServoController:
         target_angle = getattr(self, f"set_point_{n}")
         if target_angle is None:
             raise ValueError(f"Set Point {n} has not been recorded yet.")
-        # post_step_motion_by() computes a RELATIVE move from
-        # self.current_angle, which is otherwise only updated by the
-        # continuous-reading background thread -- refresh it from a real
-        # encoder read first so a call right after a process restart (before
-        # that thread has ever run) doesn't move relative to a stale
-        # default. See _refresh_current_angle_from_hardware()'s docstring.
-        if not self._refresh_current_angle_from_hardware():
-            raise ValueError(
-                "Could not read the current position from the drive; refusing to move "
-                "(a relative move from a stale position would land in the wrong place)."
-            )
+        # post_step_motion_by() reads the real position itself (and raises
+        # PositionUnavailableError, a ValueError, if it can't).
         logging.info(f"Moving to Set Point {n}: {target_angle} deg")
         self.post_step_motion_by(target_angle, acc_dec_time, speed_rpm)
 
@@ -1474,6 +1471,21 @@ class ServoController:
         return angle_rotated
 
     def post_step_motion_by(self, angle: float = 0.0, acc_dec_time: int = 5000, speed_rpm: int = 10):
+        """Moves to the absolute `angle` (degrees from home) by commanding the
+        RELATIVE difference from the drive's current angle. Every caller (web
+        HOME, MOVE TO SET POINT, OSC /set_point, Art-Net ch4) needs that
+        difference computed from the REAL position: current_angle is
+        otherwise only updated by the continuous-reading thread, so right
+        after a process start it still holds its __init__ default (0.0) and a
+        move computed from it lands at the wrong angle -- seen live
+        2026-09-19 (target 14.43 deg landed at 28.86 deg). So the position is
+        read from the drive first. Raises PositionUnavailableError, without
+        moving, if it can't be read or (absolute mode) can't be trusted."""
+        if not self._refresh_current_angle_from_hardware():
+            raise PositionUnavailableError(
+                "Could not read the current position from the drive; refusing to move "
+                "(a move computed from a stale position would land in the wrong place)."
+            )
         with self.lock:
             self.previous_angle = self.current_angle
             self.target_angle = angle
