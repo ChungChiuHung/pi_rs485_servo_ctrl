@@ -56,11 +56,10 @@ syntax-checked only.
    port it landed on — the server auto-detects it.
 3. The servo drive wired to the adapter and powered on.
 
-> **⚠️ Do not run `pip install -r requirements.txt` from the repo root.**
-> That file includes `RPi.GPIO` and `gpiozero`, which only build on a Pi
-> and will fail to install on Windows. Use
-> `servo_comm_shihlin_unified/requirements_pc.txt` instead (the batch
-> file already does this for you).
+> Use `servo_comm_shihlin_unified/requirements_pc.txt` (the launchers already
+> do). The repo-root `requirements.txt` is the Raspberry Pi list: it only
+> installs `RPi.GPIO` on a Pi (`platform_machine` marker), so it no longer
+> fails on a PC, but this file is the one to keep in step for PC use.
 
 ## Quick start
 
@@ -93,10 +92,10 @@ section, or the HTTP API. Full reference: `OSC_ARTNET_GUIDE.md`.
 - **"Python was not found" / `python` not recognized** — Python isn't on
   PATH. Reinstall from python.org with "Add to PATH" checked, or use the
   `py` launcher (`py app.py`) if that's what your install provides.
-- **`pip install` fails on `RPi.GPIO` or `gpiozero`** — you used the root
-  `requirements.txt` instead of this folder's `requirements_pc.txt`. The
-  app doesn't need those packages off-Pi; it degrades gracefully without
-  them (see `app.py`'s GPIO import).
+- **`pip install` fails on `RPi.GPIO`** — an older checkout of the root
+  `requirements.txt` (before it skipped `RPi.GPIO` off-Pi). Use this
+  folder's `requirements_pc.txt`. The app doesn't need the package off-Pi; it
+  degrades gracefully without it (see `app.py`'s GPIO import).
 - **Serial port / COM port errors, or `/status` shows
   `"connected_port": "Not connected"`** — most often another copy of
   `app.py` is already running and holding the port (check other terminal
