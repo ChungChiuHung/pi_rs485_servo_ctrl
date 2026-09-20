@@ -480,6 +480,17 @@
                 // Never sends a write/motion command; see GET /status.
                 function pollStatus() {
                     $.get('/status', function(response) {
+                        if (response.connected === false) {
+                            // The app is running but has no serial port: say so
+                            // and stop here (every other field needs the drive).
+                            $('#serialBanner').show();
+                            $('#serialBannerReason').text(response.connection_error || '');
+                            $('#status_connected_port').text('not connected');
+                            $('#status_baud_rate').text('-');
+                            $('.status-tile').addClass('disconnected');
+                            return;
+                        }
+                        $('#serialBanner').hide();
                         $('#status_connected_port').text(response.connected_port);
                         $('#status_baud_rate').text(response.baud_rate);
                         $('#status_reading_active').text(response.reading_active ? 'Yes' : 'No');
@@ -589,6 +600,24 @@
 
                 pollStatus();
                 setInterval(pollStatus, 1000);
+
+                // Retry opening the serial port (never moves the motor).
+                $('#reconnectBtn').click(function() {
+                    $('#reconnectStatus').text('Connecting...');
+                    $.ajax({
+                        url: '/reconnect',
+                        type: 'POST',
+                        success: function() {
+                            $('#reconnectStatus').text('');
+                            loadProfile();
+                            pollStatus();
+                        },
+                        error: function(xhr) {
+                            $('#reconnectStatus').text('Failed: ' +
+                                ((xhr.responseJSON && xhr.responseJSON.message) || 'error'));
+                        }
+                    });
+                });
 
                 // Activity log -- lets a user who isn't watching this
                 // process's own console see what every action (including
@@ -724,6 +753,13 @@
                 </div>
                 <span class="section-note" id="homeModal_status"></span>
             </div>
+        </div>
+        <div class="connection-banner" id="serialBanner" style="display:none;" role="alert">
+            <span><strong>No RS-485 serial port connection.</strong>
+                  Motor control is unavailable; nothing is being sent to the drive.
+                  <span id="serialBannerReason"></span></span>
+            <button class="banner-button" id="reconnectBtn">Reconnect</button>
+            <span id="reconnectStatus"></span>
         </div>
         <div class="app-shell">
             <aside class="sidebar">

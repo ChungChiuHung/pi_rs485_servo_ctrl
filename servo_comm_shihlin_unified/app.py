@@ -92,12 +92,17 @@ servo_ctrller = None
 active_input_server = None
 # The actual running OSCInputServer/ArtNetInputServer object, or None.
 _input_server_instance = None
+# Why the serial port is not open (None while connected). The web UI still
+# starts without a port so the operator can see this and retry; see
+# _require_serial_connection().
+_connection_error = None
 
 
 def _connect_profile(profile_name: str) -> None:
     """(Re)open the serial port for profile_name and rebuild ServoController
-    against it. Raises RuntimeError if the port can't be opened. Caller must
-    hold _state_lock.
+    against it. Raises RuntimeError if the port can't be opened (the reason is
+    also kept in _connection_error for the web UI). Caller must hold
+    _state_lock.
 
     Closes any existing connection FIRST: both profiles share the same
     physical port (just at a different baud rate), so a second
@@ -106,7 +111,7 @@ def _connect_profile(profile_name: str) -> None:
     disconnected rather than falling back to the previous profile --
     acceptable here since there's only one physical port to share.
     """
-    global serial_manager, servo_ctrller, current_profile_name
+    global serial_manager, servo_ctrller, current_profile_name, _connection_error
 
     profile = resolve_profile(_profiles_data, profile_name)
 
@@ -116,16 +121,27 @@ def _connect_profile(profile_name: str) -> None:
         servo_ctrller = None
 
     new_serial_manager = SerialPortManager(baud_rate=profile["baud_rate"])
-    new_serial_manager.connect()
-    if not new_serial_manager.get_serial_instance():
-        raise RuntimeError(
-            f"Could not open a serial port at {profile['baud_rate']} baud "
-            f"for profile '{profile_name}'."
-        )
+    try:
+        new_serial_manager.connect()
+        if not new_serial_manager.get_serial_instance():
+            raise RuntimeError(
+                f"Could not open a serial port at {profile['baud_rate']} baud "
+                f"for profile '{profile_name}'."
+            )
+        new_controller = ServoController(new_serial_manager, profile)
+    except Exception as e:
+        # Don't leave a half-opened port behind: it would block the retry.
+        try:
+            new_serial_manager.disconnect()
+        except Exception:
+            pass
+        _connection_error = str(e)
+        raise
 
     serial_manager = new_serial_manager
-    servo_ctrller = ServoController(serial_manager, profile)
+    servo_ctrller = new_controller
     current_profile_name = profile_name
+    _connection_error = None
     # First communication after connect: make sure PA23 inhibits EEPROM
     # writes BEFORE anything below (or any later action) writes PD16/PD25 --
     # on older firmware PA23=1 reverts to 0 at every power-off, so this is
@@ -154,15 +170,54 @@ def _connect_profile(profile_name: str) -> None:
 
 
 with _state_lock:
-    _connect_profile(current_profile_name)
+    try:
+        _connect_profile(current_profile_name)
+    except Exception as e:
+        # No serial port (adapter unplugged, wrong port, drive off...) must
+        # not stop the web UI from starting: it shows the problem and offers
+        # a retry (POST /reconnect) instead. Nothing can move the motor
+        # without a connection -- see _require_serial_connection().
+        logging.error(
+            f"Starting WITHOUT a serial connection ({e}). The web UI is up "
+            "but motor control is unavailable until the port is connected "
+            "and Reconnect is pressed."
+        )
+
+
+# Endpoints that work without a serial connection: the page itself, read-only
+# status/log views, and the two ways to (re)connect. Everything else talks to
+# the drive through servo_ctrller, which is None while disconnected.
+_ENDPOINTS_WITHOUT_SERIAL = frozenset({
+    'static', 'home', 'index', 'get_profile', 'set_profile', 'reconnect_serial',
+    'get_status', 'get_activity_log', 'get_input_server_status', 'get_artnet_channels',
+})
+
+
+@app.before_request
+def _require_serial_connection():
+    if servo_ctrller is not None or request.endpoint is None \
+            or request.endpoint in _ENDPOINTS_WITHOUT_SERIAL:
+        return None
+    return jsonify({
+        "status": "error",
+        "connected": False,
+        "message": "No RS-485 serial port connection"
+                   + (f" ({_connection_error})" if _connection_error else "")
+                   + ". Nothing was sent to the drive. Connect the adapter, then press Reconnect.",
+    }), 503
+
 
 def _current_rs485_traffic():
     """The most recent raw Modbus transaction's bytes, for the web UI's
     "RS-485 Send/Receive" boxes. These used to be a hardcoded placeholder
     ("00 00 FF FF" / "FF FF 00 00") never updated from real traffic --
     now reads ModbusRTUClient.last_sent/last_received directly, which
-    every send()/receive() call updates (see modbus_rtu_client.py)."""
-    client = servo_ctrller.modbus_client
+    every send()/receive() call updates (see modbus_rtu_client.py).
+    Empty while there is no serial connection."""
+    controller = servo_ctrller
+    if controller is None:
+        return "", ""
+    client = controller.modbus_client
     return client.format_hex(client.last_sent), client.format_hex(client.last_received)
 
 
@@ -213,9 +268,21 @@ def get_status():
     alarm_code is a fresh read each call (locked against the
     continuous-reading thread inside read_current_alarm_code()). Never
     triggers any write/motion command -- safe to poll on an interval.
+
+    Without a serial connection it answers {"connected": false, ...} with the
+    reason instead of failing, so the UI can tell the operator.
     """
+    if servo_ctrller is None:
+        return jsonify({
+            "connected": False,
+            "profile": current_profile_name,
+            "connection_error": _connection_error,
+            "connected_port": None,
+            "baud_rate": None,
+        })
     alarm_code = servo_ctrller.read_current_alarm_code()
     return jsonify({
+        "connected": True,
         "profile": current_profile_name,
         "connected_port": serial_manager.get_connected_port(),
         "baud_rate": serial_manager.get_baud_rate(),
@@ -273,6 +340,8 @@ EEPROM_GUARD_INTERVAL_S = 30
 def _eeprom_guard_loop():
     while True:
         time.sleep(EEPROM_GUARD_INTERVAL_S)
+        if servo_ctrller is None:
+            continue  # no serial connection (yet)
         try:
             run_when_idle(lambda: servo_ctrller.ensure_eeprom_write_protection())
         except Exception as e:
@@ -374,7 +443,7 @@ def set_profile():
                        "server is running. Stop it first.",
         }), 409
 
-    if requested == current_profile_name:
+    if requested == current_profile_name and servo_ctrller is not None:
         return jsonify({"status": "success", "active_profile": current_profile_name})
 
     with _state_lock:
@@ -385,6 +454,26 @@ def set_profile():
             return jsonify({"status": "error", "message": str(e)}), 503
 
     return jsonify({"status": "success", "active_profile": current_profile_name})
+
+
+@app.route('/reconnect', methods=['POST'])
+@hardware_serialized
+def reconnect_serial():
+    """Retries opening the serial port for the current profile after the app
+    started (or lost the connection) without one. Nothing is sent to the
+    drive except what every connect does (read PA23/PA28/PA06/PA07, and
+    write PA23 = 1 if EEPROM writes are not yet inhibited) -- it never moves
+    the motor."""
+    if servo_ctrller is not None:
+        return jsonify({"status": "success", "connected": True,
+                        "active_profile": current_profile_name, "message": "Already connected."})
+    with _state_lock:
+        try:
+            _connect_profile(current_profile_name)
+        except Exception as e:
+            logging.error(f"Reconnect failed: {e}")
+            return jsonify({"status": "error", "connected": False, "message": str(e)}), 503
+    return jsonify({"status": "success", "connected": True, "active_profile": current_profile_name})
 
 
 @app.route('/server/status', methods=['GET'])
