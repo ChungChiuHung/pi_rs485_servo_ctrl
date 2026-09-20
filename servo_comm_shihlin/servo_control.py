@@ -23,6 +23,23 @@ PF.init_registers()
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# The alarm monitor register (0x0100) is plain hex, and this driver reports
+# 0xFF (255) -- shown as "AL --" on its panel -- not 0 for "no alarm"
+# (confirmed on real hardware 2026-09-18, servo_comm_shihlin_unified). Treat
+# both as "no alarm"; None (communication failure) is NOT "no alarm".
+NO_ALARM_CODES = frozenset({0, 0xFF})
+
+
+def is_alarm_active(alarm_code) -> bool:
+    if alarm_code is None:
+        return True
+    return alarm_code not in NO_ALARM_CODES
+
+
+class PositionUnavailableError(ValueError):
+    """The drive's current position could not be read, so a position-relative
+    move was refused rather than computed from a stale angle."""
+
 
 class ServoController:
     CONFIG_FILE = "servo_config.json"
@@ -50,6 +67,14 @@ class ServoController:
         self.completed_cnt = 0
         #self.abs_home_pos = 1184347
         self.abs_home_pos = self.load_abs_home_pos()
+        # PA06/PA07 as (cmx, cdv), and whether they are 1:1 (None = unread):
+        # see check_electronic_gear_ratio().
+        self.electronic_gear = None
+        self.electronic_gear_unity = None
+        # True once SET HOME has succeeded since this process started: the
+        # incremental encoder counter restarts at every drive power-on, so a
+        # home saved by an earlier run may not match the shaft.
+        self.home_set_since_start = False
         self._event_listeners = {"on_motion_completed": [], "on_moving": []}
 
     def load_abs_home_pos(self) -> int:
@@ -476,27 +501,23 @@ class ServoController:
         logger.info(response_object.get_value())
 
     def write_PF82(self, execute_PATH_value: int = 0):
-        """
-        This method writes and controls the PATH execution.
-
-        Parameters:
-            execute_PATH_value (int): The PATH number to execute (1~63)
-        """
-        logging.info(f"Address of P{PF.PRCM.no}, {PF.PRCM.name}: {PF.PRCM.address}")
-        # goto_origin = 0
-        # stop_cmd = 1000
-        excute_PATH = execute_PATH_value
-        # Read Value: get the executed PATH situation
-        # 3: PATH#3 is being executed
-        # 1003: PATH#3 command is completed
-        # 2003: PATH#3 positioning is done
-        # Validate the execute_PATH_value
-        if execute_PATH_value < 0 or execute_PATH_value > 9999:
-            raise ValueError("execute_PATH_value must be between 0 and 9999.")
-        if execute_PATH_value >= 64 and execute_PATH_value < 1000:
-            logging.info("Value out of acceptable range.")
-
-        message = self.modbus_client.build_write_message(PF.PRCM.address, 1)
+        """Writes PF82 (PRCM, "PR trigger register"): 0 = execute origin
+        return, 1~63 = execute PATH#1~PATH#63, 1000 = stop; 64~999 is
+        prohibited by the manual. HARDWARE-AFFECTING: starts a real move.
+        (An earlier version ignored its argument and always wrote 1, so every
+        call ran PATH#1.)"""
+        value = execute_PATH_value
+        if isinstance(value, float) and value.is_integer():
+            value = int(value)  # OSC delivers 5.0 for 5
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError("execute_PATH_value must be an integer.")
+        if not (0 <= value <= 63 or value == 1000):
+            raise ValueError(
+                "execute_PATH_value must be 0 (origin return), 1~63 (PATH#), or 1000 (stop); "
+                "64~999 is prohibited by the manual."
+            )
+        logging.info(f"Address of P{PF.PRCM.no}, {PF.PRCM.name}: {PF.PRCM.address} <- {value}")
+        message = self.modbus_client.build_write_message(PF.PRCM.address, value)
         self.response = self.modbus_client.send_and_receive(message)
 
         # Process the response using ModbusResponse
@@ -504,7 +525,7 @@ class ServoController:
             response_object = ModbusResponse(self.response)
             logging.info(f"Parsed Mobus Response: {response_object}")
         except Exception as e:
-            logging.info(f"An unexpected error occurred: {e}")       
+            logging.info(f"An unexpected error occurred: {e}")
 
     # Read Position Control related parameters
 
@@ -637,10 +658,83 @@ class ServoController:
         return None
 
     def read_encoder_after_gear_ratio(self):
+        """0x0024. The English manual calls it the gear-translated count; the
+        Chinese V1.07 manual calls it the pre-gear one -- they contradict, so
+        no position math uses it (at a 1:1 gear ratio it should equal
+        0x0000). Returns the value, or None on any failure."""
         message = self.modbus_client.build_read_message(0x0024, 2)
-        response = self.modbus_client.send_and_receive(message)
-        response_object = ModbusResponse(response)
-        logging.info(response_object)
+        try:
+            response = self.modbus_client.send_and_receive(message)
+            value = ModbusResponse(response).get_value()
+        except Exception as e:
+            logger.error(f"Failed to read the 0x0024 feedback counter: {e}")
+            return None
+        return None if value is None else int(value)
+
+    def _read_parameter(self, register):
+        """A 2-word PA/PD/PE/PF parameter, or None on any failure."""
+        message = self.modbus_client.build_read_message(register.address, 2)
+        try:
+            response = self.modbus_client.send_and_receive(message)
+            value = ModbusResponse(response).get_value()
+        except Exception as e:
+            logger.error(f"Failed to read the parameter at {hex(register.address)}: {e}")
+            return None
+        return None if value is None else int(value)
+
+    def check_electronic_gear_ratio(self):
+        """Reads PA06 (CMX) / PA07 (CDV) and records whether the electronic
+        gear ratio is 1:1. Returns (cmx, cdv), or None if unreadable.
+
+        Positioning commands (0x0905/0x0906 pulses) are multiplied by CMX/CDV
+        before they reach the motor, while every angle here is computed from
+        encoder pulses at 4194304/rev; the two only agree at 1:1. Read-only;
+        warns but never blocks."""
+        cmx = self._read_parameter(PA.CMX)
+        cdv = self._read_parameter(PA.CDV)
+        if cmx is None or cdv is None:
+            self.electronic_gear = None
+            self.electronic_gear_unity = None
+            logger.warning("Could not read PA06/PA07; electronic gear ratio unverified.")
+            return None
+        self.electronic_gear = (cmx, cdv)
+        self.electronic_gear_unity = (cmx == cdv)
+        if not self.electronic_gear_unity:
+            logger.warning(
+                f"Electronic gear ratio is CMX/CDV = {cmx}/{cdv}, not 1:1. Angle and "
+                "positioning math assume 1:1 (command pulses = encoder pulses); "
+                "moves will not match the displayed angle. Set PA06 = PA07 on the drive."
+            )
+        return self.electronic_gear
+
+    def _read_reference_encoder(self):
+        """Fresh wraparound-tracked encoder value, or None on any failure."""
+        try:
+            raw = self.read_encoder_before_gear_ratio()
+        except Exception as e:
+            logger.warning(f"Failed to read the encoder ({e}).")
+            return None
+        if raw is None:
+            return None
+        with self.lock:
+            return self._encoder_tracker.update(raw)
+
+    def _refresh_current_angle_from_hardware(self) -> bool:
+        """One-shot fresh encoder read that brings current_angle/
+        current_encoder up to date immediately, instead of waiting for the
+        continuous-reading thread (the only other writer of these fields).
+        Right after a process start current_angle still holds its __init__
+        default (0.0), and a move computed against it lands in the wrong
+        place -- seen live 2026-09-19 (a move to 14.43 deg landed at 28.86 deg).
+        Returns False, leaving current_angle untouched, on a read failure."""
+        encoder = self._read_reference_encoder()
+        if encoder is None:
+            logging.warning("_refresh_current_angle_from_hardware: no usable position reading.")
+            return False
+        with self.lock:
+            self.current_encoder = encoder
+            self.current_angle = round((encoder - self.abs_home_pos) / 349525.3333333333, 4)
+        return True
 
     def pos_step_motion_test(self, CW=True):
         self.start_continuous_reading()
@@ -652,11 +746,21 @@ class ServoController:
 
     def pos_step_motion_by(self, target_pos: int = 0, acc_dec_time=5000, speed_rpm=10):
         base_pulse_per_degree = 349525.3333333333
-        # Get Current Encoder Value
-        current_pos = self.read_encoder_before_gear_ratio()
+        # Get Current Encoder Value through the wraparound tracker: target_pos
+        # (typically abs_home_pos) is itself a tracker-derived cumulative
+        # value, so comparing it with a raw, wrapping reading would break
+        # once a wrap has occurred.
+        current_pos = self._read_reference_encoder()
+        if current_pos is None:
+            logging.warning("pos_step_motion_by: no usable position reading; not moving.")
+            return 0.0
         logger.info(f"Current Encoder Value: {current_pos}")
         # Set Target Encoder Value
         diff_pulses = target_pos - current_pos
+
+        if abs(diff_pulses) >= base_pulse_per_degree * 180:
+            logging.info("Target position change is 180 degrees or more; refusing to move.")
+            return 0.0
 
         logging.info(f"Diff Pulses: {diff_pulses}")
         move_pulses = abs(diff_pulses)
@@ -678,12 +782,27 @@ class ServoController:
         # 125829120 pulse/rev
         # 349525 + 1/3 pulse/degree
         base_pulse_per_degree = 349525.3333333333
-        
+
+        # Moves to the absolute `angle` by commanding the difference from the
+        # position READ FROM THE DRIVE now (see
+        # _refresh_current_angle_from_hardware()); refuses, without moving,
+        # if it cannot be read.
+        if not self._refresh_current_angle_from_hardware():
+            raise PositionUnavailableError(
+                "Could not read the current position from the drive; refusing to move "
+                "(a move computed from a stale position would land in the wrong place)."
+            )
         self.previous_angle = self.current_angle
         self.target_angle = angle
         diff_angle = self.target_angle - self.current_angle
 
         logger.info(f"Performing motion: Target Angle={self.target_angle}, Previous Angle={self.previous_angle}")
+
+        if abs(diff_angle) >= 180:
+            logger.warning(
+                f"Target angle change ({diff_angle} deg) is 180 degrees or more; refusing to move."
+            )
+            return
 
         if diff_angle != 0.0:
             total_pulse = base_pulse_per_degree * abs(diff_angle)
@@ -755,15 +874,25 @@ class ServoController:
         logging.info(response_object)
 
     def set_home_position(self):
+        # Read first: a failed read must change nothing (it used to zero the
+        # angle and then crash on reset(None)).
+        try:
+            raw_encoder = self.read_encoder_before_gear_ratio()
+        except Exception as e:
+            logger.error(f"set_home_position: encoder unreadable ({e}); home NOT set.")
+            return
+        if raw_encoder is None:
+            logger.error("set_home_position: encoder unreadable; home NOT set.")
+            return
         self.current_angle = 0.0
         self.previous_angle = 0.0
         self.target_angle = 0.0
         self.previous_encoder = self.current_encoder
-        raw_encoder = self.read_encoder_before_gear_ratio()
         self.current_encoder = self._encoder_tracker.reset(raw_encoder)
         self.delay_ms(100)
         self.float_error = 0.0
         self.save_abs_home_pos(self.current_encoder)
+        self.home_set_since_start = True
         logger.info("home position set!!!")
 
     def initial_abs_home(self) -> bool:
