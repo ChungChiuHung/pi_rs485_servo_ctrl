@@ -2,20 +2,25 @@
 # installs the apt packages pip cannot, and builds the virtual environment);
 # on a PC or Mac use servo_comm_shihlin_unified/requirements_pc.txt instead.
 #
-# Lower bounds only, no lockfile. Tested with Flask 2.3.2 and 3.1.3 (Werkzeug
-# 2.3.4 / 3.1.8), pyserial 3.5, python-osc 1.8.3 on Python 3.9 (Windows); the
-# GPIO line has not been run on a Pi from this repo. Flask 2.3 is the floor
-# because 1.x/2.0 pin a Jinja2/itsdangerous/Werkzeug range that current
+# Lower bounds only, no lockfile. Tests run with Flask 2.3.2 and 3.1.3 (Werkzeug
+# 2.3.4 / 3.1.8), pyserial 3.5, python-osc 1.8.3 on Python 3.9 (Windows).
+# Installed by setup_pi.sh on a Pi 3 B (64-bit Raspberry Pi OS trixie, Python
+# 3.13): Flask 3.1.3, pyserial 3.5, python-osc 1.10.2, RPi.GPIO 0.7.1 -- the
+# test suite has not been run against that python-osc yet. Flask 2.3 is the
+# floor because 1.x/2.0 pin a Jinja2/itsdangerous/Werkzeug range that current
 # releases of those no longer satisfy.
 pyserial>=3.5
 flask>=2.3
 python-osc>=1.7.0
 
 # GPIO (DE/RE direction pin, LEDs). Only Linux on ARM (a Pi 3 B runs a 32-bit
-# armv7l or a 64-bit aarch64 OS); skipped elsewhere. pip often cannot BUILD it
-# ("Failed building wheel for RPi.GPIO": no compiler/python3-dev, Python 3.12+,
-# a Pi 5), so setup_pi.sh installs the apt package python3-rpi.gpio first and
-# makes the venv able to see it -- that satisfies this line and pip builds
-# nothing. On a Pi 5 use `rpi-lgpio` instead. The unified and legacy Type 2
-# apps import GPIO in a try and also start without it.
-RPi.GPIO>=0.7.1; platform_machine == "armv7l" or platform_machine == "aarch64"
+# armv7l or a 64-bit aarch64 OS); skipped elsewhere. The floor is 0.7.1a4 on
+# purpose: that is the version Raspberry Pi OS ships as python3-rpi.gpio, and
+# pip counts an alpha as OLDER than 0.7.1, so ">=0.7.1" made pip ignore the apt
+# package and compile its own copy (which fails without a compiler and
+# python3-dev: "Failed building wheel for RPi.GPIO"). With ">=0.7.1a4" the apt
+# package satisfies it and nothing is built; without it pip builds 0.7.1.
+# setup_pi.sh installs both the apt package and the build tools. On a Pi 5 use
+# `rpi-lgpio` instead. The unified and legacy Type 2 apps import GPIO in a try
+# and also start without it.
+RPi.GPIO>=0.7.1a4; platform_machine == "armv7l" or platform_machine == "aarch64"

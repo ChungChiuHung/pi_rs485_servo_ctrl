@@ -3,8 +3,9 @@
 # the project needs. Run from the repository root:  ./setup_pi.sh
 #
 #   1. apt: Python venv support, a compiler and python3-dev (so pip CAN build
-#      anything that has no ready-made wheel), and the ready-made GPIO package
-#      python3-rpi.gpio (pip's own RPi.GPIO build fails on some setups).
+#      a package that has no ready-made wheel), and the ready-made GPIO package
+#      python3-rpi.gpio (0.7.1a4), which requirements.txt accepts so pip does
+#      not have to compile RPi.GPIO itself.
 #   2. A virtual environment in ./.venv that can also see the apt packages
 #      (--system-site-packages). Recent Raspberry Pi OS refuses a global
 #      "pip install" (PEP 668), and this keeps the system Python untouched.
@@ -28,11 +29,12 @@ echo "== 3/3 Python packages =="
 echo
 echo "Check:"
 .venv/bin/python - <<'PY'
-import flask, serial, pythonosc
-print("  flask", flask.__version__, "| pyserial", serial.VERSION, "| python-osc OK")
+from importlib.metadata import version
+import serial, pythonosc
+print("  flask", version("flask"), "| pyserial", serial.VERSION, "| python-osc", version("python-osc"))
 try:
     import RPi.GPIO as GPIO
-    print("  RPi.GPIO", GPIO.VERSION)
+    print("  RPi.GPIO", GPIO.VERSION, "|", GPIO.__file__)
 except Exception as e:
     print("  RPi.GPIO NOT importable (", e, ") -- the Type 2 apps still start without it")
 PY

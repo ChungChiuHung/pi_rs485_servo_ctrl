@@ -111,10 +111,10 @@ cd pi_rs485_servo_ctrl
 ```
 
 `setup_pi.sh` installs everything the Raspberry Pi 3 B needs: the apt packages
-(compiler, `python3-dev`, `python3-venv`, and `python3-rpi.gpio`, because pip
-often fails with "Failed building wheel for RPi.GPIO"), a virtual environment in
-`.venv` that can see those apt packages, and `requirements.txt` (Flask,
-pyserial, python-osc, RPi.GPIO) inside it. Recent Raspberry Pi OS refuses a
+(compiler, `python3-dev`, `python3-venv`, and `python3-rpi.gpio`; without a
+compiler pip fails with "Failed building wheel for RPi.GPIO"), a virtual
+environment in `.venv` that can see those apt packages, and `requirements.txt`
+(Flask, pyserial, python-osc, RPi.GPIO) inside it. Recent Raspberry Pi OS refuses a
 global `pip3 install` (PEP 668), which is why it uses a venv. Run the apps with
 `.venv/bin/python` (or `. .venv/bin/activate` first).
 
