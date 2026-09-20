@@ -1145,26 +1145,25 @@ class ServoController:
         response_object = ModbusRTUResponse(self.response)
         logger.info(response_object.get_value())
 
-    def write_PF82(self, execute_PATH_value: int = 0):
-        """Writes and controls the PATH execution.
+    def write_PF82(self, execute_PATH_value: int = 0) -> bool:
+        """Writes PF82 (PRCM, "PR trigger register"): 0 = execute origin
+        return, 1~63 = execute PATH#1~PATH#63, 1000 = stop; 64~999 is
+        prohibited by the manual (docs/en_manual.txt:6123-6133). Returns True
+        if the drive acknowledged the write. HARDWARE-AFFECTING: starts a
+        real move. Not wired to any web/OSC/Art-Net action.
 
-        Parameters:
-            execute_PATH_value (int): The PATH number to execute (1~63)
-        """
-        logging.info(f"Address of P{PF.PRCM.no}, {PF.PRCM.name}: {PF.PRCM.address}")
-        if execute_PATH_value < 0 or execute_PATH_value > 9999:
-            raise ValueError("execute_PATH_value must be between 0 and 9999.")
-        if execute_PATH_value >= 64 and execute_PATH_value < 1000:
-            logging.info("Value out of acceptable range.")
-
-        message = self.modbus_client.build_write_message(PF.PRCM.address, 1)
-        self.response = self.modbus_client.send_and_receive(message)
-
-        try:
-            response_object = ModbusRTUResponse(self.response)
-            logging.info(f"Parsed Mobus Response: {response_object}")
-        except Exception as e:
-            logging.info(f"An unexpected error occurred: {e}")
+        (An earlier version ignored its argument and always wrote 1, so every
+        call ran PATH#1.)"""
+        value = execute_PATH_value
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError("execute_PATH_value must be an integer.")
+        if not (0 <= value <= 63 or value == 1000):
+            raise ValueError(
+                "execute_PATH_value must be 0 (origin return), 1~63 (PATH#), or 1000 (stop); "
+                "64~999 is prohibited by the manual."
+            )
+        logger.info(f"Address of P{PF.PRCM.no}, {PF.PRCM.name}: {hex(PF.PRCM.address)} <- {value}")
+        return self._write_parameter(PF.PRCM, value)
 
     # Registers whose value is a packed bitfield/mask (manual pp.83-90,
     # 105-108), not a plain measurement -- decoded via the matching

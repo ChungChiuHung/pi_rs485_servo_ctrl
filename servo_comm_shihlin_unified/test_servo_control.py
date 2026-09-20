@@ -1143,13 +1143,34 @@ class TestWritePF82Validation(unittest.TestCase):
         with self.assertRaises(ValueError):
             ctrl.write_PF82(10000)
 
-    def test_accepts_in_range_value(self):
+    def test_rejects_the_prohibited_range_64_to_999(self):
         ctrl = make_controller()
-        ctrl.modbus_client = MagicMock()
-        ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
-        with patch("servo_control.ModbusRTUResponse"):
-            ctrl.write_PF82(5)  # must not raise
-        ctrl.modbus_client.build_write_message.assert_called_once_with(PF.PRCM.address, 1)
+        for value in (64, 500, 999):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    ctrl.write_PF82(value)
+
+    def test_rejects_non_integers(self):
+        ctrl = make_controller()
+        for value in (2.5, "3", None, True):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    ctrl.write_PF82(value)
+
+    def test_writes_the_requested_path_number_not_a_constant(self):
+        """Regression: write_PF82() used to ignore its argument and always
+        write 1 (so every call ran PATH#1)."""
+        for value in (0, 1, 5, 63, 1000):
+            with self.subTest(value=value):
+                ctrl = make_controller()
+                ctrl._write_parameter = MagicMock(return_value=True)
+                self.assertTrue(ctrl.write_PF82(value))
+                ctrl._write_parameter.assert_called_once_with(PF.PRCM, value)
+
+    def test_reports_failure_when_the_drive_does_not_acknowledge(self):
+        ctrl = make_controller()
+        ctrl._write_parameter = MagicMock(return_value=False)
+        self.assertFalse(ctrl.write_PF82(5))
 
 
 class TestReadPosRelatedParameters(unittest.TestCase):
