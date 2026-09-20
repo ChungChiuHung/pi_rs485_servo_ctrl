@@ -20,6 +20,31 @@ A `.bat` file rather than a shell script because this is a plain Windows
 PC target — it double-clicks and runs with no extra tooling (no Git Bash
 or WSL required), unlike a `.sh` file.
 
+## On a Mac: use `start_server.command`
+
+The same launcher for macOS. Double-click `start_server.command` in Finder
+(it opens in Terminal), or run `./start_server.command`. It needs `python3`
+(python.org installer or `brew install python`), creates a private
+`.venv` next to it on first run (a global `pip install` is refused by
+Homebrew/recent macOS Pythons), installs `requirements_pc.txt`, picks the
+USB-RS485 adapter (`/dev/cu.usbserial*`, `usbmodem*`, ...), opens the browser and
+runs the server in that window (`Ctrl+C` to stop).
+
+* If Finder says it can't be opened: `chmod +x start_server.command`, then
+  `xattr -d com.apple.quarantine start_server.command` (a downloaded copy is
+  quarantined), or right-click → Open once.
+* No adapter plugged in? The web UI still starts, shows a red "No RS-485
+  serial port connection" bar, and **Reconnect** retries once it is plugged in.
+* To force a port: `SERVO_SERIAL_PORT=/dev/cu.usbserial-XXXX ./start_server.command`.
+  Use the `cu.*` name, not `tty.*`. Most adapters need no driver on recent
+  macOS; CH340/CP210x based ones may need the vendor driver.
+* macOS's AirPlay Receiver can occupy port 5000 (the page then fails to
+  load or shows a 403): turn it off in System Settings → General → AirDrop &
+  Handoff, or start with `SERVO_WEB_PORT=5001 ./start_server.command`.
+
+Not yet run on a real Mac — the script is written from the Windows launcher and
+syntax-checked only.
+
 ## Prerequisites
 
 1. **Python 3.9+**, on PATH (`python --version` works from any terminal).

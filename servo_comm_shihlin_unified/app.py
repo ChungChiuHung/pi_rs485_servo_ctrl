@@ -120,7 +120,10 @@ def _connect_profile(profile_name: str) -> None:
         serial_manager = None
         servo_ctrller = None
 
-    new_serial_manager = SerialPortManager(baud_rate=profile["baud_rate"])
+    # SERVO_SERIAL_PORT pins the port (e.g. /dev/cu.usbserial-XXXX on macOS,
+    # set by start_server.command); unset = auto-detect as before.
+    new_serial_manager = SerialPortManager(
+        port=os.getenv('SERVO_SERIAL_PORT') or None, baud_rate=profile["baud_rate"])
     try:
         new_serial_manager.connect()
         if not new_serial_manager.get_serial_instance():
