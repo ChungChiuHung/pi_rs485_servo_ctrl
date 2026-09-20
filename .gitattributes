@@ -1,0 +1,4 @@
+# Shell launchers must keep LF endings: a CRLF shebang line fails on macOS/Linux
+# ("bad interpreter: /bin/bash^M"), and core.autocrlf on Windows would add them.
+*.command text eol=lf
+*.sh text eol=lf
