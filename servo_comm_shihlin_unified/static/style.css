@@ -352,6 +352,36 @@ main {
     color: #fff !important;
 }
 
+/* Modal dialog (SET HOME reminder/confirmation). */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.75);
+    align-items: center;
+    justify-content: center;
+}
+
+.modal {
+    max-width: 480px;
+    margin: 16px;
+    padding: 20px 24px;
+    background: #1e1e1e;
+    border: 2px solid #e74c3c;
+    border-radius: 8px;
+}
+
+.modal h2 {
+    margin: 0 0 12px 0;
+    color: #e74c3c;
+    font-size: 20px;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 12px;
+}
+
 /* Activity log -- a live, timestamped feed of every logged event (across
    the web UI, OSC, and Art-Net) for a user who isn't watching this
    process's own console/terminal output. */

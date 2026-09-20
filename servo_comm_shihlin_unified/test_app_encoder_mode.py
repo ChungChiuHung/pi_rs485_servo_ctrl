@@ -114,6 +114,9 @@ class EepromProtectionWiringTests(unittest.TestCase):
         self.ctrl.eeprom_protection = 2
         self.ctrl.absolute_mode = False
         self.ctrl.abs_home_pos_absolute = None
+        self.ctrl.electronic_gear = None
+        self.ctrl.electronic_gear_unity = None
+        self.ctrl.home_set_since_start = False
         self.ctrl.modbus_client.last_sent = None
         self.ctrl.modbus_client.last_received = None
         self.ctrl.modbus_client.format_hex.return_value = ""
@@ -149,6 +152,94 @@ class EepromProtectionWiringTests(unittest.TestCase):
             body = self.client.get("/status").get_json()
         self.assertEqual(body["eeprom_protection"], 2)
         self.ctrl.ensure_eeprom_write_protection.assert_not_called()
+
+
+class HomeReminderAndSetHomeTests(unittest.TestCase):
+    """The UI reminds the operator to SET HOME after every start (the
+    incremental counter restarts at drive power-on)."""
+
+    def setUp(self):
+        self.ctrl = MagicMock()
+        self.ctrl.reading_active = False
+        self.ctrl.absolute_mode = False
+        self.ctrl.abs_home_pos_absolute = None
+        self.ctrl.eeprom_protection = 2
+        self.ctrl.electronic_gear = (1, 1)
+        self.ctrl.electronic_gear_unity = True
+        self.ctrl.home_set_since_start = False
+        self.ctrl.current_angle = 0.0
+        self.ctrl.current_encoder = 0
+        self.ctrl.set_point_1 = self.ctrl.set_point_2 = None
+        self.ctrl.read_current_alarm_code.return_value = 255
+        self.ctrl.read_servo_state.return_value = True
+        self.ctrl.read_test_mode_0x0901.return_value = 0
+        self.ctrl.modbus_client.format_hex.return_value = ""
+        manager = MagicMock()
+        manager.get_connected_port.return_value = "COM_TEST"
+        manager.get_baud_rate.return_value = 115200
+        for p in (patch.object(app_module, "servo_ctrller", self.ctrl),
+                  patch.object(app_module, "serial_manager", manager)):
+            p.start()
+            self.addCleanup(p.stop)
+        self.client = app_module.app.test_client()
+
+    def status(self):
+        return self.client.get("/status").get_json()
+
+    def test_reminder_needed_until_home_is_set_this_session(self):
+        body = self.status()
+        self.assertFalse(body["home_set_since_start"])
+        self.assertTrue(body["home_reminder_needed"])
+        self.ctrl.home_set_since_start = True
+        body = self.status()
+        self.assertTrue(body["home_set_since_start"])
+        self.assertFalse(body["home_reminder_needed"])
+
+    def test_absolute_mode_with_a_saved_absolute_home_needs_no_reminder(self):
+        self.ctrl.absolute_mode = True
+        self.ctrl.abs_home_pos_absolute = 123
+        self.assertFalse(self.status()["home_reminder_needed"])
+
+    def test_absolute_mode_without_a_saved_home_still_reminds(self):
+        self.ctrl.absolute_mode = True
+        self.assertTrue(self.status()["home_reminder_needed"])
+
+    def test_status_reports_electronic_gear(self):
+        body = self.status()
+        self.assertEqual(body["electronic_gear"], [1, 1])
+        self.assertTrue(body["electronic_gear_ok"])
+        self.ctrl.electronic_gear = (2, 1)
+        self.ctrl.electronic_gear_unity = False
+        body = self.status()
+        self.assertEqual(body["electronic_gear"], [2, 1])
+        self.assertFalse(body["electronic_gear_ok"])
+
+    def test_set_home_action_sets_home(self):
+        def fake_set_home():
+            self.ctrl.home_set_since_start = True
+        self.ctrl.set_home_position.side_effect = fake_set_home
+        response = self.client.post("/action", json={"action": "setHome"})
+        self.assertEqual(response.status_code, 200)
+        self.ctrl.set_home_position.assert_called_once()
+
+    def test_page_contains_the_set_home_dialog_and_button(self):
+        html = self.client.get("/index").get_data(as_text=True)
+        for marker in ("homeModal", "homeModalConfirmBtn", "setHomeBtn", "status_home", "status_gear"):
+            self.assertIn(marker, html)
+        # The dialog must start hidden; the page opens it only when /status
+        # says a reminder is needed.
+        self.assertIn('id="homeModal" style="display:none;"', html)
+
+    def test_set_home_refused_while_motion_is_running(self):
+        self.ctrl.reading_active = True
+        response = self.client.post("/action", json={"action": "setHome"})
+        self.assertEqual(response.status_code, 409)
+        self.ctrl.set_home_position.assert_not_called()
+
+    def test_set_home_reports_failure_when_position_unreadable(self):
+        response = self.client.post("/action", json={"action": "setHome"})  # flag stays False
+        self.assertEqual(response.status_code, 502)
+        self.assertIn("NOT set", response.get_json()["message"])
 
 
 if __name__ == "__main__":

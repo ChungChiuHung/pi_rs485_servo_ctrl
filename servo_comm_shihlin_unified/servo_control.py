@@ -11,7 +11,7 @@ from encoder_pulse_tracker import EncoderPulseTracker
 from servo_utility import ServoUtility
 from servo_control_registers import ServoControlRegistry
 from status_bit_map import DI_Function_Code, BitMapOutput
-from servo_p_register import PA, PC, PD, PE, PF
+from servo_p_register import Register, PA, PC, PD, PE, PF
 
 PA.init_registers()
 PC.init_registers()
@@ -67,10 +67,10 @@ ABS_REV_MIN, ABS_REV_MAX = -32768, 32767
 
 
 # Alarms relevant to the absolute-encoder system (manual §8.1, alarm table
-# ~line 10498+). Keyed by the code as displayed on the drive (AL.2A -> 0x2A).
-# ASSUMPTION: the 0x0100 register reports the displayed code as-is (the
-# existing tests treat 0x12 as AL.12); not yet observed on hardware for
-# these specific alarms -- confirm the first time one appears.
+# ~line 10498+). Keyed by the code as displayed on the drive (AL.2A -> 0x2A):
+# the alarm registers (0x0100~0x010A) are plain hex, not BCD -- Chinese V1.07
+# manual p.260: 0x00FF = no alarm, 0x0001 = AL.01, 0x0012 = AL.12 (and the
+# alarm list itself contains letters, e.g. AL.0A, which BCD cannot express).
 ABSOLUTE_SYSTEM_ALARM_NAMES = {
     0x24: "Encoder type error (PA28=1 with an incremental motor, or absolute position lost)",
     0x29: "Encoder error 5 (motor revolutions outside -32768~32767)",
@@ -196,6 +196,15 @@ class ServoController:
         # Set once a function-0x10 parameter write succeeds after 0x06 was
         # rejected -- see _write_parameter().
         self._prefer_multi_word_write = False
+        # Electronic gear ratio (PA06/PA07): (cmx, cdv), None until checked;
+        # electronic_gear_unity is True/False/None (unknown).
+        self.electronic_gear = None
+        self.electronic_gear_unity = None
+        # True once SET HOME has succeeded since this process started. The
+        # incremental encoder counter restarts at every drive power-on, so a
+        # saved home from an earlier run can't be trusted until the operator
+        # sets it again (the web UI prompts for this on every start).
+        self.home_set_since_start = False
         self._event_listeners = {
             "on_motion_completed": [],
             "on_moving": [],
@@ -444,7 +453,7 @@ class ServoController:
         incremental-tracker offset is re-synced from this same moment so the
         cheap continuous-reading loop can keep reporting in the absolute
         scale."""
-        raw = self.read_encoder_before_gear_ratio()
+        raw = self.read_motor_feedback_pulses()
         if raw is None:
             return None
         with self.lock:
@@ -518,7 +527,7 @@ class ServoController:
             # responses apart.
             try:
                 with self.lock:
-                    encoder = self.read_encoder_before_gear_ratio()
+                    encoder = self.read_motor_feedback_pulses()
             except Exception as e:
                 logger.warning(f"Failed to read encoder ({e}); retrying...")
                 self.delay_ms(interval * 1000)
@@ -1182,7 +1191,8 @@ class ServoController:
         "APST": PA.explain_APST,
     }
     # 32-bit (2-word) registers; everything else here is read as one word.
-    _READ_WORDS_BY_REGISTER_NAME = {"APR": 2, "APP": 2}
+    _READ_WORDS_BY_REGISTER_NAME = {"APR": 2, "APP": 2, "CMX": 2, "CDV": 2,
+                                    "FBK_0000": 2, "FBK_0024": 2}
 
     def Read_Pos_Related_Paremters(self) -> list:
         """Reads a fixed diagnostic set of PA/PD *parameter* registers --
@@ -1193,9 +1203,16 @@ class ServoController:
         read_address_array = [PA.STY, PA.HMOV, PA.PLSS,
                                PA.ENR, PA.PO1H, PA.POL,
                                PD.SDI, PD.ITST, PD.MCOK,
-                               PA.MCS, PA.ABS, PA.APST, PA.APR, PA.APP]
+                               PA.MCS, PA.ABS, PA.APST, PA.APR, PA.APP,
+                               PA.CMX, PA.CDV,
+                               # Status-monitor registers, listed side by side so
+                               # the raw/translated relationship can be read off
+                               # the drive (the manuals disagree on 0x0024).
+                               Register(0, "FBK_0000", "Motor feedback pulses, address 0x0000", 0, 0x0000),
+                               Register(0, "FBK_0024", "Motor feedback pulses, address 0x0024", 0, 0x0024)]
 
         results = []
+        raw_feedback = None
         for address in read_address_array:
             logger.info(f"Read {address.no}: {address.name}: {hex(address.address)}")
             message = self.modbus_client.build_read_message(
@@ -1223,6 +1240,22 @@ class ServoController:
                         entry["interpreted"] = f"{value} pulses/rev (or division ratio, per POL's z-bit)"
                     elif address.name == "PO1H":
                         entry["interpreted"] = f"{value} rev"
+                    elif address.name in ("CMX", "CDV"):
+                        entry["interpreted"] = (
+                            f"{value} (this app assumes CMX = CDV, i.e. 1:1)")
+                    elif address.name == "FBK_0000":
+                        raw_feedback = value
+                        entry["interpreted"] = (
+                            f"{value} pulses -- the register all angle math here is built on "
+                            "(English manual: raw count; Chinese p.305: after electronic gear)")
+                    elif address.name == "FBK_0024":
+                        ratio = (f"; {value / raw_feedback:.4f} x FBK_0000"
+                                 if raw_feedback else "")
+                        entry["interpreted"] = (
+                            f"{value} pulses{ratio} (English manual: after electronic gear; "
+                            "Chinese p.305: before). At CMX/CDV = 1:1 both addresses should "
+                            "match; read a moment after FBK_0000, so they may differ slightly "
+                            "while the shaft moves)")
                     elif address.name in ("APR", "APP"):
                         unit = "rev" if address.name == self.abs_rev_register else "pulses"
                         entry["interpreted"] = (
@@ -1309,7 +1342,21 @@ class ServoController:
         message = self.modbus_client.build_write_message(0x0907, config_value)
         self.modbus_client.send_and_receive(message)
 
-    def read_encoder_before_gear_ratio(self):
+    def read_motor_feedback_pulses(self):
+        """0x0000, 2 words, unsigned 32-bit that wraps every 2**32 pulses
+        (see EncoderPulseTracker). All angle math here is built on this
+        register at 4194304 pulses per motor revolution -- which is only
+        correct when the electronic gear ratio is 1:1 (see
+        check_electronic_gear_ratio()).
+
+        The manuals disagree on whether this address is before or after the
+        electronic gear ratio: the English manual (and Chinese p.256) list it
+        plainly as "Motor feedback pulses"; Chinese V1.07 p.305 labels it
+        "(電子齒輪比後)" (after gear) and recommends 0x0024 (before gear)
+        instead. At 1:1 the two addresses should read the same, so the
+        ambiguity does not matter for as long as the ratio stays 1:1;
+        read_motor_feedback_pulses_0x0024() and GET STATE VALUE exist to
+        confirm that on the drive."""
         message = self.modbus_client.build_read_message(0x0000, 2)
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusRTUResponse(response)
@@ -1319,11 +1366,52 @@ class ServoController:
             return int(encoder_value)
         return None
 
-    def read_encoder_after_gear_ratio(self):
+    def read_motor_feedback_pulses_0x0024(self):
+        """0x0024, 2 words. English manual: "Translated motor feedback
+        pulses" (multiplied by the electronic gear ratio, panel FPH.O/FPL.O).
+        Chinese V1.07 p.256/p.305: "(電子齒輪比前)" -- before the gear ratio --
+        and the address that manual RECOMMENDS for reading position. The
+        manuals contradict each other; named by address for that reason. NOT
+        used for any position math (switching would rescale the saved home);
+        GET STATE VALUE lists it next to 0x0000 so the relationship can be
+        read off the drive. None on any failure."""
         message = self.modbus_client.build_read_message(0x0024, 2)
-        response = self.modbus_client.send_and_receive(message)
-        response_object = ModbusRTUResponse(response)
-        logging.info(response_object)
+        try:
+            response = self.modbus_client.send_and_receive(message)
+            value = ModbusRTUResponse(response).get_value()
+        except Exception as e:
+            logger.error(f"Failed to read motor feedback pulses (0x0024): {e}")
+            return None
+        return None if value is None else int(value)
+
+    def check_electronic_gear_ratio(self):
+        """Reads PA06 (CMX) / PA07 (CDV) and records whether the electronic
+        gear ratio is 1:1. Returns (cmx, cdv), or None if unreadable.
+
+        Why it matters: positioning commands (0x0905/0x0906 pulses) are
+        multiplied by CMX/CDV before they reach the motor, while every angle
+        here is computed from encoder pulses at 4194304/rev. The two only
+        agree at 1:1, so anything else would make moves and readings
+        disagree -- and, if the ratio is not 1:1, which of 0x0000/0x0024 is
+        the pre-gear count would suddenly matter too (the manuals disagree,
+        see read_motor_feedback_pulses()). Read-only; warns but never blocks.
+        (PC32~PC34 hold alternative ratios selected by DI; not checked.)"""
+        cmx = self._read_parameter(PA.CMX)
+        cdv = self._read_parameter(PA.CDV)
+        if cmx is None or cdv is None:
+            self.electronic_gear = None
+            self.electronic_gear_unity = None
+            logger.warning("Could not read PA06/PA07; electronic gear ratio unverified.")
+            return None
+        self.electronic_gear = (cmx, cdv)
+        self.electronic_gear_unity = (cmx == cdv)
+        if not self.electronic_gear_unity:
+            logger.warning(
+                f"Electronic gear ratio is CMX/CDV = {cmx}/{cdv}, not 1:1. Angle and "
+                "positioning math assume 1:1 (command pulses = encoder pulses); "
+                "moves will not match the displayed angle. Set PA06 = PA07 on the drive."
+            )
+        return self.electronic_gear
 
     def pos_step_motion_test(self, CW=True):
         # pos_motion_start_0x0907 (0x0907, "Positioning test operation") is
@@ -1574,6 +1662,10 @@ class ServoController:
         if self.absolute_mode:
             self._set_home_position_absolute()
             return
+        raw_encoder = self.read_motor_feedback_pulses()
+        if raw_encoder is None:
+            logger.error("set_home_position: encoder unreadable; home NOT set.")
+            return
         with self.lock:
             self.current_angle = 0.0
             self.previous_angle = 0.0
@@ -1581,18 +1673,17 @@ class ServoController:
             self.previous_encoder = self.current_encoder
             self.float_error = 0.0
             self.accumulate_pulse = 0
-        raw_encoder = self.read_encoder_before_gear_ratio()
-        with self.lock:
             self.current_encoder = self._encoder_tracker.reset(raw_encoder)
         self.delay_ms(100)
         self.save_abs_home_pos(self.current_encoder)
+        self.home_set_since_start = True
         logger.info("home position set!!!")
 
     def _set_home_position_absolute(self):
         """Absolute-mode SET HOME: captures the current absolute encoder
         position (PA32/PA33) as the home reference. Refuses (changes
         nothing) if the absolute position can't be trusted."""
-        raw_encoder = self.read_encoder_before_gear_ratio()
+        raw_encoder = self.read_motor_feedback_pulses()
         absolute_pulses = self.read_absolute_position_pulses()
         if raw_encoder is None or absolute_pulses is None:
             logger.error("set_home_position: absolute position unavailable; home NOT set.")
@@ -1609,6 +1700,7 @@ class ServoController:
             self.current_encoder = absolute_pulses
         self.abs_home_pos_absolute = absolute_pulses
         self._save_config_value("abs_home_pos_absolute", absolute_pulses)
+        self.home_set_since_start = True
         logger.info("absolute home position set!!!")
 
     def initial_abs_home(self) -> bool:

@@ -117,6 +117,12 @@ def _connect_profile(profile_name: str) -> None:
         servo_ctrller.refresh_encoder_mode()
     except Exception as e:
         logging.warning(f"Could not read PA28 at connect time ({e}); assuming incremental mode.")
+    # Read-only: angle and positioning math assume a 1:1 electronic gear ratio
+    # (PA06 = PA07); warn loudly if the drive says otherwise.
+    try:
+        servo_ctrller.check_electronic_gear_ratio()
+    except Exception as e:
+        logging.warning(f"Could not check the electronic gear ratio at connect time ({e}).")
     logging.info(
         f"Active profile: {profile_name} -- connected "
         f"{serial_manager.get_connected_port()} @ {profile['baud_rate']} baud"
@@ -216,6 +222,19 @@ def get_status():
         "absolute_mode": servo_ctrller.absolute_mode,
         # Last known PA23 (EEPROM write inhibit): 0 = NOT protected, 1/2 = protected.
         "eeprom_protection": servo_ctrller.eeprom_protection,
+        # PA06/PA07 as [cmx, cdv] (None = unread). Angle/positioning math
+        # assumes 1:1; electronic_gear_ok is False when the drive disagrees.
+        "electronic_gear": list(servo_ctrller.electronic_gear) if servo_ctrller.electronic_gear else None,
+        "electronic_gear_ok": servo_ctrller.electronic_gear_unity,
+        # SET HOME has succeeded since this process started. The incremental
+        # counter restarts at every drive power-on, so the UI asks the operator
+        # to SET HOME after each start -- except in absolute mode with a saved
+        # absolute home, whose position survives power-off.
+        "home_set_since_start": servo_ctrller.home_set_since_start,
+        "home_reminder_needed": (
+            not servo_ctrller.home_set_since_start
+            and not (servo_ctrller.absolute_mode
+                     and servo_ctrller.abs_home_pos_absolute is not None)),
         "absolute_home_set": servo_ctrller.abs_home_pos_absolute is not None,
     })
 
@@ -644,6 +663,21 @@ def handle_action():
             servo_ctrller.move_to_set_point(2)
         except ValueError as e:
             return jsonify({"status": "error", "action": action, "message": str(e)}), 400
+    elif action == "setHome":
+        # The current position becomes 0 deg and is persisted as the home
+        # reference (all recorded Set Points are measured from it). No motor
+        # motion, but it must not run mid-move.
+        if servo_ctrller.reading_active:
+            return jsonify({
+                "status": "error", "action": action,
+                "message": "Stop motion (MOTION CANCEL / wait for the move to finish) before setting home.",
+            }), 409
+        servo_ctrller.set_home_position()
+        if not servo_ctrller.home_set_since_start:
+            return jsonify({
+                "status": "error", "action": action,
+                "message": "Home was NOT set: the position could not be read from the drive.",
+            }), 502
     elif action == "Home":
         servo_ctrller.post_step_motion_by(0)
     elif action == "enableSpeedCtrlMode":

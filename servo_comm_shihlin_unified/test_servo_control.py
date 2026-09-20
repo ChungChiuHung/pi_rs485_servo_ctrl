@@ -82,7 +82,7 @@ class TestPosStepMotionByUsesTracker(unittest.TestCase):
         ctrl._encoder_tracker.update(50)  # simulates a wrap: cumulative ~ 4294000050+
 
         # A fresh raw reading right at/near the same post-wrap value.
-        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=60)
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=60)
 
         target_pos = ctrl._encoder_tracker.cumulative + 1000
         angle_rotated = ctrl.pos_step_motion_by(target_pos=target_pos, speed_rpm=5)
@@ -98,7 +98,7 @@ class TestPosStepMotionByUsesTracker(unittest.TestCase):
     def test_returns_zero_and_no_response_on_empty_encoder_read(self):
         ctrl = make_controller()
         ctrl._execute_positioning = MagicMock()
-        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=None)
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=None)
 
         result = ctrl.pos_step_motion_by(target_pos=1000)
 
@@ -108,7 +108,7 @@ class TestPosStepMotionByUsesTracker(unittest.TestCase):
     def test_180_degree_guard_blocks_large_positive_move(self):
         ctrl = make_controller()
         ctrl._execute_positioning = MagicMock()
-        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=0)
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=0)
 
         huge_target = int(ctrl.base_pulse_per_degree * 200)  # > 180 degrees worth
         result = ctrl.pos_step_motion_by(target_pos=huge_target)
@@ -122,7 +122,7 @@ class TestPosStepMotionByUsesTracker(unittest.TestCase):
         negative moves. This is the regression test for that fix."""
         ctrl = make_controller()
         ctrl._execute_positioning = MagicMock()
-        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=0)
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=0)
 
         huge_negative_target = -int(ctrl.base_pulse_per_degree * 200)
         result = ctrl.pos_step_motion_by(target_pos=huge_negative_target)
@@ -133,7 +133,7 @@ class TestPosStepMotionByUsesTracker(unittest.TestCase):
     def test_move_just_under_180_degrees_is_allowed(self):
         ctrl = make_controller()
         ctrl._execute_positioning = MagicMock()
-        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=0)
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=0)
 
         just_under = int(ctrl.base_pulse_per_degree * 170)
         result = ctrl.pos_step_motion_by(target_pos=just_under)
@@ -216,7 +216,7 @@ class TestCancelContinuousReading(unittest.TestCase):
         ctrl = make_controller()
         ctrl.reading_active = True
         ctrl.stop_continuous_reading = MagicMock(wraps=ctrl.stop_continuous_reading)
-        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=1000)
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=1000)
 
         ctrl.cancel_continuous_reading()
 
@@ -234,7 +234,7 @@ class TestCancelContinuousReading(unittest.TestCase):
         ctrl = make_controller()
         ctrl.reading_active = True
         ctrl.Enable_Position_Mode = MagicMock()
-        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=1000)
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=1000)
 
         ctrl.cancel_continuous_reading()
 
@@ -243,7 +243,7 @@ class TestCancelContinuousReading(unittest.TestCase):
     def test_updates_tracker_and_fires_on_cancel(self):
         ctrl = make_controller()
         ctrl.reading_active = True
-        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=1000)
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=1000)
         ctrl.abs_home_pos = 0
 
         received = []
@@ -258,7 +258,7 @@ class TestCancelContinuousReading(unittest.TestCase):
     def test_no_crash_and_no_notify_on_empty_encoder_read(self):
         ctrl = make_controller()
         ctrl.reading_active = True
-        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=None)
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=None)
 
         received = []
         ctrl.register_event_listener("on_cancel", lambda angle: received.append(angle))
@@ -273,7 +273,7 @@ class TestSetHomePosition(unittest.TestCase):
     def test_resets_tracker_consistently_with_saved_abs_home_pos(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             ctrl = make_controller(tmp_dir=tmp_dir)
-            ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=777)
+            ctrl.read_motor_feedback_pulses = MagicMock(return_value=777)
 
             ctrl.set_home_position()
 
@@ -288,7 +288,7 @@ class TestSetHomePosition(unittest.TestCase):
     def test_resets_float_error_and_accumulate_pulse(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             ctrl = make_controller(tmp_dir=tmp_dir)
-            ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=1)
+            ctrl.read_motor_feedback_pulses = MagicMock(return_value=1)
             ctrl.float_error = 0.5
             ctrl.accumulate_pulse = 12345
 
@@ -461,7 +461,7 @@ class TestRefreshCurrentAngleFromHardware(unittest.TestCase):
     def test_updates_current_angle_from_a_fresh_read(self):
         ctrl = make_controller()
         ctrl.abs_home_pos = 0
-        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=349525)
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=349525)
 
         result = ctrl._refresh_current_angle_from_hardware()
 
@@ -472,7 +472,7 @@ class TestRefreshCurrentAngleFromHardware(unittest.TestCase):
     def test_empty_response_leaves_current_angle_untouched(self):
         ctrl = make_controller()
         ctrl.current_angle = 42.0
-        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=None)
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=None)
 
         result = ctrl._refresh_current_angle_from_hardware()
 
@@ -722,7 +722,7 @@ class TestAbsoluteModePositioning(unittest.TestCase):
         ctrl = make_controller()
         ctrl.absolute_mode = True
         ctrl.abs_home_pos_absolute = home
-        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=tracker_raw)
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=tracker_raw)
         ctrl.read_absolute_position_pulses = MagicMock(return_value=absolute_pulses)
         return ctrl
 
@@ -803,6 +803,96 @@ class TestAbsoluteModePositioning(unittest.TestCase):
             ctrl.move_to_set_point(1)
         ctrl.post_step_motion_by.assert_not_called()
 
+class TestFeedbackReadersAndGearRatio(unittest.TestCase):
+
+    def test_translated_feedback_reads_0x0024_two_words_and_returns_value(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = b"x"
+        with patch("servo_control.ModbusRTUResponse") as response_cls:
+            response_cls.return_value.get_value.return_value = 4242
+            self.assertEqual(ctrl.read_motor_feedback_pulses_0x0024(), 4242)
+        ctrl.modbus_client.build_read_message.assert_called_once_with(0x0024, 2)
+
+    def test_translated_feedback_is_none_on_no_response(self):
+        ctrl = make_controller()
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = None
+        self.assertIsNone(ctrl.read_motor_feedback_pulses_0x0024())
+
+    def _gear_ctrl(self, cmx, cdv):
+        ctrl = make_controller()
+        values = {"CMX": cmx, "CDV": cdv}
+        ctrl._read_parameter = MagicMock(side_effect=lambda register, *a, **k: values[register.name])
+        return ctrl
+
+    def test_unity_gear_ratio_is_recorded_ok(self):
+        ctrl = self._gear_ctrl(1, 1)
+        self.assertEqual(ctrl.check_electronic_gear_ratio(), (1, 1))
+        self.assertTrue(ctrl.electronic_gear_unity)
+
+    def test_equal_but_not_one_still_counts_as_unity(self):
+        ctrl = self._gear_ctrl(4, 4)
+        ctrl.check_electronic_gear_ratio()
+        self.assertTrue(ctrl.electronic_gear_unity)
+
+    def test_non_unity_ratio_is_flagged_and_warned_about(self):
+        ctrl = self._gear_ctrl(2, 1)
+        with self.assertLogs("servo_control", level="WARNING") as logs:
+            ctrl.check_electronic_gear_ratio()
+        self.assertFalse(ctrl.electronic_gear_unity)
+        self.assertEqual(ctrl.electronic_gear, (2, 1))
+        self.assertIn("2/1", logs.output[0])
+
+    def test_unreadable_ratio_is_unknown_not_assumed_ok(self):
+        ctrl = self._gear_ctrl(1, None)
+        self.assertIsNone(ctrl.check_electronic_gear_ratio())
+        self.assertIsNone(ctrl.electronic_gear_unity)
+
+    def test_gear_ratio_never_written(self):
+        ctrl = self._gear_ctrl(2, 1)
+        ctrl._write_parameter = MagicMock()
+        ctrl.check_electronic_gear_ratio()
+        ctrl._write_parameter.assert_not_called()
+
+
+class TestHomeSetSinceStart(unittest.TestCase):
+    """The web UI reminds the operator to SET HOME after every start: the
+    incremental counter restarts at drive power-on, so a saved home from an
+    earlier run can't be trusted."""
+
+    def test_false_until_home_is_set(self):
+        self.assertFalse(make_controller().home_set_since_start)
+
+    def test_incremental_set_home_marks_it(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ctrl = make_controller(tmp_dir=tmp_dir)
+            ctrl.read_motor_feedback_pulses = MagicMock(return_value=500)
+            ctrl.set_home_position()
+            self.assertTrue(ctrl.home_set_since_start)
+
+    def test_unreadable_encoder_does_not_mark_it_or_touch_state(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ctrl = make_controller(tmp_dir=tmp_dir)
+            ctrl.current_angle = 42.0
+            ctrl.read_motor_feedback_pulses = MagicMock(return_value=None)
+            ctrl.set_home_position()
+            self.assertFalse(ctrl.home_set_since_start)
+            self.assertEqual(ctrl.current_angle, 42.0)
+
+    def test_absolute_set_home_marks_it_only_on_success(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ctrl = make_controller(tmp_dir=tmp_dir)
+            ctrl.absolute_mode = True
+            ctrl.delay_ms = MagicMock()
+            ctrl.read_motor_feedback_pulses = MagicMock(return_value=1000)
+            ctrl.read_absolute_position_pulses = MagicMock(return_value=None)
+            ctrl.set_home_position()
+            self.assertFalse(ctrl.home_set_since_start)
+            ctrl.read_absolute_position_pulses = MagicMock(return_value=5000000)
+            ctrl.set_home_position()
+            self.assertTrue(ctrl.home_set_since_start)
+
 
 class TestLockIsReentrant(unittest.TestCase):
 
@@ -835,8 +925,8 @@ READ_METHOD_CASES = [
     ("read_0x0905_low_byte", 0x0905, 1),
     ("read_0x0906_high_byte", 0x0906, 1),
     ("read_PF82", PF.PRCM.address, 1),
-    ("read_encoder_before_gear_ratio", 0x0000, 2),
-    ("read_encoder_after_gear_ratio", 0x0024, 2),
+    ("read_motor_feedback_pulses", 0x0000, 2),
+    ("read_motor_feedback_pulses_0x0024", 0x0024, 2),
 ]
 
 # (method_name, expected_address, expected_value)
@@ -875,22 +965,22 @@ class TestReadMethodAddresses(unittest.TestCase):
                     expected_address, expected_word_length
                 )
 
-    def test_read_encoder_before_gear_ratio_returns_none_on_empty_response(self):
+    def test_read_motor_feedback_pulses_returns_none_on_empty_response(self):
         ctrl = make_controller()
         ctrl.modbus_client = MagicMock()
         ctrl.modbus_client.send_and_receive.return_value = None
         with patch("servo_control.ModbusRTUResponse") as mock_cls:
             mock_cls.return_value.get_value.return_value = None
-            result = ctrl.read_encoder_before_gear_ratio()
+            result = ctrl.read_motor_feedback_pulses()
         self.assertIsNone(result)
 
-    def test_read_encoder_before_gear_ratio_returns_int(self):
+    def test_read_motor_feedback_pulses_returns_int(self):
         ctrl = make_controller()
         ctrl.modbus_client = MagicMock()
         ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
         with patch("servo_control.ModbusRTUResponse") as mock_cls:
             mock_cls.return_value.get_value.return_value = 12345
-            result = ctrl.read_encoder_before_gear_ratio()
+            result = ctrl.read_motor_feedback_pulses()
         self.assertEqual(result, 12345)
         self.assertIsInstance(result, int)
 
@@ -1183,7 +1273,7 @@ class TestReadPosRelatedParameters(unittest.TestCase):
 
         ctrl.Read_Pos_Related_Paremters()
 
-        self.assertEqual(ctrl.modbus_client.build_read_message.call_count, 14)
+        self.assertEqual(ctrl.modbus_client.build_read_message.call_count, 18)
 
 
 class TestPosStepMotionTestAndExecutePositioning(unittest.TestCase):
@@ -1404,7 +1494,7 @@ class TestSoftwareMotionCompleteDetection(unittest.TestCase):
                 return values.pop(0)
             return encoder_values[-1]
 
-        ctrl.read_encoder_before_gear_ratio = MagicMock(side_effect=_side_effect)
+        ctrl.read_motor_feedback_pulses = MagicMock(side_effect=_side_effect)
         ctrl.delay_ms = MagicMock()  # no real sleeping -- deterministic, fast test
         ctrl.start_continuous_reading(interval=0.001)
         thread = ctrl.read_thread
@@ -1457,7 +1547,7 @@ class TestSoftwareMotionCompleteDetection(unittest.TestCase):
 
         completed_events = []
         ctrl.register_event_listener("on_motion_completed", lambda: completed_events.append(True))
-        ctrl.read_encoder_before_gear_ratio = MagicMock(side_effect=lambda: sequence.pop(0) if sequence else settled_value)
+        ctrl.read_motor_feedback_pulses = MagicMock(side_effect=lambda: sequence.pop(0) if sequence else settled_value)
         ctrl.delay_ms = MagicMock()
         ctrl.start_continuous_reading(interval=0.001, auto_stop_on_stillness=False)
         try:
@@ -1476,7 +1566,7 @@ class TestSoftwareMotionCompleteDetection(unittest.TestCase):
         encoder legitimately never changes. Reading must keep running --
         auto-stopping here was the original bug."""
         ctrl = make_controller()
-        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=500)
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=500)
         ctrl.delay_ms = MagicMock(side_effect=lambda ms: time.sleep(0.001))
         ctrl.start_continuous_reading(interval=0.001)
         try:
@@ -1493,7 +1583,7 @@ class TestSoftwareMotionCompleteDetection(unittest.TestCase):
         # Every delta is exactly STILL_THRESHOLD_PULSES -- the boundary
         # itself must NOT count as motion (condition is strictly >).
         jittery_sequence = [base, base + STILL_THRESHOLD_PULSES, base] * 10
-        ctrl.read_encoder_before_gear_ratio = MagicMock(
+        ctrl.read_motor_feedback_pulses = MagicMock(
             side_effect=jittery_sequence + [base] * 10
         )
         ctrl.delay_ms = MagicMock(side_effect=lambda ms: time.sleep(0.001))
@@ -1509,7 +1599,7 @@ class TestSoftwareMotionCompleteDetection(unittest.TestCase):
         ctrl = make_controller()
         ctrl._motion_seen = True
         ctrl._still_count = 99
-        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=1)
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=1)
         ctrl.delay_ms = MagicMock(side_effect=lambda ms: time.sleep(0.001))
         ctrl.start_continuous_reading(interval=0.001)
         # Immediately after (re)starting, state must be fresh, not carried
@@ -1529,7 +1619,7 @@ class TestSoftwareMotionCompleteDetection(unittest.TestCase):
         (and Servo-off) right as the move was supposed to start, i.e. the
         motor just wouldn't move."""
         ctrl = make_controller()
-        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=1)
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=1)
         ctrl.delay_ms = MagicMock(side_effect=lambda ms: time.sleep(0.001))
         ctrl.start_continuous_reading(interval=0.001, auto_stop_on_stillness=False)
         try:
@@ -1553,7 +1643,7 @@ class TestSoftwareMotionCompleteDetection(unittest.TestCase):
         (default True) needs its own move's completion to actually
         auto-stop."""
         ctrl = make_controller()
-        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=1)
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=1)
         ctrl.delay_ms = MagicMock(side_effect=lambda ms: time.sleep(0.001))
         ctrl.start_continuous_reading(interval=0.001, auto_stop_on_stillness=False)
         try:
@@ -1685,7 +1775,8 @@ class TestReadPosRelatedParemters(unittest.TestCase):
 
     def _mock_reads(self, ctrl, values):
         # Read order in Read_Pos_Related_Paremters(): STY, HMOV, PLSS,
-        # ENR, PO1H, POL, SDI, ITST, MCOK, MCS, ABS, APST, APR, APP.
+        # ENR, PO1H, POL, SDI, ITST, MCOK, MCS, ABS, APST, APR, APP, CMX,
+        # CDV, FBK_0000 (0x0000), FBK_0024 (0x0024).
         ctrl.modbus_client = MagicMock()
         ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
         patcher = patch("servo_control.ModbusRTUResponse")
@@ -1705,12 +1796,18 @@ class TestReadPosRelatedParemters(unittest.TestCase):
         # MCS=2, ABS=0 (incremental), APST=0 (normal), APR=1234 (pulses in
         # the default layout), APP=-3 (signed revolutions).
         self._mock_reads(ctrl, [0x1000, 0x0000, 0x0312, 10000, 0, 0x0111,
-                                 0x0FFF, 0x0011, 0x0011, 2, 0, 0, 1234, -3])
+                                 0x0FFF, 0x0011, 0x0011, 2, 0, 0, 1234, -3,
+                                 1, 1, 1000, 2000])
 
         results = ctrl.Read_Pos_Related_Paremters()
 
         by_name = {entry["name"]: entry for entry in results}
-        self.assertEqual(len(results), 14)
+        self.assertEqual(len(results), 18)
+        self.assertIn("1:1", by_name["CMX"]["interpreted"])
+        self.assertIn("all angle math", by_name["FBK_0000"]["interpreted"])
+        # Translated is listed next to raw with the ratio between them, so the
+        # real relationship (and which manual is right) can be read off the drive.
+        self.assertIn("2.0000 x FBK_0000", by_name["FBK_0024"]["interpreted"])
         self.assertIn("persists", by_name["MCS"]["interpreted"])
         self.assertIn("incremental", by_name["ABS"]["interpreted"])
         self.assertEqual(by_name["APST"]["interpreted"], "normal")
@@ -1736,7 +1833,7 @@ class TestReadPosRelatedParemters(unittest.TestCase):
 
         results = ctrl.Read_Pos_Related_Paremters()
 
-        self.assertEqual(len(results), 14)
+        self.assertEqual(len(results), 18)
         for entry in results:
             self.assertIsNone(entry["value"])
             self.assertEqual(entry["interpreted"], "No response (communication failure)")

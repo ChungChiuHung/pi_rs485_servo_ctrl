@@ -27,7 +27,7 @@ a cumulative pulse count that never silently wraps.
 
 This is read-side-only: it does not send anything to the driver and is not
 wired into any motion/write path. It only transforms values already read
-by the existing read_encoder_before_gear_ratio()/read_encoder_after_gear_ratio().
+by the existing read_motor_feedback_pulses()/read_motor_feedback_pulses_0x0024().
 """
 import logging
 

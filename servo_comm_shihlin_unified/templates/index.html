@@ -11,7 +11,7 @@
         <script>
             $(document).ready(function(){
                 function clearStatuses(excludeAction){
-                    let actions = ['servoOn','servoOff','getMsg','enablePosMode','posTestStart_CW','posTestStart_CCW','setPoint_1','setPoint_2','gotoSetPoint_1','gotoSetPoint_2','Home','enableSpeedCtrlMode','motionStart_CW','motionStart_CCW','motionPause','motionCancel'];
+                    let actions = ['servoOn','servoOff','getMsg','enablePosMode','posTestStart_CW','posTestStart_CCW','setPoint_1','setPoint_2','setHome','gotoSetPoint_1','gotoSetPoint_2','Home','enableSpeedCtrlMode','motionStart_CW','motionStart_CCW','motionPause','motionCancel'];
                     actions.forEach(function(action){
                         if(action !== excludeAction){
                             $('#'+action+'_status').text('');
@@ -64,7 +64,8 @@
                     $('#gotoSetPoint_2Btn').prop('disabled', setPoint2Value === null);
                 }
 
-                function sendCommand(action, extraPayload) {
+                function sendCommand(action, extraPayload, callbacks) {
+                    callbacks = callbacks || {};
                     clearStatuses(action);
                     disarmClearAlarm12();
                     setButtonsEnabled(false);
@@ -85,14 +86,17 @@
                             if (response.state_values) {
                                 renderStateValues(response.state_values);
                             }
+                            if (callbacks.success) { callbacks.success(response); }
                         },
                         error: function(xhr){
                             console.error('Error:', xhr);
                             const msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Error performing action';
                             setFeedback(action, msg, false);
+                            if (callbacks.error) { callbacks.error(msg); }
                         }
                     }).always(function(){
                         setButtonsEnabled(true);
+                        if (callbacks.done) { callbacks.done(); }
                     });
                 }
 
@@ -233,6 +237,39 @@
                         }
                     }).always(function(){
                         setButtonsEnabled(true);
+                    });
+                });
+
+                // SET HOME reminder/confirmation. The incremental encoder
+                // counter restarts at every drive power-on, so after each app
+                // restart the saved home is untrustworthy until the operator
+                // sets it again. The same dialog also serves the SET HOME
+                // button (confirmation before overwriting the saved home).
+                let homeReminderChecked = false;
+
+                function openHomeModal(reason) {
+                    $('#homeModalIntro').text(reason === 'startup'
+                        ? 'The app has just started. The drive\'s incremental encoder counter restarts at every power-on, so the home position saved earlier may no longer match the shaft: angles and MOVE TO SET POINT are unreliable until home is set again.'
+                        : 'The current shaft position will replace the saved home position.');
+                    $('#homeModal_status').text('');
+                    $('#homeModalConfirmBtn, #homeModalLaterBtn').prop('disabled', false);
+                    $('#homeModal').css('display', 'flex');
+                    $('#homeModalLaterBtn').focus();
+                }
+
+                function closeHomeModal() { $('#homeModal').hide(); }
+
+                $('#setHomeBtn').click(function() { openHomeModal('manual'); });
+                $('#homeModalLaterBtn').click(closeHomeModal);
+                $(document).keydown(function(e) {
+                    if (e.key === 'Escape' && $('#homeModal').is(':visible')) { closeHomeModal(); }
+                });
+                $('#homeModalConfirmBtn').click(function() {
+                    $('#homeModalConfirmBtn, #homeModalLaterBtn').prop('disabled', true);
+                    sendCommand('setHome', null, {
+                        success: closeHomeModal,
+                        error: function(msg) { $('#homeModal_status').text(msg); },
+                        done: function() { $('#homeModalConfirmBtn, #homeModalLaterBtn').prop('disabled', false); }
                     });
                 });
 
@@ -509,6 +546,32 @@
                             $('#status_eeprom_protection').text('unknown');
                             eepromTile.removeClass('alarm-active');
                         }
+                        const homeTile = $('#status_home_tile');
+                        if (response.home_reminder_needed) {
+                            $('#status_home').text('NOT SET - press SET HOME');
+                            homeTile.addClass('alarm-active');
+                        } else {
+                            $('#status_home').text(response.home_set_since_start ? 'Set' : 'Saved (absolute)');
+                            homeTile.removeClass('alarm-active');
+                        }
+                        const gearTile = $('#status_gear_tile');
+                        if (response.electronic_gear_ok === false) {
+                            $('#status_gear').text('CMX/CDV = ' + response.electronic_gear.join('/') + ' - must be 1:1!');
+                            gearTile.addClass('alarm-active');
+                        } else if (response.electronic_gear_ok === true) {
+                            $('#status_gear').text('1:1');
+                            gearTile.removeClass('alarm-active');
+                        } else {
+                            $('#status_gear').text('unknown');
+                            gearTile.removeClass('alarm-active');
+                        }
+                        // Remind the operator to SET HOME once per page load
+                        // (i.e. after every app restart / browser reload) while
+                        // home hasn't been set this session.
+                        if (!homeReminderChecked) {
+                            homeReminderChecked = true;
+                            if (response.home_reminder_needed) { openHomeModal('startup'); }
+                        }
                         $('#status_encoder_mode').text(response.absolute_mode
                             ? 'Absolute' + (response.absolute_home_set ? '' : ' (home not set)')
                             : 'Incremental');
@@ -616,6 +679,21 @@
         </script>
     </head>
     <body>
+        <div class="modal-overlay" id="homeModal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="homeModalTitle">
+            <div class="modal">
+                <h2 id="homeModalTitle">Set home position</h2>
+                <p id="homeModalIntro"></p>
+                <p>Move the motor to the mechanical home position first, then press
+                   <strong>SET HOME NOW</strong>: the current shaft position becomes 0&deg;
+                   and is saved as home. Recorded Set Points are measured from home, so
+                   they refer to the new zero afterwards. Nothing moves.</p>
+                <div class="modal-actions">
+                    <button class="button" id="homeModalConfirmBtn">SET HOME NOW</button>
+                    <button class="button" id="homeModalLaterBtn">Remind me later</button>
+                </div>
+                <span class="section-note" id="homeModal_status"></span>
+            </div>
+        </div>
         <div class="app-shell">
             <aside class="sidebar">
                 <div class="sidebar-header">
@@ -670,6 +748,7 @@
                     <div class="button-container"><button class="button" data-action="servoOff">SERVO OFF</button><span id="servoOff_status"></span></div>
                     <div class="button-container"><button class="button" data-action="getMsg">GET STATE VALUE</button><span id="getMsg_status"></span></div>
                     <div class="button-container"><button class="button" id="clearAlarm12Btn">CLEAR ALARM 12</button><span id="clearAlarm12_status"></span></div>
+                    <div class="button-container"><button class="button" id="setHomeBtn">SET HOME</button><span id="setHome_status"></span></div>
                 </nav>
 
                 <nav class="sidebar-section commands">
@@ -740,6 +819,14 @@
                         <div class="status-tile">
                             <span class="label">Mode</span>
                             <span class="value" id="status_ctrl_mode_sel">-</span>
+                        </div>
+                        <div class="status-tile" id="status_home_tile">
+                            <span class="label">Home (this session)</span>
+                            <span class="value" id="status_home">-</span>
+                        </div>
+                        <div class="status-tile" id="status_gear_tile">
+                            <span class="label">Electronic Gear (PA06/07)</span>
+                            <span class="value" id="status_gear">-</span>
                         </div>
                         <div class="status-tile" id="status_eeprom_tile">
                             <span class="label">EEPROM Protect (PA23)</span>
