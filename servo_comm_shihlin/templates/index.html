@@ -11,131 +11,401 @@
         <script>
             $(document).ready(function(){
                 function clearStatuses(excludeAction){
-                    let actions = ['servoOn','servoOff','getMsg','getIOOutput','setPoint_1','setPoint_2','Home','motionStart','motionPause','motionCancel'];
+                    let actions = ['servoOn','servoOff','getMsg','enablePosMode','disablePosMode','posTestStart_CW','posTestStart_CCW','setPoint_1','setPoint_2','setHome','gotoSetPoint_1','gotoSetPoint_2','Home','enableSpeedCtrlMode','motionStart_CW','motionStart_CCW','motionPause','motionCancel'];
                     actions.forEach(function(action){
                         if(action !== excludeAction){
                             $('#'+action+'_status').text('');
                         }
                     });
                 }
-                
 
-                function sendCommand(action) {
+                function timestamp() {
+                    return new Date().toLocaleTimeString();
+                }
+
+                function setFeedback(action, text, ok) {
+                    $('#' + action + '_status')
+                        .text('[' + timestamp() + '] ' + text)
+                        .removeClass('status-ok status-error')
+                        .addClass('action-feedback')
+                        .addClass(ok ? 'status-ok' : 'status-error');
+                }
+
+                // The backend only ever runs one hardware-touching request at
+                // a time (see app.py's hardware_serialized decorator) --
+                // disabling every command button while any request is in
+                // flight matches that constraint and stops a fast double-click
+                // from firing a second command before the first one's
+                // multi-step sequence has finished.
+                function setButtonsEnabled(enabled) {
+                    $('.button[data-action]').prop('disabled', !enabled);
+                    $('#clearAlarm12Btn, #setHomeBtn, #enablePosModeBtn, #enableSpeedCtrlModeBtn').prop('disabled', !enabled);
+                    // MOVE TO SET POINT 1/2 must stay disabled whenever that
+                    // set point hasn't been recorded, even after this blanket
+                    // re-enable.
+                    if (enabled) {
+                        updateGotoSetPointButtons();
+                    }
+                }
+
+                let setPoint1Value = null;
+                let setPoint2Value = null;
+
+                function updateGotoSetPointButtons() {
+                    $('#gotoSetPoint_1Btn').prop('disabled', setPoint1Value === null);
+                    $('#gotoSetPoint_2Btn').prop('disabled', setPoint2Value === null);
+                }
+
+                function sendCommand(action, extraPayload, callbacks) {
+                    callbacks = callbacks || {};
                     clearStatuses(action);
+                    disarmClearAlarm12();
+                    setButtonsEnabled(false);
                     $.ajax({
                         url:'/action',
                         type: 'POST',
                         contentType: 'application/json',
-                        data: JSON.stringify({action: action}),
+                        data: JSON.stringify(Object.assign({action: action}, extraPayload || {})),
                         success: function(response){
                             console.log('Success:',response);
-                            $('#'+action + '_status').text(response.message || 'Action Completed');
+                            setFeedback(action, response.message || 'Action Completed', true);
                             // Update RS485 status values in the UI
                             $('#rs485_send').val(response.RS485_send);
-                            $('#RS485_receive').val(response.RS485_read);
+                            $('#rs485_receive').val(response.RS485_read);
+                            if (callbacks.success) { callbacks.success(response); }
                         },
                         error: function(xhr){
                             console.error('Error:', xhr);
                             // The server explains refusals (no serial port, move
                             // blocked because the position could not be read, ...).
-                            $('#' + action + '_status').text(
-                                (xhr.responseJSON && xhr.responseJSON.message) || 'Error performing action');
+                            const msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Error performing action';
+                            setFeedback(action, msg, false);
+                            if (callbacks.error) { callbacks.error(msg); }
                         }
+                    }).always(function(){
+                        setButtonsEnabled(true);
+                        if (callbacks.done) { callbacks.done(); }
                     });
                 }
 
-                // Bind sendCommand function to buttons. SET HOME goes through the
-                // confirmation dialog instead of firing straight away.
+                // Plain buttons (CLEAR ALARM 12, SET HOME, ENABLE POS MODE and
+                // ENABLE SPEED CONTROL MODE are handled separately below --
+                // they need a confirmation or a validated number first, so they
+                // have no data-action attribute).
                 $('.button[data-action]').click(function(){
                     const action = $(this).attr('data-action');
-                    if (action === 'setHome') { openHomeModal('button'); return; }
                     sendCommand(action);
                 });
 
-                // --- SET HOME dialog -------------------------------------------
-                function openHomeModal(reason) {
-                    $('#homeModalIntro').text(reason === 'startup'
-                        ? 'The encoder counter restarts when the drive is powered on, so the home saved by an earlier run may no longer match the shaft.'
-                        : 'Set the current shaft position as home (0 degrees).');
-                    $('#homeModal').css('display', 'flex');
-                }
-                function closeHomeModal() { $('#homeModal').hide(); }
-                $('#homeModalLaterBtn').click(closeHomeModal);
-                $(document).keydown(function(e){ if (e.key === 'Escape') { closeHomeModal(); } });
-                $('#homeModalConfirmBtn').click(function(){
-                    closeHomeModal();
-                    sendCommand('setHome');
+                // Pulses/speed validated client-side against the same ranges the
+                // manual documents for the underlying registers (0x0905/0x0906:
+                // 0~(2^31-1); 0x0903: 0~3000 rpm), and re-validated server-side
+                // in /action (never trust client-side bounds alone).
+                $('#enablePosModeBtn').click(function(){
+                    const pulses = parseInt($('#posMode_pulses').val(), 10);
+                    if (isNaN(pulses) || pulses < 0 || pulses > 2147483647) {
+                        setFeedback('enablePosMode', 'Pulses must be a whole number between 0 and 2147483647.', false);
+                        return;
+                    }
+                    const speedRpm = parseInt($('#posMode_speed_rpm').val(), 10);
+                    if (isNaN(speedRpm) || speedRpm < 0 || speedRpm > 3000) {
+                        setFeedback('enablePosMode', 'Speed must be a whole number between 0 and 3000 rpm.', false);
+                        return;
+                    }
+                    sendCommand('enablePosMode', {pulses: pulses, speed_rpm: speedRpm});
                 });
 
-                // --- Live status (read-only; no serial traffic) ----------------
+                $('#enableSpeedCtrlModeBtn').click(function(){
+                    const speedRpm = parseInt($('#speedCtrl_rpm').val(), 10);
+                    if (isNaN(speedRpm) || speedRpm < 0 || speedRpm > 3000) {
+                        setFeedback('enableSpeedCtrlMode', 'Speed must be a whole number between 0 and 3000 rpm.', false);
+                        return;
+                    }
+                    sendCommand('enableSpeedCtrlMode', {speed_rpm: speedRpm});
+                });
+
+                // Alarm 12 clear -- routes through /alarm/clear (confirm +
+                // before/after verification), not the bare clearAlarm12
+                // /action, since clearing it can mask a physical E-Stop
+                // condition. Confirmation is a plain in-page click-again-to-
+                // confirm state, not window.confirm(): browsers can silently
+                // suppress repeated native dialogs on a page.
+                let clearAlarm12Armed = false;
+                let clearAlarm12ArmTimer = null;
+
+                function disarmClearAlarm12() {
+                    clearAlarm12Armed = false;
+                    if (clearAlarm12ArmTimer) {
+                        clearTimeout(clearAlarm12ArmTimer);
+                        clearAlarm12ArmTimer = null;
+                    }
+                    $('#clearAlarm12Btn').text('CLEAR ALARM 12').removeClass('button-armed');
+                }
+
+                $('#clearAlarm12Btn').click(function(){
+                    if (!clearAlarm12Armed) {
+                        clearAlarm12Armed = true;
+                        $('#clearAlarm12Btn').text('CLICK AGAIN TO CONFIRM').addClass('button-armed');
+                        setFeedback(
+                            'clearAlarm12',
+                            'Only confirm after the physical E-Stop condition is actually resolved. Click again within 5s to proceed.',
+                            true
+                        );
+                        clearAlarm12ArmTimer = setTimeout(function(){
+                            disarmClearAlarm12();
+                            setFeedback('clearAlarm12', 'Confirmation timed out; not cleared.', false);
+                        }, 5000);
+                        return;
+                    }
+
+                    disarmClearAlarm12();
+                    setFeedback('clearAlarm12', 'Clearing...', true);
+                    setButtonsEnabled(false);
+                    $.ajax({
+                        url: '/alarm/clear',
+                        type: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify({confirm: true}),
+                        success: function(response){
+                            setFeedback(
+                                'clearAlarm12',
+                                'before=' + response.before_alarm_code +
+                                    ' after=' + response.after_alarm_code +
+                                    ' (' + response.mechanism_used + ')',
+                                response.status === 'success'
+                            );
+                        },
+                        error: function(xhr){
+                            const msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Failed to clear alarm';
+                            setFeedback('clearAlarm12', msg, false);
+                        }
+                    }).always(function(){
+                        setButtonsEnabled(true);
+                    });
+                });
+
+                // SET HOME reminder/confirmation. The incremental encoder
+                // counter restarts at every drive power-on, so after each app
+                // restart the saved home is untrustworthy until the operator
+                // sets it again. The same dialog also serves the SET HOME
+                // button (confirmation before overwriting the saved home).
                 let homeReminderChecked = false;
+
+                function openHomeModal(reason) {
+                    $('#homeModalIntro').text(reason === 'startup'
+                        ? 'The app has just started. The drive\'s incremental encoder counter restarts at every power-on, so the home position saved earlier may no longer match the shaft: angles and MOVE TO SET POINT are unreliable until home is set again.'
+                        : 'The current shaft position will replace the saved home position.');
+                    $('#homeModal_status').text('');
+                    $('#homeModalConfirmBtn, #homeModalLaterBtn').prop('disabled', false);
+                    $('#homeModal').css('display', 'flex');
+                    $('#homeModalLaterBtn').focus();
+                }
+
+                function closeHomeModal() { $('#homeModal').hide(); }
+
+                $('#setHomeBtn').click(function() { openHomeModal('manual'); });
+                $('#homeModalLaterBtn').click(closeHomeModal);
+                $(document).keydown(function(e) {
+                    if (e.key === 'Escape' && $('#homeModal').is(':visible')) { closeHomeModal(); }
+                });
+                $('#homeModalConfirmBtn').click(function() {
+                    $('#homeModalConfirmBtn, #homeModalLaterBtn').prop('disabled', true);
+                    sendCommand('setHome', null, {
+                        success: closeHomeModal,
+                        error: function(msg) { $('#homeModal_status').text(msg); },
+                        done: function() { $('#homeModalConfirmBtn, #homeModalLaterBtn').prop('disabled', false); }
+                    });
+                });
+
+                // OSC input server control. Starting/stopping itself never sends
+                // anything to the driver (see app.py's /server/start docstring)
+                // -- real hardware I/O only happens later, if and when a
+                // message actually arrives.
+                function pollInputServerStatus() {
+                    $.get('/server/status', function(response) {
+                        const label = response.active_input_server
+                            ? response.active_input_server.toUpperCase() + (response.is_running ? ' (running)' : ' (starting...)')
+                            : 'None';
+                        $('#input_server_status_label').text(label);
+                        $('#startInputServerBtn').prop('disabled', !!response.active_input_server);
+                        $('#stopInputServerBtn').prop('disabled', !response.active_input_server);
+                    });
+                }
+
+                $('#startInputServerBtn').click(function(){
+                    const payload = {
+                        type: 'osc',
+                        listen_port: parseInt($('#osc_listen_port').val(), 10) || 5005
+                    };
+                    $('#input_server_action_status').text('Starting OSC...');
+                    $.ajax({
+                        url: '/server/start',
+                        type: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify(payload),
+                        success: function(response) {
+                            $('#input_server_action_status').text(
+                                'Started ' + response.active_input_server + ' on port ' + response.listen_port
+                            );
+                            pollInputServerStatus();
+                        },
+                        error: function(xhr) {
+                            const msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Failed to start server';
+                            $('#input_server_action_status').text('Error: ' + msg);
+                        }
+                    });
+                });
+
+                $('#stopInputServerBtn').click(function(){
+                    $('#input_server_action_status').text('Stopping...');
+                    $.ajax({
+                        url: '/server/stop',
+                        type: 'POST',
+                        success: function(response) {
+                            $('#input_server_action_status').text('Stopped ' + response.stopped);
+                            pollInputServerStatus();
+                        },
+                        error: function(xhr) {
+                            const msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Failed to stop server';
+                            $('#input_server_action_status').text('Error: ' + msg);
+                        }
+                    });
+                });
+
+                pollInputServerStatus();
+                setInterval(pollInputServerStatus, 1000);
+
+                // Live status panel -- read-only, polled on an interval. It
+                // only shows state the app already tracks (no serial traffic
+                // of its own); see GET /status.
                 function pollStatus() {
-                    $.get('/status', function(status) {
-                        if (status.connected === false) {
+                    $.get('/status', function(response) {
+                        if (response.connected === false) {
+                            // The app is running but has no serial port: say so
+                            // and stop here (every other field needs the drive).
                             $('#serialBanner').show();
-                            $('#serialBannerReason').text(status.connection_error || '');
-                            $('#statusStrip').hide();
+                            $('#serialBannerReason').text(response.connection_error || '');
+                            $('#status_connected_port').text('not connected');
+                            $('#status_baud_rate').text('-');
+                            $('.status-tile').addClass('disconnected');
                             return;
                         }
                         $('#serialBanner').hide();
-                        $('#statusStrip').css('display', 'flex');
-                        $('#st_port').text(status.connected_port);
-                        $('#st_angle').text(status.current_angle.toFixed(4) + ' deg');
-                        const gearTile = $('#st_gear_tile');
-                        if (status.electronic_gear_ok === false) {
-                            $('#st_gear').text('CMX/CDV = ' + status.electronic_gear.join('/') + ' - must be 1:1!');
-                            gearTile.addClass('alert');
+                        $('#status_connected_port').text(response.connected_port);
+                        $('#status_baud_rate').text(response.baud_rate);
+                        $('#status_reading_active').text(response.reading_active ? 'Yes' : 'No');
+                        $('#status_current_angle').text(response.current_angle.toFixed(4) + ' deg');
+                        $('#status_current_encoder').text(response.current_encoder);
+
+                        $('#setPoint_1_display').text('Set Point 1: ' +
+                            (response.set_point_1 === null ? 'Not recorded' : response.set_point_1.toFixed(4) + ' deg'));
+                        $('#setPoint_2_display').text('Set Point 2: ' +
+                            (response.set_point_2 === null ? 'Not recorded' : response.set_point_2.toFixed(4) + ' deg'));
+                        setPoint1Value = response.set_point_1;
+                        setPoint2Value = response.set_point_2;
+                        updateGotoSetPointButtons();
+
+                        const homeTile = $('#status_home_tile');
+                        if (response.home_reminder_needed) {
+                            $('#status_home').text('NOT SET - press SET HOME');
+                            homeTile.addClass('alarm-active');
                         } else {
-                            $('#st_gear').text(status.electronic_gear_ok === true ? '1:1' : 'unknown');
-                            gearTile.removeClass('alert');
+                            $('#status_home').text('Set');
+                            homeTile.removeClass('alarm-active');
                         }
-                        const homeTile = $('#st_home_tile');
-                        if (status.home_reminder_needed) {
-                            $('#st_home').text('NOT SET - press SET HOME');
-                            homeTile.addClass('alert');
+                        const gearTile = $('#status_gear_tile');
+                        if (response.electronic_gear_ok === false) {
+                            $('#status_gear').text('CMX/CDV = ' + response.electronic_gear.join('/') + ' - must be 1:1!');
+                            gearTile.addClass('alarm-active');
+                        } else if (response.electronic_gear_ok === true) {
+                            $('#status_gear').text('1:1');
+                            gearTile.removeClass('alarm-active');
                         } else {
-                            $('#st_home').text('Set');
-                            homeTile.removeClass('alert');
+                            $('#status_gear').text('unknown');
+                            gearTile.removeClass('alarm-active');
                         }
-                        // Remind the operator once per page load while home has
-                        // not been set since the server started.
+                        // Remind the operator to SET HOME once per page load
+                        // (i.e. after every app restart / browser reload) while
+                        // home hasn't been set this session.
                         if (!homeReminderChecked) {
                             homeReminderChecked = true;
-                            if (status.home_reminder_needed) { openHomeModal('startup'); }
+                            if (response.home_reminder_needed) { openHomeModal('startup'); }
                         }
+                        $('.status-tile').removeClass('disconnected');
+                    }).fail(function() {
+                        $('.status-tile').addClass('disconnected');
                     });
                 }
+
                 pollStatus();
                 setInterval(pollStatus, 1000);
 
                 // Retry opening the serial port (never moves the motor).
-                $('#reconnectBtn').click(function(){
+                $('#reconnectBtn').click(function() {
                     $('#reconnectStatus').text('Connecting...');
                     $.ajax({
                         url: '/reconnect',
                         type: 'POST',
-                        success: function(){ $('#reconnectStatus').text(''); pollStatus(); },
-                        error: function(xhr){
+                        success: function() {
+                            $('#reconnectStatus').text('');
+                            pollStatus();
+                        },
+                        error: function(xhr) {
                             $('#reconnectStatus').text('Failed: ' +
                                 ((xhr.responseJSON && xhr.responseJSON.message) || 'error'));
                         }
                     });
                 });
+
+                // Activity log -- lets a user who isn't watching this process's
+                // own console see what every action (including ones triggered
+                // remotely via OSC) actually did. Incremental fetch (only
+                // entries newer than the last one seen) keeps this cheap to
+                // poll frequently.
+                let lastLogId = 0;
+                function pollActivityLog() {
+                    $.get('/log', {since: lastLogId}, function(response) {
+                        if (!response.entries.length) {
+                            return;
+                        }
+                        const feed = $('#activityLogFeed');
+                        const wasAtBottom = feed.length && (feed[0].scrollHeight - feed.scrollTop() - feed.outerHeight() < 20);
+                        response.entries.forEach(function(entry) {
+                            lastLogId = Math.max(lastLogId, entry.id);
+                            const time = new Date(entry.time * 1000).toLocaleTimeString();
+                            $('<div>')
+                                .addClass('log-entry log-' + entry.level)
+                                .text('[' + time + '] ' + entry.message)
+                                .appendTo(feed);
+                        });
+                        // Cap DOM growth -- this is a live feed, not an archive.
+                        while (feed.children().length > 300) {
+                            feed.children().first().remove();
+                        }
+                        if (wasAtBottom) {
+                            feed.scrollTop(feed[0].scrollHeight);
+                        }
+                    });
+                }
+                pollActivityLog();
+                setInterval(pollActivityLog, 1000);
             });
         </script>
     </head>
     <body>
-        <div class="modal-overlay" id="homeModal" style="display:none;" role="dialog" aria-modal="true">
+        <div class="modal-overlay" id="homeModal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="homeModalTitle">
             <div class="modal">
-                <h2>Set home position</h2>
+                <h2 id="homeModalTitle">Set home position</h2>
                 <p id="homeModalIntro"></p>
                 <p>Move the motor to the mechanical home position first, then press
                    <strong>SET HOME NOW</strong>: the current shaft position becomes 0&deg;
-                   and is saved as home. Nothing moves.</p>
+                   and is saved as home. Recorded Set Points are measured from home, so
+                   they refer to the new zero afterwards. Nothing moves.</p>
                 <div class="modal-actions">
                     <button class="button" id="homeModalConfirmBtn">SET HOME NOW</button>
                     <button class="button" id="homeModalLaterBtn">Remind me later</button>
                 </div>
+                <span class="section-note" id="homeModal_status"></span>
             </div>
         </div>
         <div class="connection-banner" id="serialBanner" style="display:none;" role="alert">
@@ -145,50 +415,125 @@
             <button class="banner-button" id="reconnectBtn">Reconnect</button>
             <span id="reconnectStatus"></span>
         </div>
-        <div class="navbar">
-            <a href="/">Home</a>
-            <a href="/index">Config</a>
-        </div>
-        <main>
-            <section class="Servo Amplifier Controller(RS485)">
-                <div class="rs485">
-                    <h1>RS485 R/W Status</h1>
-                    <div class="form-group">
-                        <label for="rs485_send">RS-485 Send:</label>
-                        <input type="text" id="rs485_send" value="{{ RS485_send }}" readonly>
-                    </div>
-                    <div class="form-group">
-                        <label for="rs485_receive">RS-485 Receive:</label>
-                        <input type="text" id="rs485_receive" value="{{ RS485_read }}" readonly>
-                    </div>
+        <div class="app-shell">
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <h1>Servo Control</h1>
                 </div>
-                <div class="status-strip" id="statusStrip" style="display:none;">
-                    <div class="tile"><span class="label">Port</span><span class="value" id="st_port">-</span></div>
-                    <div class="tile"><span class="label">Angle</span><span class="value" id="st_angle">-</span></div>
-                    <div class="tile" id="st_gear_tile"><span class="label">Electronic gear</span><span class="value" id="st_gear">-</span></div>
-                    <div class="tile" id="st_home_tile"><span class="label">Home (this session)</span><span class="value" id="st_home">-</span></div>
-                </div>
-                <div class="commands">
-                    <h2>Commands</h2>
+
+                <section class="sidebar-section">
+                    <h2>OSC Input</h2>
+                    <div class="form-group">
+                        <label for="osc_listen_port">OSC listen port:</label>
+                        <input type="number" id="osc_listen_port" value="5005">
+                    </div>
+                    <div class="button-container">
+                        <button class="button" id="startInputServerBtn">Start</button>
+                        <button class="button" id="stopInputServerBtn">Stop</button>
+                    </div>
+                    <p class="section-note">Active: <span id="input_server_status_label">-</span></p>
+                    <span id="input_server_action_status" class="section-note"></span>
+                </section>
+
+                <nav class="sidebar-section commands">
+                    <h2>Servo</h2>
                     <div class="button-container"><button class="button" data-action="servoOn">SERVO ON</button><span id="servoOn_status"></span></div>
                     <div class="button-container"><button class="button" data-action="servoOff">SERVO OFF</button><span id="servoOff_status"></span></div>
                     <div class="button-container"><button class="button" data-action="getMsg">GET STATE VALUE</button><span id="getMsg_status"></span></div>
-                    <div class="button-container"><button class="button" data-action="clearAlarm12">CLEAR ALARM 12</button><span id="clearAlarm12_status"></span></div>
-                    <div class="button-container"><button class="button" data-action="enablePosMode">ENABLE POS MODE</button><span id="enablePosMode_status"></span></div>
-                    <div class="button-container"><button class="button" data-action="posTestStart_CW">POS TEST START CW</button><span id="posTest_status_CW"></span></div>
-                    <div class="button-container"><button class="button" data-action="posTestStart_CCW">POS TEST START CCW</button><span id="posTest_status_CCW"></span></div>
+                    <div class="button-container"><button class="button" id="clearAlarm12Btn">CLEAR ALARM 12</button><span id="clearAlarm12_status"></span></div>
+                    <div class="button-container"><button class="button" id="setHomeBtn">SET HOME</button><span id="setHome_status"></span></div>
+                </nav>
+
+                <nav class="sidebar-section commands">
+                    <h2>Position Mode</h2>
+                    <div class="form-group">
+                        <label for="posMode_pulses">Pulses (0 - 2147483647):</label>
+                        <input type="number" id="posMode_pulses" min="0" max="2147483647" value="125829120">
+                    </div>
+                    <div class="form-group">
+                        <label for="posMode_speed_rpm">Speed rpm (0 - 3000):</label>
+                        <input type="number" id="posMode_speed_rpm" min="0" max="3000" value="10">
+                    </div>
+                    <div class="button-container"><button class="button" id="enablePosModeBtn">ENABLE POS MODE</button><span id="enablePosMode_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="disablePosMode">DISABLE POS MODE</button><span id="disablePosMode_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="posTestStart_CW">POS TEST START CW</button><span id="posTestStart_CW_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="posTestStart_CCW">POS TEST START CCW</button><span id="posTestStart_CCW_status"></span></div>
+                    <span class="section-note" id="setPoint_1_display">Set Point 1: Not recorded</span>
                     <div class="button-container"><button class="button" data-action="setPoint_1">SET POINT 1</button><span id="setPoint_1_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="gotoSetPoint_1" id="gotoSetPoint_1Btn" disabled>MOVE TO SET POINT 1</button><span id="gotoSetPoint_1_status"></span></div>
+                    <span class="section-note" id="setPoint_2_display">Set Point 2: Not recorded</span>
                     <div class="button-container"><button class="button" data-action="setPoint_2">SET POINT 2</button><span id="setPoint_2_status"></span></div>
-                    <div class="button-container"><button class="button" data-action="setHome">SET HOME</button><span id="setHome_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="gotoSetPoint_2" id="gotoSetPoint_2Btn" disabled>MOVE TO SET POINT 2</button><span id="gotoSetPoint_2_status"></span></div>
                     <div class="button-container"><button class="button" data-action="Home">HOME</button><span id="Home_status"></span></div>
-                    <div class="button-container"><button class="button" data-action="enableSpeedCtrlMode">ENABLE SPEED CONTROL MODE</button><span id="enableSpeedCtrlMode_status"></span></div>
+                </nav>
+
+                <nav class="sidebar-section commands">
+                    <h2>Speed Control (JOG)</h2>
+                    <div class="form-group">
+                        <label for="speedCtrl_rpm">Speed rpm (0 - 3000):</label>
+                        <input type="number" id="speedCtrl_rpm" min="0" max="3000" value="100">
+                    </div>
+                    <div class="button-container"><button class="button" id="enableSpeedCtrlModeBtn">ENABLE SPEED CONTROL MODE</button><span id="enableSpeedCtrlMode_status"></span></div>
                     <div class="button-container"><button class="button" data-action="motionStart_CW">MOTION START CW</button><span id="motionStart_CW_status"></span></div>
                     <div class="button-container"><button class="button" data-action="motionStart_CCW">MOTION START CCW</button><span id="motionStart_CCW_status"></span></div>
                     <div class="button-container"><button class="button" data-action="motionPause">MOTION PAUSE</button><span id="motionPause_status"></span></div>
                     <div class="button-container"><button class="button" data-action="motionCancel">MOTION CANCEL</button><span id="motionCancel_status"></span></div>
-                </div>
-            </section>
-            <a href="/">Go Back to Home</a>
-        </main>
+                </nav>
+            </aside>
+
+            <main class="main-content">
+                <section class="live-status">
+                    <h2>Live Status</h2>
+                    <div class="status-grid">
+                        <div class="status-tile">
+                            <span class="label">Port</span>
+                            <span class="value" id="status_connected_port">-</span>
+                        </div>
+                        <div class="status-tile">
+                            <span class="label">Baud</span>
+                            <span class="value" id="status_baud_rate">-</span>
+                        </div>
+                        <div class="status-tile" id="status_home_tile">
+                            <span class="label">Home (this session)</span>
+                            <span class="value" id="status_home">-</span>
+                        </div>
+                        <div class="status-tile" id="status_gear_tile">
+                            <span class="label">Electronic Gear (PA06/07)</span>
+                            <span class="value" id="status_gear">-</span>
+                        </div>
+                        <div class="status-tile">
+                            <span class="label">Continuous Reading</span>
+                            <span class="value" id="status_reading_active">-</span>
+                        </div>
+                        <div class="status-tile">
+                            <span class="label">Current Angle</span>
+                            <span class="value" id="status_current_angle">-</span>
+                        </div>
+                        <div class="status-tile">
+                            <span class="label">Current Encoder</span>
+                            <span class="value" id="status_current_encoder">-</span>
+                        </div>
+                    </div>
+                    <p class="section-note">Angle and encoder update while a move or JOG is running (the continuous reading), or when a move or SET POINT reads the position. Alarm, servo-on and mode are not polled in this version.</p>
+                </section>
+
+                <section class="rs485-status">
+                    <h2>Last RS-485 Transaction</h2>
+                    <div class="form-group">
+                        <label for="rs485_send">Sent:</label>
+                        <input type="text" id="rs485_send" value="{{ RS485_send }}" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label for="rs485_receive">Received:</label>
+                        <input type="text" id="rs485_receive" value="{{ RS485_read }}" readonly>
+                    </div>
+                </section>
+
+                <section class="activity-log">
+                    <h2>Activity Log</h2>
+                    <div class="log-feed" id="activityLogFeed"></div>
+                </section>
+            </main>
+        </div>
     </body>
 </html>

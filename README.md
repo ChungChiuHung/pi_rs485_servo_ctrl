@@ -134,6 +134,14 @@ python3 app.py
 ```
 Then open `http://<PI_IP>:5000` in a browser.
 
+`servo_comm_shihlin/app.py` has the same page layout as
+`servo_comm_shihlin_unified/` (sidebar, live status, activity log, Set Points,
+SET HOME dialog) but stays on Modbus ASCII and has no Art-Net. Its "OSC Input"
+panel starts/stops the OSC server (the addresses `osc.py` handles) inside the
+web app, so you do not need to run `osc.py` separately -- and must not while the
+web app holds the serial port. SET POINT 1/2 record the current angle and MOVE
+TO SET POINT 1/2 go there (they used to move to a fixed 90 / 180 deg).
+
 ## HTTP API: `POST /alarm/clear`
 Clears **AL.12 (Emergency stop)** only -- not a general-purpose Modbus
 write endpoint. Available in `servo_comm_shihlin/app.py`.

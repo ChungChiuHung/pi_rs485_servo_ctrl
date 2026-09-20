@@ -4,8 +4,85 @@ body {
     font-family: 'Arial', sans-serif;
     background-color: #121212; /* Darker background */
     margin: 0;
-    padding: 20px;
     color: #CCC; /* Lighter text */
+}
+
+/* Sidebar (navigation + action buttons) + main content (status/log)
+   layout. CSS Grid rather than the old single-column stack -- keeps
+   every command reachable without scrolling past the monitoring panels,
+   and the monitoring panels visible without scrolling past every button. */
+.app-shell {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    min-height: 100vh;
+}
+
+.sidebar {
+    background: #181818;
+    border-right: 1px solid #2a2a2a;
+    padding: 16px;
+    overflow-y: auto;
+    max-height: 100vh;
+    position: sticky;
+    top: 0;
+}
+
+.sidebar-header h1 {
+    font-size: 20px;
+    margin: 0 0 16px 0;
+    color: #1DB954;
+}
+
+.sidebar-section {
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.sidebar-section:last-child {
+    border-bottom: none;
+}
+
+.sidebar-section h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #808080;
+    margin: 0 0 10px 0;
+}
+
+.section-note {
+    display: block;
+    font-size: 12px;
+    color: #999;
+    margin-top: 4px;
+}
+
+.main-content {
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.main-content section {
+    margin-bottom: 24px;
+}
+
+.main-content h2 {
+    color: #1DB954;
+    font-size: 18px;
+    margin: 0 0 12px 0;
+}
+
+@media (max-width: 900px) {
+    .app-shell {
+        grid-template-columns: 1fr;
+    }
+    .sidebar {
+        position: static;
+        max-height: none;
+        border-right: none;
+        border-bottom: 1px solid #2a2a2a;
+    }
 }
 
 .navbar {
@@ -56,9 +133,6 @@ body {
 /* Styling for the main section */
 main {
     background: #1E1E1E; /* Dark background for main section */
-    padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(255, 255, 255, 0.1); /* Lighter shadow */
 }
 
 /* Actuators section styling */
@@ -200,19 +274,99 @@ main {
 
 /* The :active pseudo-class adds a tactile feedback effect for buttons, and the @media (hover: hover) query ensures hover effects apply only to devices that support hovering, improving the user experience on touch devices. */
 
+/* Live status panel and per-action feedback coloring */
+.live-status {
+    margin-bottom: 20px;
+}
+
+.status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px;
+}
+
+.status-tile {
+    background: #252526;
+    border: 1px solid #3c3c3c;
+    border-left: 5px solid #1DB954;
+    border-radius: 5px;
+    padding: 8px 12px;
+}
+
+.status-tile .label {
+    display: block;
+    font-size: 12px;
+    color: #808080;
+    text-transform: uppercase;
+}
+
+.status-tile .value {
+    display: block;
+    font-size: 18px;
+    font-weight: bold;
+    color: #dcdcdc;
+}
+
+.status-tile.alarm-active {
+    border-left-color: #e74c3c;
+}
+
+.status-tile.alarm-active .value {
+    color: #e74c3c;
+}
+
+.status-tile.disconnected {
+    border-left-color: #e74c3c;
+}
+
+.action-feedback {
+    font-size: 13px;
+    margin-left: 8px;
+}
+
+.action-feedback.status-ok {
+    color: #1DB954;
+}
+
+.action-feedback.status-error {
+    color: #e74c3c;
+}
+
+.button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+}
+
+.button-armed {
+    background-color: #e74c3c !important;
+    color: #fff !important;
+}
+
+/* Toggle-style buttons whose "on" state means the drive is actually in
+   that mode right now (e.g. ENABLE/DISABLE POS MODE) -- a distinct blue
+   rather than .button-armed's red, since this isn't a danger-confirm
+   state, just "currently active". */
+.button-active {
+    background-color: #2E86DE !important;
+    color: #fff !important;
+}
+
 /* Shown across the top while the app has no serial port connection. */
 .connection-banner {
+    position: sticky;
+    top: 0;
+    z-index: 900;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 12px;
-    margin-bottom: 12px;
     padding: 10px 16px;
     background: #7a1f1f;
     color: #fff;
     font-size: 14px;
-    border-radius: 4px;
 }
+
 .connection-banner .banner-button {
     padding: 6px 14px;
     border: 1px solid #fff;
@@ -223,25 +377,6 @@ main {
     cursor: pointer;
 }
 
-/* Live status strip. */
-.status-strip {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin: 12px 0;
-}
-.status-strip .tile {
-    background: #252526;
-    border-left: 4px solid #3c3c3c;
-    border-radius: 4px;
-    padding: 8px 12px;
-    min-width: 140px;
-}
-.status-strip .tile .label { display: block; font-size: 11px; color: #808080; text-transform: uppercase; }
-.status-strip .tile .value { display: block; font-size: 16px; font-weight: bold; color: #dcdcdc; }
-.status-strip .tile.alert { border-left-color: #e74c3c; }
-.status-strip .tile.alert .value { color: #e74c3c; }
-
 /* Modal dialog (SET HOME reminder/confirmation). */
 .modal-overlay {
     position: fixed;
@@ -251,12 +386,83 @@ main {
     align-items: center;
     justify-content: center;
 }
+
 .modal {
     max-width: 480px;
+    margin: 16px;
     padding: 20px 24px;
-    background: #1E1E1E;
-    border: 1px solid #3c3c3c;
+    background: #1e1e1e;
+    border: 2px solid #e74c3c;
     border-radius: 8px;
-    color: #dcdcdc;
 }
-.modal-actions { margin-top: 12px; }
+
+.modal h2 {
+    margin: 0 0 12px 0;
+    color: #e74c3c;
+    font-size: 20px;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 12px;
+}
+
+/* Activity log -- a live, timestamped feed of every logged event (across
+   the web UI, OSC, and Art-Net) for a user who isn't watching this
+   process's own console/terminal output. */
+.log-feed {
+    max-height: 360px;
+    overflow-y: auto;
+    background: #0d0d0d;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.log-entry {
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #ccc;
+}
+
+.log-entry.log-warning {
+    color: #f0ad4e;
+}
+
+.log-entry.log-error {
+    color: #e74c3c;
+}
+
+/* Art-Net Channel Monitor -- the interpreted state of the most recently
+   received DMX frame, so a user driving this from a console/TouchDesigner
+   can confirm what actually arrived without a separate DMX tool. */
+.channel-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.channel-table th, .channel-table td {
+    text-align: left;
+    padding: 6px 12px;
+    border-bottom: 1px solid #2a2a2a;
+    font-size: 13px;
+}
+
+.channel-table th {
+    background: #252526;
+    color: #808080;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+}
+
+.channel-table tbody tr:last-child td {
+    border-bottom: none;
+}
