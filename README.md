@@ -107,14 +107,16 @@ number 1. Set the driver parameters to match (manual §9.2):
 ```
 git clone https://github.com/ChungChiuHung/pi_rs485_servo_ctrl.git
 cd pi_rs485_servo_ctrl
-pip3 install -r requirements.txt
-sudo apt install python3-rpi.gpio   # GPIO; not in requirements.txt (pip can't always build it)
+./setup_pi.sh
 ```
 
-> On Raspberry Pi OS Bookworm a global `pip3 install` is refused (PEP 668).
-> Use a virtual environment that can still see the apt GPIO package:
-> `python3 -m venv --system-site-packages .venv && . .venv/bin/activate`, then
-> run the `pip3 install` line above.
+`setup_pi.sh` installs everything the Raspberry Pi 3 B needs: the apt packages
+(compiler, `python3-dev`, `python3-venv`, and `python3-rpi.gpio`, because pip
+often fails with "Failed building wheel for RPi.GPIO"), a virtual environment in
+`.venv` that can see those apt packages, and `requirements.txt` (Flask,
+pyserial, python-osc, RPi.GPIO) inside it. Recent Raspberry Pi OS refuses a
+global `pip3 install` (PEP 668), which is why it uses a venv. Run the apps with
+`.venv/bin/python` (or `. .venv/bin/activate` first).
 
 > **Pushing changes back:** the HTTPS clone above works fine for pulling, but
 > GitHub no longer accepts password authentication for `git push` over
@@ -232,7 +234,8 @@ twice and the two instances will compete for the serial port.
    system. Copy and run that exact command.
 3. Start the script from its own folder
    ```
-   pm2 start osc_2.py --name servo-osc --interpreter python3 \
+   pm2 start osc_2.py --name servo-osc \
+       --interpreter /path/to/pi_rs485_servo_ctrl/.venv/bin/python \
        --cwd /path/to/pi_rs485_servo_ctrl/servo_comm_shihlin -- --ip <PI_IP>
    ```
 4. Save the current PM2 process list
@@ -256,7 +259,7 @@ twice and the two instances will compete for the serial port.
    [Service]
    Type=simple
    WorkingDirectory=/path/to/pi_rs485_servo_ctrl/servo_comm_shihlin
-   ExecStart=/usr/bin/python3 osc_2.py --ip <PI_IP>
+   ExecStart=/path/to/pi_rs485_servo_ctrl/.venv/bin/python osc_2.py --ip <PI_IP>
 
    [Install]
    WantedBy=multi-user.target

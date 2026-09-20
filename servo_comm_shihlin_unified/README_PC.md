@@ -57,8 +57,8 @@ syntax-checked only.
 3. The servo drive wired to the adapter and powered on.
 
 > Use `servo_comm_shihlin_unified/requirements_pc.txt` (the launchers already
-> do). The repo-root `requirements.txt` is the same list for the Raspberry Pi;
-> neither installs `RPi.GPIO` (on a Pi it comes from apt).
+> do). The repo-root `requirements.txt` is the Raspberry Pi list (the same
+> packages plus `RPi.GPIO`, which is skipped off ARM Linux).
 
 ## Quick start
 
