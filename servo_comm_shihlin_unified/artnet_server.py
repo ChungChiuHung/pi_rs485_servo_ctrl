@@ -122,6 +122,14 @@ DURATION_STEP_S = 0.01          # seconds per raw step of channels 15-16
 SPEED_UPDATE_MIN_INTERVAL_S = 0.1
 # A direction write the drive did not answer is retried no sooner than this.
 DIRECTION_RETRY_INTERVAL_S = 0.3
+# Single-shot trigger channels fire on a rising edge (0 -> >0): 4 absolute move,
+# 9 clear alarm, 10 back home, 11 set home, 12 reset absolute position, 17
+# move-by. A rising edge that comes sooner than this after the previous ACCEPTED
+# one on the same channel is ignored -- a UI double click or a network re-send
+# would otherwise run the action twice. Channel 3 (cancel) is deliberately not
+# covered (a stop is never delayed), nor are the level channels 1, 2 and 8.
+# 0 disables the cooldown.
+DEFAULT_TRIGGER_COOLDOWN_S = 0.5
 
 
 def decode_angle_centideg(high_byte: int, low_byte: int) -> int:
@@ -142,7 +150,8 @@ class ArtNetInputServer:
     def __init__(self, servo_ctrller, listen_ip="0.0.0.0", listen_port=ARTNET_PORT,
                  universe=DEFAULT_UNIVERSE, max_speed_rpm=100, acc_time=5000,
                  signal_timeout_s=DEFAULT_SIGNAL_TIMEOUT_S,
-                 allowed_sources=None, enable_dangerous_channels=False):
+                 allowed_sources=None, enable_dangerous_channels=False,
+                 trigger_cooldown_s=DEFAULT_TRIGGER_COOLDOWN_S):
         """listen_ip: bind to the NIC address the sender unicasts to (a
         specific address only receives unicast; Linux does not deliver
         broadcast to a socket bound to a unicast address). universe: default
@@ -153,7 +162,8 @@ class ArtNetInputServer:
         only accept frames from these sender IPs (None/empty = any).
         enable_dangerous_channels: channels 10-12 (back home = real move,
         set home = overwrites the saved home, reset abs position) are
-        ignored unless this is True."""
+        ignored unless this is True. trigger_cooldown_s: minimum time between
+        two accepted rising edges of the same single-shot channel (0 = off)."""
         self.servo_ctrller = servo_ctrller
         self.listen_ip = listen_ip
         self.listen_port = listen_port
@@ -163,6 +173,7 @@ class ArtNetInputServer:
         self.enable_dangerous_channels = bool(enable_dangerous_channels)
         self.max_speed_rpm = max_speed_rpm
         self.acc_time = acc_time
+        self.trigger_cooldown_s = max(0.0, float(trigger_cooldown_s or 0))
 
         self._sock = None
         self._thread = None
@@ -177,13 +188,12 @@ class ArtNetInputServer:
         self._refused_direction = None
         self._last_direction_failure_monotonic = -1e9
         self._last_cancel_channel = 0
-        self._last_position_trigger_channel = 0
-        self._last_relative_trigger_channel = 0
         self._last_servo_channel = None
-        self._last_clear_alarm_channel = 0
-        self._last_back_home_channel = 0
-        self._last_set_home_channel = 0
-        self._last_reset_initial_abs_pos_channel = 0
+        # Single-shot channels (4, 9, 10, 11, 12, 17), keyed by channel number:
+        # the value seen in the previous frame (edge detection) and the
+        # time.monotonic() of the last trigger that was accepted (cooldown).
+        self._last_trigger_states = {}
+        self._last_trigger_times = {}
         # After a channel-3 cancel while motion was requested: channels 1-2 are
         # ignored until channel 1 returns to 0 (see _handle_dmx).
         self._cancel_latched = False
@@ -209,7 +219,8 @@ class ArtNetInputServer:
         self._last_sequence = None
         self._last_sequence_time = 0.0
         self._stats = {"frames_ok": 0, "dropped_source": 0, "dropped_universe": 0,
-                       "dropped_sequence": 0, "watchdog_trips": 0, "direction_refusals": 0}
+                       "dropped_sequence": 0, "watchdog_trips": 0, "direction_refusals": 0,
+                       "cooldown_blocked": 0}
 
     @property
     def is_running(self) -> bool:
@@ -390,6 +401,32 @@ class ArtNetInputServer:
         self._applied_speed_rpm = desired
         logger.info(f"Art-Net: speed changed to {desired} rpm (channel 1).")
 
+    def _rising_edge(self, channel: int, value: int) -> bool:
+        """True when `value` of DMX channel number `channel` (1-based) went from
+        0 to > 0 since the previous frame. Always records the value, so the next
+        frame is compared against it -- also when the trigger is then blocked by
+        the cooldown, which is why a value that is merely HELD at 255 never fires
+        when the cooldown ends."""
+        previous = self._last_trigger_states.get(channel, 0)
+        self._last_trigger_states[channel] = value
+        return value > 0 and previous == 0
+
+    def _blocked_by_cooldown(self, channel: int) -> bool:
+        """Call for a rising edge of a single-shot channel. True (and counted and
+        logged) if the previous accepted trigger of this channel is less than
+        trigger_cooldown_s ago; otherwise records now as its accepted time and
+        returns False. A blocked edge is consumed, not queued."""
+        now = time.monotonic()
+        last = self._last_trigger_times.get(channel)
+        if self.trigger_cooldown_s > 0 and last is not None and now - last < self.trigger_cooldown_s:
+            self._stats["cooldown_blocked"] += 1
+            logger.info(
+                f"Art-Net: channel {channel} trigger ignored (cooldown, "
+                f"{now - last:.2f} s < {self.trigger_cooldown_s:g} s since the last one).")
+            return True
+        self._last_trigger_times[channel] = now
+        return False
+
     def _handle_position_mode_channels(self, data: bytes) -> bool:
         """Channels 4-7 -- absolute-angle position mode, the same call OSC's
         /set_point makes. Requires len(data) >= 7 (checked by the caller); a
@@ -399,15 +436,16 @@ class ArtNetInputServer:
         position_trigger_channel = data[3]
         fired = False
 
-        if position_trigger_channel > 0 and self._last_position_trigger_channel == 0:
+        if self._rising_edge(4, position_trigger_channel):
             fired = True
+            if self._blocked_by_cooldown(4):
+                return fired
             angle_centideg = decode_angle_centideg(data[4], data[5])
             angle = angle_centideg / 100
             speed_channel = data[6]
             speed_rpm = max(1, round(speed_channel / 255 * self.max_speed_rpm))
-            # Consume the edge BEFORE moving: a refused move (position
-            # unreadable) must not be retried on every 30-44 fps frame.
-            self._last_position_trigger_channel = position_trigger_channel
+            # The edge was consumed by _rising_edge() BEFORE moving: a refused
+            # move (position unreadable) must not be retried on every frame.
             try:
                 self.servo_ctrller.post_step_motion_by(angle, self.acc_time, speed_rpm)
             except Exception as e:
@@ -418,21 +456,20 @@ class ArtNetInputServer:
                 f"(channel 4 rising edge, channels 5-6 = {(data[4] << 8) | data[5]}, "
                 f"channel 7 = {speed_channel})."
             )
-        self._last_position_trigger_channel = position_trigger_channel
         return fired
 
     def _handle_relative_move_channel(self, data: bytes, absolute_fired: bool) -> None:
         """Channel 17 -- move BY the angle in channels 13-14 in the time in
         channels 15-16. Requires len(data) >= 17 (checked by the caller). Uses
         channels 13-16 only -- never channels 4-7."""
-        trigger = data[16]
-        if trigger > 0 and self._last_relative_trigger_channel == 0:
-            # Consume the edge first, like the absolute trigger.
-            self._last_relative_trigger_channel = trigger
+        if self._rising_edge(17, data[16]):
+            # The edge is consumed by _rising_edge(), like the absolute trigger.
             if absolute_fired:
                 logger.warning(
                     "Art-Net: channels 4 and 17 both fired in one frame; only the absolute "
                     "move (channel 4) was run.")
+                return
+            if self._blocked_by_cooldown(17):
                 return
             delta_centideg, duration_centisec = decode_relative_move(data)
             if duration_centisec == 0:
@@ -441,7 +478,6 @@ class ArtNetInputServer:
                     "15-16 is 0.")
                 return
             self._move_by_angle_in_time(delta_centideg, duration_centisec)
-        self._last_relative_trigger_channel = trigger
 
     def calculate_move_rpm(self, delta_centideg: int, duration_centisec: int) -> int:
         """rpm needed to turn the output shaft by delta_centideg (hundredths of
@@ -508,31 +544,28 @@ class ArtNetInputServer:
                 logger.info(f"Art-Net: servo on (channel 8 = {servo_channel}).")
         self._last_servo_channel = servo_channel
 
-        if clear_alarm_channel > 0 and self._last_clear_alarm_channel == 0:
+        if self._rising_edge(9, clear_alarm_channel) and not self._blocked_by_cooldown(9):
             self.servo_ctrller.clear_alarm_12()
             logger.info("Art-Net: clear alarm 12 triggered (channel 9 rising edge).")
-        self._last_clear_alarm_channel = clear_alarm_channel
 
         # Channels 10-12 can make a real move / overwrite the saved home, so
         # they are ignored (with a log line per rising edge) unless the
         # server was started with enable_dangerous_channels.
-        if back_home_channel > 0 and self._last_back_home_channel == 0:
-            if self._dangerous_channel_allowed(10, "back home"):
+        if self._rising_edge(10, back_home_channel):
+            if self._dangerous_channel_allowed(10, "back home") and not self._blocked_by_cooldown(10):
                 self.servo_ctrller.initial_abs_home()
                 logger.info("Art-Net: back home triggered (channel 10 rising edge).")
-        self._last_back_home_channel = back_home_channel
 
-        if set_home_channel > 0 and self._last_set_home_channel == 0:
-            if self._dangerous_channel_allowed(11, "set home"):
+        if self._rising_edge(11, set_home_channel):
+            if self._dangerous_channel_allowed(11, "set home") and not self._blocked_by_cooldown(11):
                 self.servo_ctrller.set_home_position()
                 logger.info("Art-Net: set home triggered (channel 11 rising edge).")
-        self._last_set_home_channel = set_home_channel
 
-        if reset_initial_abs_pos_channel > 0 and self._last_reset_initial_abs_pos_channel == 0:
-            if self._dangerous_channel_allowed(12, "reset initial absolute position"):
+        if self._rising_edge(12, reset_initial_abs_pos_channel):
+            if (self._dangerous_channel_allowed(12, "reset initial absolute position")
+                    and not self._blocked_by_cooldown(12)):
                 self.servo_ctrller.write_PA29_Initial_Abs_Pos()
                 logger.info("Art-Net: reset initial absolute position triggered (channel 12 rising edge).")
-        self._last_reset_initial_abs_pos_channel = reset_initial_abs_pos_channel
 
     def _dangerous_channel_allowed(self, channel: int, what: str) -> bool:
         if self.enable_dangerous_channels:
@@ -726,13 +759,9 @@ class ArtNetInputServer:
         self._reset_motion_state()
         self._cancel_latched = False
         self._last_cancel_channel = 0
-        self._last_position_trigger_channel = 0
-        self._last_relative_trigger_channel = 0
         self._last_servo_channel = None
-        self._last_clear_alarm_channel = 0
-        self._last_back_home_channel = 0
-        self._last_set_home_channel = 0
-        self._last_reset_initial_abs_pos_channel = 0
+        self._last_trigger_states = {}
+        self._last_trigger_times = {}
         self._last_frame_data = None
         self._last_frame_time = None
         self._last_valid_frame_monotonic = None

@@ -34,6 +34,10 @@ def make_server(**kwargs):
     # explicitly in TestSafetyDefaults.
     kwargs.setdefault("universe", 0)
     kwargs.setdefault("enable_dangerous_channels", True)
+    # The edge-detection tests fire a channel again a few microseconds after it
+    # returned to 0; the trigger cooldown (TestTriggerCooldown) is switched off
+    # here and covered explicitly, with a fake clock.
+    kwargs.setdefault("trigger_cooldown_s", 0)
     servo_ctrller = MagicMock()
     server = ArtNetInputServer(servo_ctrller, listen_ip="127.0.0.1", listen_port=0, **kwargs)
     return server, servo_ctrller
@@ -1213,6 +1217,177 @@ class TestCancelLatch(unittest.TestCase):
         self.assertTrue(server.get_stats()["cancel_latched"])
         server._handle_dmx(0, bytes([0, 200, 0]))
         self.assertFalse(server.get_stats()["cancel_latched"])
+
+
+class FakeClock:
+    """Stands in for time.monotonic() inside artnet_server."""
+    def __init__(self, start=1000.0):
+        self.now = start
+
+    def __call__(self):
+        return self.now
+
+    def advance(self, seconds):
+        self.now += seconds
+
+
+ABS_ON = bytes([0, 0, 0, 255, 100, 0, 100])
+ABS_OFF = bytes([0, 0, 0, 0, 100, 0, 100])
+
+
+class TestTriggerCooldown(unittest.TestCase):
+    """Single-shot channels (4, 9, 10, 11, 12, 17): rising-edge detection plus a
+    cooldown between two ACCEPTED triggers of the same channel."""
+
+    def setUp(self):
+        self.clock = FakeClock()
+        patcher = patch.object(artnet_server.time, "monotonic", self.clock)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def cooldown_server(self, **kwargs):
+        kwargs["trigger_cooldown_s"] = kwargs.get("trigger_cooldown_s", 0.5)
+        return make_geared_server(**kwargs)
+
+    def test_default_cooldown_is_half_a_second(self):
+        self.assertEqual(ArtNetInputServer(MagicMock()).trigger_cooldown_s, 0.5)
+        self.assertEqual(artnet_server.DEFAULT_TRIGGER_COOLDOWN_S, 0.5)
+
+    def test_five_frames_of_255_within_0_1_s_fire_once(self):
+        server, ctrl = self.cooldown_server()
+        for _ in range(5):
+            server._handle_dmx(0, ABS_ON)
+            self.clock.advance(0.02)
+        ctrl.post_step_motion_by.assert_called_once()
+        # Held at 255: no new edge, so nothing for the COOLDOWN to block either.
+        self.assertEqual(server.get_stats()["cooldown_blocked"], 0)
+
+    def test_five_flickering_edges_within_0_1_s_fire_once_and_four_are_counted(self):
+        """0 -> 255 -> 0 -> 255 ... every 20 ms: each is a real edge, so this is
+        what the COOLDOWN (not the edge detection) has to stop."""
+        server, ctrl = self.cooldown_server()
+        for _ in range(5):
+            server._handle_dmx(0, ABS_ON)
+            self.clock.advance(0.01)
+            server._handle_dmx(0, ABS_OFF)
+            self.clock.advance(0.01)
+        ctrl.post_step_motion_by.assert_called_once()
+        self.assertEqual(server.get_stats()["cooldown_blocked"], 4)
+
+    def test_255_wait_cooldown_then_0_then_255_fires_the_second_time(self):
+        server, ctrl = self.cooldown_server()
+        server._handle_dmx(0, ABS_ON)
+        self.clock.advance(0.5)                     # the cooldown, elapsed
+        server._handle_dmx(0, ABS_OFF)
+        server._handle_dmx(0, ABS_ON)
+        self.assertEqual(ctrl.post_step_motion_by.call_count, 2)
+        self.assertEqual(server.get_stats()["cooldown_blocked"], 0)
+
+    def test_edge_just_inside_the_cooldown_is_blocked_and_just_outside_is_not(self):
+        server, ctrl = self.cooldown_server()
+        server._handle_dmx(0, ABS_ON)
+        server._handle_dmx(0, ABS_OFF)
+        self.clock.advance(0.49)
+        server._handle_dmx(0, ABS_ON)
+        self.assertEqual(ctrl.post_step_motion_by.call_count, 1)
+        server._handle_dmx(0, ABS_OFF)
+        self.clock.advance(0.02)                    # 0.51 s after the accepted one
+        server._handle_dmx(0, ABS_ON)
+        self.assertEqual(ctrl.post_step_motion_by.call_count, 2)
+
+    def test_a_blocked_edge_is_consumed_not_queued(self):
+        """Holding 255 through the end of the cooldown must not fire late."""
+        server, ctrl = self.cooldown_server()
+        server._handle_dmx(0, ABS_ON)
+        server._handle_dmx(0, ABS_OFF)
+        self.clock.advance(0.1)
+        server._handle_dmx(0, ABS_ON)               # blocked
+        self.clock.advance(2.0)
+        server._handle_dmx(0, ABS_ON)               # still held, cooldown long over
+        ctrl.post_step_motion_by.assert_called_once()
+
+    def test_a_blocked_edge_does_not_extend_the_cooldown(self):
+        server, ctrl = self.cooldown_server()
+        server._handle_dmx(0, ABS_ON)               # accepted at t=0
+        for _ in range(4):                          # blocked edges at 0.1/0.2/0.3/0.4
+            server._handle_dmx(0, ABS_OFF)
+            self.clock.advance(0.1)
+            server._handle_dmx(0, ABS_ON)
+        server._handle_dmx(0, ABS_OFF)
+        self.clock.advance(0.15)                    # t = 0.55 from the ACCEPTED one
+        server._handle_dmx(0, ABS_ON)
+        self.assertEqual(ctrl.post_step_motion_by.call_count, 2)
+
+    def test_the_cooldown_is_per_channel(self):
+        """An absolute move followed 50 ms later by a relative one: both run."""
+        server, ctrl = self.cooldown_server()
+        server._handle_dmx(0, relative_frame(300, 200, trigger=0, absolute_trigger=255))
+        self.clock.advance(0.05)
+        server._handle_dmx(0, relative_frame(300, 200, trigger=255, absolute_trigger=255))
+        self.assertEqual(ctrl.post_step_motion_by.call_count, 2)
+        self.assertEqual(server.get_stats()["cooldown_blocked"], 0)
+
+    def test_channel_17_double_click_moves_once(self):
+        server, ctrl = self.cooldown_server()
+        for _ in range(3):
+            server._handle_dmx(0, relative_frame(500, 300, trigger=255))
+            self.clock.advance(0.05)
+            server._handle_dmx(0, relative_frame(500, 300, trigger=0))
+            self.clock.advance(0.05)
+        ctrl.post_step_motion_by.assert_called_once()
+
+    def test_extended_channels_are_covered_too(self):
+        server, ctrl = self.cooldown_server()
+        for channel_kwargs, method in (({"clear": 255}, ctrl.clear_alarm_12),
+                                       ({"back_home": 255}, ctrl.initial_abs_home),
+                                       ({"set_home": 255}, ctrl.set_home_position),
+                                       ({"reset_abs": 255}, ctrl.write_PA29_Initial_Abs_Pos)):
+            for _ in range(2):
+                server._handle_dmx(0, frame12(**channel_kwargs))
+                self.clock.advance(0.05)
+                server._handle_dmx(0, frame12())
+                self.clock.advance(0.05)
+            method.assert_called_once()
+
+    def test_the_cancel_channel_is_never_held_back(self):
+        server, ctrl = self.cooldown_server()
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        server._handle_dmx(0, bytes([50, 200, 255]))          # cancel
+        server._handle_dmx(0, bytes([0, 0, 0]))
+        server._handle_dmx(0, bytes([50, 200, 0]))            # restart
+        server._handle_dmx(0, bytes([50, 200, 255]))          # cancel again, 0 s later
+        self.assertEqual(ctrl.cancel_continuous_reading.call_count, 2)
+
+    def test_continuous_channels_are_not_affected(self):
+        """Channels 1-2 are levels: a stop/start within the cooldown works."""
+        server, ctrl = self.cooldown_server()
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        server._handle_dmx(0, bytes([0, 0, 0]))
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        self.assertEqual(ctrl.enable_speed_ctrl.call_count, 2)
+
+    def test_cooldown_zero_disables_it(self):
+        server, ctrl = self.cooldown_server(trigger_cooldown_s=0)
+        for _ in range(3):
+            server._handle_dmx(0, ABS_ON)
+            server._handle_dmx(0, ABS_OFF)
+        self.assertEqual(ctrl.post_step_motion_by.call_count, 3)
+
+    def test_a_blocked_absolute_edge_still_suppresses_channel_17_in_the_same_frame(self):
+        server, ctrl = self.cooldown_server()
+        server._handle_dmx(0, relative_frame(300, 200, trigger=0, absolute_trigger=255))
+        server._handle_dmx(0, relative_frame(300, 200, trigger=0, absolute_trigger=0))
+        self.clock.advance(0.1)
+        server._handle_dmx(0, relative_frame(300, 200, trigger=255, absolute_trigger=255))
+        ctrl.post_step_motion_by.assert_called_once()
+
+    def test_start_forgets_edge_state_and_cooldown(self):
+        server, ctrl = self.cooldown_server()
+        server._handle_dmx(0, ABS_ON)
+        server.start()
+        self.addCleanup(server.stop)
+        self.assertEqual(server._last_trigger_states, {})
+        self.assertEqual(server._last_trigger_times, {})
 
 
 if __name__ == "__main__":
