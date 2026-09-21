@@ -8,7 +8,7 @@ from flask import Flask, render_template, request, jsonify, Response, redirect
 from functools import wraps
 import traceback
 from serial_port_manager import SerialPortManager
-from servo_control import ServoController, PositionUnavailableError, is_alarm_active
+from servo_control import ServoController, PositionUnavailableError, MoveOutOfRangeError, is_alarm_active
 from hardware_lock import hardware_serialized
 from input_validation import validate_int_range
 from activity_log import ActivityLog, ActivityLogHandler
@@ -514,6 +514,8 @@ def handle_action():
         except PositionUnavailableError as e:
             # Refused without moving: the real position could not be read.
             return _refused(action, str(e), 502)
+        except MoveOutOfRangeError as e:
+            return _refused(action, str(e), 400)
 
     elif action == "enableSpeedCtrlMode":
         speed_rpm, error = validate_int_range(

@@ -158,6 +158,13 @@ class ConnectedTests(unittest.TestCase):
         self.assertIn("refusing to move", response.get_json()["message"])
         self.ctrl._execute_positioning.assert_not_called()
 
+    def test_home_reports_400_when_the_move_is_out_of_the_drives_range(self):
+        self.ctrl.post_step_motion_by = MagicMock(
+            side_effect=self.app_module.MoveOutOfRangeError("too far for the drive"))
+        response = self.action("Home")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("too far", response.get_json()["message"])
+
     def test_set_home_is_refused_while_a_move_is_running(self):
         self.ctrl.reading_active = True
         self.ctrl.set_home_position = MagicMock()
