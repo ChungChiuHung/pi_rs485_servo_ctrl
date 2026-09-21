@@ -120,7 +120,7 @@ channel numbers if they conflict with something else in your universe.
 | 10 | Back home | `0` = idle; a `0→nonzero` edge triggers a real move back to the saved home position |
 | 11 | Set home | `0` = idle; a `0→nonzero` edge **persists** the current position as the new home reference |
 | 12 | Reset initial absolute position | `0` = idle; a `0→nonzero` edge writes PA29 |
-| 13-14 | Move **by** angle (high byte, low byte) | Same encoding as channels 5-6: 16-bit, one step = 0.01°, `32768` = no move (the 180° guard still applies) |
+| 13-14 | Move **by** angle (high byte, low byte) | Same encoding as channels 5-6: 16-bit, one step = 0.01°, `32768` = no move |
 | 15-16 | Move time (high byte, low byte) | 16-bit, one step = 0.01 s (0.01–655.35 s). `0` = no time given: the move is refused |
 | 17 | Move-by trigger | `0` = idle; a `0→nonzero` edge moves by channels 13-14 in the time of channels 15-16. Never looks at channels 4-7 |
 
@@ -283,25 +283,21 @@ and send `/clear` (or Art-Net channel 9) if you need it clear again.
 **3. Position-mode targets are absolute, but `current_angle` is
 cumulative/unbounded — it does NOT wrap to 0-360.** After enough moves in
 one direction, `current_angle` can drift to well outside `[0, 360]` (it's
-whatever accumulated since the last `/set_home`). Since:
-- OSC's `/set_point angle ...` takes any float you send, but
-- Art-Net's channels 5-6 can only encode about `[-327.68, +327.67]`,
+whatever accumulated since the last `/set_home`), and a target such as
+`0` then means "go all the way back to the saved home", however many degrees
+that is. Art-Net's channels 5-6 can only *name* targets in about
+`[-327.68, +327.67]`; if `current_angle` is outside that, use OSC's
+`/set_point` (any float) or channels 13-17 (move by an angle) instead.
 
-there's a real scenario where `current_angle` has drifted far enough that
-**no value encodable in channels 5-6 is within 180° of it** — every
-possible Art-Net position-mode command gets silently refused by the
-180° safety guard (see gotcha 4) until something re-homes the angle
-tracking (`/set_home` / `/back_home` / Art-Net channels 10-11). If
-position-mode commands stop having any effect, check `/status`'s
-`current_angle` first.
-
-**4. Moves of 180° or more (from current position to target) are always
-refused, silently.** This is a deliberate safety guard, not a bug — it
-catches both a genuine 180°+ request and the "drifted too far to reach
-with an absolute [0,360] value" case above from the same code path. A
-refused move does not raise an error and sends no feedback; `/status`
-simply won't change. If you send a move and nothing happens, check
-`current_angle` vs. your target before assuming something is broken.
+**4. There is no limit on how far one move may go.** An earlier version
+refused any move of 180° or more; that came from a previous application's
+requirement and was removed on 2026-09-21. Check what a target means before
+sending it: a wrong number or unit (say `3000` instead of `30`) is now carried
+out as sent, up to the one thing the drive itself cannot represent — a move
+of more than 2³¹−1 command pulses (about 6144° of output shaft at 30:1),
+which is refused with an error and nothing is sent. So are angles that are
+not numbers (NaN, infinity). Keep the speed low the first time you use a new
+sender.
 
 **5. Reversing continuous-motion direction requires an explicit stop in
 between.** Sending CW immediately followed by CCW (no stop/pause) is

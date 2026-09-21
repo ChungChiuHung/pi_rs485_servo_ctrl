@@ -128,7 +128,7 @@ See **`OSC_ARTNET_GUIDE.md`** for the full address/channel reference,
 example packets, and — importantly — the "Gotchas" section covering
 non-obvious real-hardware behavior (direction value conventions, the
 Alarm-12 side effect of servo-off, absolute vs. cumulative angle
-tracking, the 180° safety guard, and the continuous-motion
+tracking, the drive's pulse-range check, and the continuous-motion
 direction-reversal fail-safe).
 
 ## Web UI access
@@ -156,8 +156,8 @@ been treated as requiring explicit confirmation before being considered
 "done" throughout this project's development — this isn't just a
 documentation convention, it shaped how features here were built and
 tested (e.g. the direction-reversal fail-safe in
-`speed_ctrl_action()`, the 180° guards in `pos_step_motion_by()`/
-`post_step_motion_by()`, and the confirm-gated `/alarm/clear`). If
+`speed_ctrl_action()`, the command-pulse range check in `pos_step_motion_by()`/
+`post_step_motion_by()` (no 180° limit any more), and the confirm-gated `/alarm/clear`). If
 you're extending this code with a new path that can move the motor,
 follow the same pattern: real-hardware verification before calling it
 done, not just passing unit tests against mocks.

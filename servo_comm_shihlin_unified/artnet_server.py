@@ -32,8 +32,8 @@ a standard):
       1-3 (continuous mode only) still works, this is just never triggered.
   Channel 5-6 (target angle, high byte/low byte): 16-bit big-endian, 0.01
       deg per step, 32768 = 0 deg: angle = (value - 32768) / 100, so 90 deg is
-      32768 + 9000 = 41768 (about +-327 deg; the drive's 180 deg guard still
-      applies to the resulting move).
+      32768 + 9000 = 41768 (about +-327 deg). There is no limit on how far
+      the resulting move may be.
   Channel 7 (position move speed): 1-255 linearly maps to speed_rpm (scaled
       by `max_speed_rpm`, minimum 1 rpm -- same scaling as channel 1).
   Channel 8 (servo on/off): 0 = Servo off; 1-255 = Servo on (level-based
@@ -60,7 +60,7 @@ a standard):
   never has to know the gear ratio.
     Channel 13-14 (high byte/low byte): 16-bit value, 32768 = no move; each
         step is 0.01 deg, so 32768+n = +n/100 deg and 32768-n = -n/100 deg
-        (range about +-327 deg; the drive's 180 deg guard still applies).
+        (range about +-327 deg; no limit on the distance moved).
         Positive = the direction in which the tracked angle increases.
     Channel 15-16 (high byte/low byte): 16-bit duration in 0.01 s steps
         (0.01 .. 655.35 s). 0 = no time given: the move is refused.
