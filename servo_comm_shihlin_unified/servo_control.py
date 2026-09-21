@@ -960,71 +960,100 @@ class ServoController:
             logger.error(f"Failed to parse current-alarm response: {e}")
             return None
 
-    def read_mc_ok_status(self):
-        """Cross-check for the software-only motion-complete detection in
-        _read_continuously(): reconstructs the official MC_OK signal
-        (CMDOK AND INP -- docs/en_manual.txt ~line 1598, 8447-8450) by
-        reading which DO pins currently have those two functions assigned
-        (0x020C/0x020D, the DO1-6 function-assignment registers -- see
-        manual ~line 10177-10192) and checking those bits in DO_STATUS
-        (0x0205). Confirmed 2026-09-18 that this unit's DO1-DO6 are still
-        at Pt-mode factory defaults (DO1=INP, DO3=CMDOK among others --
-        manual ~line 1790-1809), but this reads the assignment dynamically
-        rather than hardcoding DO1/DO3, so it keeps working if that's ever
-        reconfigured.
+    # CN1 pin of each digital output (manual, DO status register 0x0205:
+    # bit0~bit5 = DO1~DO6 = CN1_41~CN1_46).
+    DO_CN1_PINS = {1: "CN1-41", 2: "CN1-42", 3: "CN1-43", 4: "CN1-44", 5: "CN1-45", 6: "CN1-46"}
 
-        Returns True/False, or None if either function currently isn't
-        assigned to any DO pin, or on a communication/parse failure (never
-        assume None means "not complete" -- this is a cross-check only,
-        the real auto-stop decision in _read_continuously() does not
-        depend on this method).
+    def read_do_status(self):
+        """Live state of DO1~DO6, read-only (function 0x03 only).
+
+        Reads the function assigned to each pin (0x020C = DO1~DO3, 0x020D =
+        DO4~DO6, five bits per pin: bit4~0, bit9~5, bit14~10; see manual
+        ~line 10177-10192) and then the ON/OFF status register 0x0205
+        (bit0~bit5 = DO1~DO6 = CN1_41~CN1_46, ~line 10105-10120). Returns
+
+            {"DO1": {"pin": "CN1-41", "on": bool,
+                     "function_code": int, "function": str | None}, ... "DO6": {...}}
+
+        where "function" is the BitMapOutput name (e.g. "INP_SA", "RD",
+        "ALM"), "unassigned" for code 0, or None for a code this project does
+        not name. Returns None -- never a dict of guessed OFF values -- if any of
+        the three reads gets no usable reply, so callers cannot mistake a
+        communication failure for "all outputs off".
+
+        "on" is the raw bit of 0x0205. The contact polarity setting PD27 (DOD)
+        is not consulted, so on a pin whose contact is defined inverted "on"
+        may not mean the pin is conducting (docs §9.1 T4).
+
+        Locked (self.lock, re-entrant) so a status poll cannot interleave with
+        the continuous-reading loop's traffic. Each call is three serial
+        transactions -- do not poll it at a high rate on the Pi 3 B.
         """
         with self.lock:
-            assignments = {}
-            for addr in (0x020C, 0x020D):
-                message = self.modbus_client.build_read_message(addr, 1)
+            values = []
+            for address in (0x020C, 0x020D, ServoControlRegistry.DO_STATUS.address):
+                message = self.modbus_client.build_read_message(address, 1)
                 response = self.modbus_client.send_and_receive(message)
                 if response is None:
-                    logger.error(f"No response reading DO function assignment ({hex(addr)}).")
+                    logger.error(f"No response reading DO registers ({hex(address)}).")
                     return None
                 try:
                     value = ModbusRTUResponse(response).get_value()
                 except Exception as e:
-                    logger.error(f"Failed to parse DO function assignment response: {e}")
+                    logger.error(f"Failed to parse the reply for {hex(address)}: {e}")
                     return None
-                do_base = 1 if addr == 0x020C else 4
-                assignments[do_base] = value & 0x1F
-                assignments[do_base + 1] = (value >> 5) & 0x1F
-                assignments[do_base + 2] = (value >> 10) & 0x1F
+                if value is None:
+                    logger.error(f"Reply for {hex(address)} carried no value.")
+                    return None
+                values.append(int(value))
+        do1_2_3, do4_5_6, do_status = values
 
-            inp_pin = next(
-                (pin for pin, fn in assignments.items() if fn == BitMapOutput.INP_SA.value), None
+        function_names = {member.value: member.name for member in BitMapOutput}
+        result = {}
+        for pin in range(1, 7):
+            packed = do1_2_3 if pin <= 3 else do4_5_6
+            code = (packed >> (5 * ((pin - 1) % 3))) & 0x1F
+            result[f"DO{pin}"] = {
+                "pin": self.DO_CN1_PINS[pin],
+                "on": bool(do_status & (1 << (pin - 1))),
+                "function_code": code,
+                "function": "unassigned" if code == 0 else function_names.get(code),
+            }
+        return result
+
+    def read_mc_ok_status(self):
+        """Cross-check for the software-only motion-complete detection in
+        _read_continuously(): reconstructs the official MC_OK signal
+        (CMDOK AND INP -- docs/en_manual.txt ~line 1598, 8447-8450) from
+        read_do_status(): finds the DO pins that currently have those two
+        functions assigned and checks their ON state. Confirmed 2026-09-18 that
+        this unit's DO1-DO6 are at Pt-mode factory defaults (DO1=INP,
+        DO3=CMDOK among others -- manual ~line 1790-1809), but the assignment is
+        read dynamically rather than hardcoded, so it keeps working if that is
+        ever reconfigured.
+
+        Returns True/False, or None if either function currently isn't
+        assigned to any DO pin, or on a communication/parse failure (never
+        assume None means "not complete" -- this is a cross-check only, the
+        real auto-stop decision in _read_continuously() does not depend on it).
+        """
+        do = self.read_do_status()
+        if do is None:
+            return None
+
+        def pin_with(function_code):
+            return next((name for name, info in do.items()
+                         if info["function_code"] == function_code), None)
+
+        inp_pin = pin_with(BitMapOutput.INP_SA.value)
+        cmdok_pin = pin_with(BitMapOutput.CMDOK.value)
+        if inp_pin is None or cmdok_pin is None:
+            logger.warning(
+                f"Cannot compute MC_OK: INP assigned to {inp_pin}, CMDOK assigned to "
+                f"{cmdok_pin} (need both assigned to some DO pin)."
             )
-            cmdok_pin = next(
-                (pin for pin, fn in assignments.items() if fn == BitMapOutput.CMDOK.value), None
-            )
-            if inp_pin is None or cmdok_pin is None:
-                logger.warning(
-                    f"Cannot compute MC_OK: INP assigned to DO{inp_pin}, CMDOK assigned to "
-                    f"DO{cmdok_pin} (need both assigned to some DO pin)."
-                )
-                return None
-
-            message = self.modbus_client.build_read_message(ServoControlRegistry.DO_STATUS.address, 1)
-            response = self.modbus_client.send_and_receive(message)
-            if response is None:
-                logger.error("No response reading DO status (0x0205).")
-                return None
-            try:
-                do_status_value = ModbusRTUResponse(response).get_value()
-            except Exception as e:
-                logger.error(f"Failed to parse DO status response: {e}")
-                return None
-
-        decoded = ServoUtility.decode_do_status(do_status_value)
-        inp_on = decoded[f"DO{inp_pin}"]["status"]
-        cmdok_on = decoded[f"DO{cmdok_pin}"]["status"]
-        return inp_on and cmdok_on
+            return None
+        return do[inp_pin]["on"] and do[cmdok_pin]["on"]
 
     def clear_alarm_via_register(self):
         """Official 'Alarm clearance' register (0x0130): writing 0x1EA5

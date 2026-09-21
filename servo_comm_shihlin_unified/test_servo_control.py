@@ -1838,6 +1838,123 @@ class TestReadMcOkStatus(unittest.TestCase):
         self.assertIsNone(ctrl.read_mc_ok_status())
 
 
+class TestReadDoStatus(unittest.TestCase):
+    """read_do_status(): DO1~DO6 ON/OFF (0x0205, bit0~5 = CN1_41~CN1_46) plus
+    the function assigned to each pin (0x020C = DO1~3, 0x020D = DO4~6, five
+    bits each). Read-only. Sample values are what the real drive returned on
+    2026-09-21 (stationary, Servo OFF, no alarm): 0x0205=0x26, 0x020C=0x103,
+    0x020D=0x825."""
+
+    def _reads(self, ctrl, do1_2_3, do4_5_6, do_status):
+        """Mocks the three 1-word reads in the order read_do_status() makes
+        them (0x020C, 0x020D, 0x0205)."""
+        ctrl.modbus_client = MagicMock()
+        ctrl.modbus_client.send_and_receive.return_value = b"not-empty"
+        patcher = patch("servo_control.ModbusRTUResponse")
+        mock_cls = patcher.start()
+        self.addCleanup(patcher.stop)
+        mock_cls.return_value.get_value.side_effect = [do1_2_3, do4_5_6, do_status]
+        return mock_cls
+
+    def test_real_drive_sample_2026_09_21(self):
+        ctrl = make_controller()
+        self._reads(ctrl, 0x103, 0x825, 0x26)
+
+        do = ctrl.read_do_status()
+
+        self.assertEqual([do[f"DO{n}"]["on"] for n in range(1, 7)],
+                         [False, True, True, False, False, True])
+        self.assertEqual([do[f"DO{n}"]["function_code"] for n in range(1, 7)],
+                         [0x03, 0x08, 0x00, 0x05, 0x01, 0x02])
+        self.assertEqual([do[f"DO{n}"]["function"] for n in range(1, 7)],
+                         ["INP_SA", "ZSP", "unassigned", "TLC_VLC", "RD", "ALM"])
+
+    def test_pins_are_cn1_41_to_46(self):
+        ctrl = make_controller()
+        self._reads(ctrl, 0, 0, 0)
+        do = ctrl.read_do_status()
+        self.assertEqual([do[f"DO{n}"]["pin"] for n in range(1, 7)],
+                         ["CN1-41", "CN1-42", "CN1-43", "CN1-44", "CN1-45", "CN1-46"])
+
+    def test_each_bit_maps_to_its_own_pin(self):
+        for n in range(1, 7):
+            with self.subTest(pin=n):
+                ctrl = make_controller()
+                self._reads(ctrl, 0, 0, 1 << (n - 1))
+                do = ctrl.read_do_status()
+                self.assertEqual([k for k, v in do.items() if v["on"]], [f"DO{n}"])
+
+    def test_bits_above_bit5_are_ignored(self):
+        ctrl = make_controller()
+        self._reads(ctrl, 0, 0, 0xFFC0)  # only bits 6~15 set
+        self.assertFalse(any(v["on"] for v in ctrl.read_do_status().values()))
+        ctrl = make_controller()
+        self._reads(ctrl, 0, 0, 0xFFFF)
+        self.assertTrue(all(v["on"] for v in ctrl.read_do_status().values()))
+
+    def test_function_field_is_five_bits_per_pin_from_bit0(self):
+        ctrl = make_controller()
+        # DO1=0x1F (top of range), DO2=0x01, DO3=0x02 packed into one word
+        packed = 0x1F | (0x01 << 5) | (0x02 << 10)
+        self._reads(ctrl, packed, 0, 0)
+        do = ctrl.read_do_status()
+        self.assertEqual([do[f"DO{n}"]["function_code"] for n in (1, 2, 3)], [0x1F, 0x01, 0x02])
+
+    def test_unknown_function_code_keeps_the_code_and_has_no_name(self):
+        ctrl = make_controller()
+        self._reads(ctrl, 0x10, 0, 0)  # 0x10 is not in BitMapOutput
+        pin = ctrl.read_do_status()["DO1"]
+        self.assertEqual(pin["function_code"], 0x10)
+        self.assertIsNone(pin["function"])
+
+    def test_reads_exactly_the_three_registers_and_writes_nothing(self):
+        ctrl = make_controller()
+        self._reads(ctrl, 0, 0, 0)
+        ctrl.read_do_status()
+        reads = [c.args for c in ctrl.modbus_client.build_read_message.call_args_list]
+        self.assertEqual(reads, [(0x020C, 1), (0x020D, 1), (0x0205, 1)])
+        ctrl.modbus_client.build_write_message.assert_not_called()
+
+    def test_no_response_returns_none_never_all_off(self):
+        for failing_read in (0, 1, 2):
+            with self.subTest(failing_read=failing_read):
+                ctrl = make_controller()
+                self._reads(ctrl, 0x103, 0x825, 0x26)
+                responses = [b"x", b"x", b"x"]
+                responses[failing_read] = None
+                ctrl.modbus_client.send_and_receive.side_effect = responses
+                self.assertIsNone(ctrl.read_do_status())
+
+    def test_unparseable_reply_returns_none(self):
+        ctrl = make_controller()
+        mock_cls = self._reads(ctrl, 0x103, 0x825, 0x26)
+        mock_cls.return_value.get_value.side_effect = [0x103, ValueError("bad CRC"), 0x26]
+        self.assertIsNone(ctrl.read_do_status())
+
+    def test_a_reply_without_a_value_returns_none(self):
+        ctrl = make_controller()
+        self._reads(ctrl, 0x103, None, 0x26)
+        self.assertIsNone(ctrl.read_do_status())
+
+    def test_exception_response_from_the_drive_returns_none(self):
+        ctrl = make_controller()
+        mock_cls = self._reads(ctrl, 0x103, 0x825, 0x26)
+        # A Modbus exception frame raises (ModbusExceptionResponse is a ValueError).
+        mock_cls.side_effect = ValueError("Modbus exception 0x02")
+        self.assertIsNone(ctrl.read_do_status())
+
+    def test_mc_ok_uses_the_same_read(self):
+        """read_mc_ok_status() is now built on read_do_status()."""
+        ctrl = make_controller()
+        ctrl.read_do_status = MagicMock(return_value={
+            "DO1": {"on": True, "function_code": 0x03}, "DO2": {"on": False, "function_code": 0x08},
+            "DO3": {"on": True, "function_code": 0x09}, "DO4": {"on": False, "function_code": 0x05},
+            "DO5": {"on": False, "function_code": 0x01}, "DO6": {"on": False, "function_code": 0x02},
+        })
+        self.assertTrue(ctrl.read_mc_ok_status())
+        ctrl.read_do_status.assert_called_once()
+
+
 class TestReadPosRelatedParemters(unittest.TestCase):
     """GET STATE VALUE ("getMsg") -- must decode each register via its
     explain_* helper (servo_p_register.py), not just log raw bytes. Values
