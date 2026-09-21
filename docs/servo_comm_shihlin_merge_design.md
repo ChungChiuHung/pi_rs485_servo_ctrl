@@ -777,7 +777,16 @@ PF01＝PDEF49，需實機確認）。
   0x0205 ＋ 0x020C／0x020D，回傳 DO1～DO6 各自的 {ON/OFF、功能碼、功能名稱
   （用現有 `BitMapOutput`）}；把 `read_mc_ok_status()` 改成呼叫它，避免重複；
   單元測試（含手冊的 bit 對應、5 bit 拆法、通訊失敗回 None 而非「全 OFF」）。
-- [ ] **T2 對外顯示。** `/status` 或新的 `/io` 端點＋網頁「DO1～DO6」方塊（含 CN1
+- [ ] **T2 對外顯示。**
+  **【2026-09-21 unified 已完成、待 commit：新端點 `GET /io/do`（唯讀，`hardware_serialized`，
+  讀取失敗回 503 而不是全 OFF，忙碌回 429，未連線回 503）＋網頁「Digital Outputs (DO1 - DO6)」
+  面板（表格：DO、CN1 腳位、ON/off、功能名稱與代碼；『READ DO STATUS』按鈕；『Auto-refresh every
+  2 s』核取方塊，預設關閉；註明 PD27 極性未套用）。新增 9 個測試（unified 共 438 項通過）。
+  實機端到端（測試 Pi，USB-RS485，唯讀）：用 Flask 測試客戶端呼叫 `/io/do` 兩次都 HTTP 200 且與
+  T1 樣本一致，整段執行建立 0 個寫入 frame。尚缺：在瀏覽器實際點按鈕與自動更新的目視確認；
+  `servo_comm_shihlin`（ASCII）版尚未移植（該資料夾沒有序列鎖，只能按鈕讀取，且 reading_active
+  時要拒絕；目前驅動器是 RTU，該版本也無法通訊）】**
+  原需求：`/status` 或新的 `/io` 端點＋網頁「DO1～DO6」方塊（含 CN1
   腳位與功能名稱）。**預設不輪詢**（每次要多 3 次序列讀取；Pi 3B 的 CPU 與
   序列時序要留餘裕，CLAUDE.md §2），改成按鈕讀取或開啟後才輪詢。
   `servo_comm_shihlin`（ASCII）版另移植；該資料夾沒有序列鎖，不能背景輪詢。
