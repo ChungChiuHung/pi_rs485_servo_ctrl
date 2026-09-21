@@ -1075,6 +1075,49 @@ class TestStartSequence(unittest.TestCase):
         self.assertFalse(server.get_stats()["direction_refused"])
 
 
+class TestNoReplyFromTheDrive(unittest.TestCase):
+    """Seen on the real drive 2026-09-21: right after JOG mode was entered the
+    drive did not answer the 0x0904 direction write (speed_ctrl_action() raised).
+    That must not restart the whole start sequence on the next frame."""
+
+    def setUp(self):
+        self.clock = FakeClock()
+        patcher = patch.object(artnet_server.time, "monotonic", self.clock)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_failed_direction_write_does_not_enable_motion_again(self):
+        server, ctrl = make_server()
+        ctrl.speed_ctrl_action.side_effect = [RuntimeError("no response"), True, True]
+        server._handle_dmx(0, bytes([50, 200, 0]))    # enable ok, direction write fails
+        self.clock.advance(0.5)
+        server._handle_dmx(0, bytes([50, 200, 0]))    # next frame retries only the direction
+        ctrl.enable_speed_ctrl.assert_called_once()
+        self.assertEqual(ctrl.speed_ctrl_action.call_count, 2)
+        ctrl.speed_ctrl_action.assert_called_with(2)
+
+    def test_the_direction_is_retried_after_a_pause_not_on_every_frame(self):
+        server, ctrl = make_server()
+        ctrl.speed_ctrl_action.side_effect = RuntimeError("no response")
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        for _ in range(5):                            # 5 frames inside the retry pause
+            self.clock.advance(0.03)
+            server._handle_dmx(0, bytes([50, 200, 0]))
+        self.assertEqual(ctrl.speed_ctrl_action.call_count, 1)
+        self.clock.advance(0.5)
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        self.assertEqual(ctrl.speed_ctrl_action.call_count, 2)
+
+    def test_once_the_direction_is_accepted_it_is_not_sent_again(self):
+        server, ctrl = make_server()
+        ctrl.speed_ctrl_action.side_effect = [RuntimeError("no response"), True]
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        self.clock.advance(0.5)
+        for _ in range(4):
+            server._handle_dmx(0, bytes([50, 200, 0]))
+        self.assertEqual(ctrl.speed_ctrl_action.call_count, 2)
+
+
 class TestDirectionRefusal(unittest.TestCase):
     """The drive refuses a direct CW<->CCW switch (safety). The Art-Net side used
     to treat the refused request as done, so nothing was retried or reported."""

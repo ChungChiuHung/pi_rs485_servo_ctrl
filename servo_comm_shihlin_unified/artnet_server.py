@@ -120,6 +120,8 @@ DURATION_STEP_S = 0.01          # seconds per raw step of channels 15-16
 
 # Channel 1 speed changes while running are written at most this often.
 SPEED_UPDATE_MIN_INTERVAL_S = 0.1
+# A direction write the drive did not answer is retried no sooner than this.
+DIRECTION_RETRY_INTERVAL_S = 0.3
 
 
 def decode_angle_centideg(high_byte: int, low_byte: int) -> int:
@@ -173,6 +175,7 @@ class ArtNetInputServer:
         # A requested direction the drive refused (a direct CW<->CCW switch);
         # not asked again until channel 2 changes.
         self._refused_direction = None
+        self._last_direction_failure_monotonic = -1e9
         self._last_cancel_channel = 0
         self._last_position_trigger_channel = 0
         self._last_relative_trigger_channel = 0
@@ -288,6 +291,10 @@ class ArtNetInputServer:
                 speed_rpm = max(1, round(enable_channel / 255 * self.max_speed_rpm))
                 if self._last_enable_channel in (None, 0):
                     self.servo_ctrller.enable_speed_ctrl(speed_rpm, self.acc_time, True)
+                    # Motion is armed from here on, even if the direction write
+                    # below gets no answer: a failure there must not run the
+                    # whole start sequence again on the next frame.
+                    self._last_enable_channel = enable_channel
                     self._desired_speed_rpm = self._applied_speed_rpm = speed_rpm
                     self._last_speed_write_monotonic = now
                     # enable_speed_ctrl() re-enters JOG mode, so the direction
@@ -302,7 +309,7 @@ class ArtNetInputServer:
                     self._desired_speed_rpm = speed_rpm
                     self._apply_pending_speed(now)
 
-                self._apply_direction(direction_channel)
+                self._apply_direction(direction_channel, now)
 
             self._last_enable_channel = enable_channel
         except Exception as e:
@@ -316,11 +323,14 @@ class ArtNetInputServer:
         self._desired_speed_rpm = None
         self._applied_speed_rpm = None
 
-    def _apply_direction(self, direction_channel: int) -> None:
+    def _apply_direction(self, direction_channel: int, now: float) -> None:
         """Sends the direction channel 2 asks for, once per change. The drive
         refuses a direct CW<->CCW switch (speed_ctrl_action() returns False);
         that is remembered so it is neither retried on every frame nor mistaken
-        for done, and it clears when channel 2 changes again."""
+        for done, and it clears when channel 2 changes again. A write the drive
+        did not answer (seen on the real drive right after JOG mode is entered)
+        is not counted as applied and is retried after DIRECTION_RETRY_INTERVAL_S,
+        never on every frame."""
         if direction_channel == self._last_direction_channel:
             self._refused_direction = None
             return
@@ -334,7 +344,14 @@ class ArtNetInputServer:
             action_value = 1  # CCW
         else:
             action_value = 2  # CW
-        applied = self.servo_ctrller.speed_ctrl_action(action_value)
+        if now - self._last_direction_failure_monotonic < DIRECTION_RETRY_INTERVAL_S:
+            return
+        try:
+            applied = self.servo_ctrller.speed_ctrl_action(action_value)
+        except Exception as e:
+            self._last_direction_failure_monotonic = now
+            logger.warning(f"Art-Net: direction write got no usable answer ({e}); will retry.")
+            return
         if applied is False:
             self._refused_direction = direction_channel
             self._stats["direction_refusals"] += 1
