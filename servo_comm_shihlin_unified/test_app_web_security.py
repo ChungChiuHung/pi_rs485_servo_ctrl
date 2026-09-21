@@ -122,7 +122,7 @@ class ArtNetStartOptionsTests(unittest.TestCase):
             {"signal_timeout_s": -1}, {"signal_timeout_s": 3600},
             {"allowed_sources": "10.0.0.5, banana"}, {"allowed_sources": 5},
             {"enable_dangerous_channels": "yes"}, {"enable_dangerous_channels": 1},
-            {"max_speed_rpm": 0}, {"position_mode_max_angle": 0},
+            {"max_speed_rpm": 0},
         ]
         for payload in bad:
             with self.subTest(payload=payload):

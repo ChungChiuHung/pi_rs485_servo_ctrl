@@ -9,8 +9,9 @@ import socket
 import struct
 import time
 import unittest
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, call, patch
 
+import artnet_server
 from artnet_server import ArtNetInputServer, ARTNET_ID, OP_OUTPUT_DMX
 
 
@@ -36,6 +37,12 @@ def make_server(**kwargs):
     servo_ctrller = MagicMock()
     server = ArtNetInputServer(servo_ctrller, listen_ip="127.0.0.1", listen_port=0, **kwargs)
     return server, servo_ctrller
+
+
+def angle_bytes(degrees):
+    """Channels 5-6 encoding: 0.01 deg per step, 32768 = 0 deg -> (high, low)."""
+    raw = 32768 + round(degrees * 100)
+    return raw >> 8, raw & 0xFF
 
 
 class TestParseArtDMX(unittest.TestCase):
@@ -174,22 +181,48 @@ class TestPositionModeChannels(unittest.TestCase):
         server._handle_dmx(universe=0, data=bytes([0, 0, 0]))
         ctrl.post_step_motion_by.assert_not_called()
 
-    def test_rising_edge_triggers_move_with_default_max_angle(self):
+    def test_rising_edge_triggers_a_move_to_the_encoded_angle(self):
         server, ctrl = make_server(max_speed_rpm=100, acc_time=5000)
-        # channel4=255 (trigger), channels5-6=0xFFFF (max angle), channel7=255 (max speed)
-        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, 255, 255, 255]))
-        ctrl.post_step_motion_by.assert_called_once_with(360.0, 5000, 100)
+        hi, lo = angle_bytes(90.0)  # 32768 + 9000 = 41768
+        # channel4=255 (trigger), channels5-6 = 90 deg, channel7=255 (max speed)
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, hi, lo, 255]))
+        ctrl.post_step_motion_by.assert_called_once_with(90.0, 5000, 100)
 
-    def test_angle_zero_when_channels_5_and_6_are_zero(self):
+    def test_32768_is_zero_degrees(self):
         server, ctrl = make_server()
-        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, 0, 0, 0]))
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, 0x80, 0x00, 0]))
         ctrl.post_step_motion_by.assert_called_once_with(0.0, 5000, 1)
 
-    def test_angle_scales_with_custom_position_mode_max_angle(self):
-        server, ctrl = make_server(position_mode_max_angle=180)
-        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, 255, 255, 0]))
-        angle_arg = ctrl.post_step_motion_by.call_args[0][0]
-        self.assertAlmostEqual(angle_arg, 180.0, places=2)
+    def test_negative_angles_are_below_32768(self):
+        server, ctrl = make_server()
+        hi, lo = angle_bytes(-45.5)  # 32768 - 4550
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, hi, lo, 128]))
+        self.assertAlmostEqual(ctrl.post_step_motion_by.call_args[0][0], -45.5, places=6)
+
+    def test_resolution_is_one_hundredth_of_a_degree(self):
+        server, ctrl = make_server()
+        raw = 32768 + 1234
+        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, raw >> 8, raw & 0xFF, 128]))
+        self.assertAlmostEqual(ctrl.post_step_motion_by.call_args[0][0], 12.34, places=6)
+
+    def test_ends_of_the_range(self):
+        for raw, expected in ((0, -327.68), (65535, 327.67)):
+            with self.subTest(raw=raw):
+                server, ctrl = make_server()
+                server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, raw >> 8, raw & 0xFF, 128]))
+                self.assertAlmostEqual(ctrl.post_step_motion_by.call_args[0][0], expected, places=6)
+
+    def test_channels_13_to_17_never_change_an_absolute_move(self):
+        """The absolute move (channel 4) uses channels 5-7 only, whatever is in
+        channels 13-16, as long as its own trigger is the one that fires."""
+        server, ctrl = make_server(max_speed_rpm=100)
+        hi, lo = angle_bytes(30.0)
+        frame = bytearray(17)
+        frame[3], frame[4], frame[5], frame[6] = 255, hi, lo, 255
+        frame[12], frame[13] = (32768 + 9000) >> 8, (32768 + 9000) & 0xFF   # +90 deg
+        frame[14], frame[15] = 0x01, 0x2C                                      # 3 s
+        server._handle_dmx(universe=0, data=bytes(frame))                       # channel 17 = 0
+        ctrl.post_step_motion_by.assert_called_once_with(30.0, 5000, 100)
 
     def test_speed_channel_scales_with_max_speed_rpm(self):
         server, ctrl = make_server(max_speed_rpm=200)
@@ -225,13 +258,6 @@ class TestPositionModeChannels(unittest.TestCase):
         ctrl.enable_speed_ctrl.assert_not_called()
         ctrl.speed_ctrl_action.assert_not_called()
 
-
-def frame12(servo=0, clear=0, back_home=0, set_home=0, reset_abs=0):
-    """Builds a 12-channel frame with channels 1-7 at their idle/inert
-    values and channels 8-12 set to the given values."""
-    return bytes([0, 0, 0, 0, 0, 0, 0, servo, clear, back_home, set_home, reset_abs])
-
-
     def test_refused_move_is_not_retried_and_does_not_block_other_channels(self):
         """A position-mode move that is refused (drive position unreadable,
         PositionUnavailableError) must consume the trigger edge -- otherwise
@@ -246,6 +272,12 @@ def frame12(servo=0, clear=0, back_home=0, set_home=0, reset_abs=0):
 
         self.assertEqual(ctrl.post_step_motion_by.call_count, 1)
         ctrl.servo_on.assert_called_once()
+
+
+def frame12(servo=0, clear=0, back_home=0, set_home=0, reset_abs=0):
+    """Builds a 12-channel frame with channels 1-7 at their idle/inert
+    values and channels 8-12 set to the given values."""
+    return bytes([0, 0, 0, 0, 0, 0, 0, servo, clear, back_home, set_home, reset_abs])
 
 
 class TestExtendedChannels(unittest.TestCase):
@@ -386,7 +418,7 @@ class TestGetChannelSnapshot(unittest.TestCase):
         self.assertEqual(ch2["interpreted"], "CW")
 
     def test_seven_byte_frame_reports_position_mode_channels(self):
-        server, ctrl = make_server(max_speed_rpm=100, position_mode_max_angle=360)
+        server, ctrl = make_server(max_speed_rpm=100)
         server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, 0x80, 0x00, 128]))
 
         snapshot = server.get_channel_snapshot()
@@ -767,13 +799,14 @@ class TestStartStopLifecycle(unittest.TestCase):
             server.stop()
 
 
-def relative_frame(delta_centideg, duration_centisec, trigger=255):
-    """16-channel frame: trigger on channel 4, relative angle on 13-14 (32768 =
-    no move), duration on 15-16; channels 5-7 hold values that must be ignored."""
+def relative_frame(delta_centideg, duration_centisec, trigger=255, absolute_trigger=0):
+    """17-channel frame. Channel 4 (the ABSOLUTE trigger) is idle unless asked;
+    channels 5-7 hold an absolute target that must be ignored here; channels
+    13-14 = relative angle (32768 = none), 15-16 = time, channel 17 = trigger."""
     angle_raw = delta_centideg + 32768
-    return bytes([0, 0, 0, trigger, 200, 200, 200, 0, 0, 0, 0, 0,
+    return bytes([0, 0, 0, absolute_trigger, 0xC8, 0xC8, 200, 0, 0, 0, 0, 0,
                   angle_raw >> 8, angle_raw & 0xFF,
-                  duration_centisec >> 8, duration_centisec & 0xFF])
+                  duration_centisec >> 8, duration_centisec & 0xFF, trigger])
 
 
 def make_geared_server(gear_ratio=30, **kwargs):
@@ -785,8 +818,9 @@ def make_geared_server(gear_ratio=30, **kwargs):
 
 
 class TestRelativeMoveByAngleInTime(unittest.TestCase):
-    """Channels 13-16: "move BY this angle in this many seconds" -- rpm is
-    calculated from pulses, then handed to the same post_step_motion_by()."""
+    """Channels 13-16 (relative angle, time) fired by their OWN trigger,
+    channel 17: rpm is calculated from pulses, then handed to the same
+    post_step_motion_by(). Channels 4-7 (absolute move) are never involved."""
 
     def test_rpm_is_derived_from_angle_and_time(self):
         server, ctrl = make_geared_server(max_speed_rpm=1000, acc_time=5000)
@@ -805,8 +839,9 @@ class TestRelativeMoveByAngleInTime(unittest.TestCase):
         server._handle_dmx(universe=0, data=relative_frame(-9000, 300))
         ctrl.post_step_motion_by.assert_called_once_with(-90.0, 5000, 150, relative=True)
 
-    def test_channels_5_to_7_are_ignored_when_a_time_is_given(self):
+    def test_channels_4_to_7_are_not_needed_and_not_used(self):
         server, ctrl = make_geared_server(max_speed_rpm=1000)
+        # channel 4 idle; channel 7 = 200 must not become the speed
         server._handle_dmx(universe=0, data=relative_frame(3600, 200))
         (angle, _acc, rpm), kwargs = ctrl.post_step_motion_by.call_args
         self.assertEqual((angle, rpm, kwargs), (36.0, 90, {"relative": True}))
@@ -821,18 +856,16 @@ class TestRelativeMoveByAngleInTime(unittest.TestCase):
         server._handle_dmx(universe=0, data=relative_frame(1, 65535))
         self.assertEqual(ctrl.post_step_motion_by.call_args[0][2], 1)
 
-    def test_zero_time_falls_back_to_the_absolute_channels_5_to_7(self):
-        server, ctrl = make_geared_server(max_speed_rpm=100)
-        server._handle_dmx(universe=0, data=relative_frame(9000, 0))
-        # channels 5-6 = 0xC8C8, channel 7 = 200 -- the legacy path, no relative kwarg
-        args, kwargs = ctrl.post_step_motion_by.call_args
-        self.assertEqual(kwargs, {})
-        self.assertEqual(args[2], round(200 / 255 * 100))
-
-    def test_short_frame_without_channels_13_to_16_uses_the_legacy_path(self):
+    def test_zero_time_is_refused_it_is_not_a_fallback_to_channels_5_to_7(self):
         server, ctrl = make_geared_server()
-        server._handle_dmx(universe=0, data=bytes([0, 0, 0, 255, 0, 0, 0]))
-        self.assertEqual(ctrl.post_step_motion_by.call_args[1], {})
+        server._handle_dmx(universe=0, data=relative_frame(9000, 0))
+        ctrl.post_step_motion_by.assert_not_called()
+
+    def test_a_frame_shorter_than_17_channels_never_triggers(self):
+        server, ctrl = make_geared_server()
+        frame = relative_frame(9000, 300)
+        server._handle_dmx(universe=0, data=frame[:16])
+        ctrl.post_step_motion_by.assert_not_called()
 
     def test_zero_move_sends_nothing(self):
         server, ctrl = make_geared_server()
@@ -844,7 +877,7 @@ class TestRelativeMoveByAngleInTime(unittest.TestCase):
         with self.assertRaises(ValueError):
             server.calculate_move_rpm(9000, 0)
 
-    def test_fires_once_per_rising_edge(self):
+    def test_fires_once_per_rising_edge_of_channel_17(self):
         server, ctrl = make_geared_server()
         for _ in range(5):
             server._handle_dmx(universe=0, data=relative_frame(3600, 200))
@@ -860,14 +893,283 @@ class TestRelativeMoveByAngleInTime(unittest.TestCase):
             server._handle_dmx(universe=0, data=relative_frame(3600, 200))
         ctrl.post_step_motion_by.assert_called_once()
 
-    def test_snapshot_shows_channels_13_to_16_and_the_calculated_rpm(self):
+    def test_the_absolute_trigger_ignores_channels_13_to_16(self):
+        """Channel 4 with channels 13-16 filled in is still an absolute move."""
+        server, ctrl = make_geared_server(max_speed_rpm=100)
+        server._handle_dmx(universe=0, data=relative_frame(9000, 300, trigger=0, absolute_trigger=255))
+        (angle, _acc, rpm), kwargs = ctrl.post_step_motion_by.call_args
+        self.assertEqual(kwargs, {})                       # not relative
+        self.assertAlmostEqual(angle, (0xC8C8 - 32768) / 100)   # channels 5-6
+        self.assertEqual(rpm, round(200 / 255 * 100))            # channel 7
+
+    def test_both_triggers_in_one_frame_run_only_the_absolute_move(self):
+        server, ctrl = make_geared_server()
+        server._handle_dmx(universe=0, data=relative_frame(9000, 300, trigger=255, absolute_trigger=255))
+        ctrl.post_step_motion_by.assert_called_once()
+        self.assertEqual(ctrl.post_step_motion_by.call_args[1], {})
+
+    def test_snapshot_shows_channels_13_to_17_and_the_calculated_rpm(self):
         server, _ = make_geared_server(max_speed_rpm=1000)
-        server._handle_dmx(universe=0, data=relative_frame(9000, 300))
+        server._handle_dmx(universe=0, data=relative_frame(9000, 300, trigger=0))
         channels = server.get_channel_snapshot()["channels"]
-        self.assertEqual([c["channel"] for c in channels], list(range(1, 17)))
+        self.assertEqual([c["channel"] for c in channels], list(range(1, 18)))
         self.assertIn("+90.00 deg", channels[12]["interpreted"])
         self.assertIn("3 s", channels[14]["interpreted"])
         self.assertIn("150 rpm", channels[15]["interpreted"])
+        self.assertEqual(channels[16]["label"], "Move-by trigger")
+
+
+class FakeClock:
+    """Stands in for time.monotonic() so rate limits can be tested."""
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+    def advance(self, seconds):
+        self.now += seconds
+
+
+def refuse_direct_reversal(ctrl):
+    """What the real ServoController does: speed_ctrl_action() returns False for
+    a direct CW<->CCW switch while running."""
+    state = {"direction": 0}
+
+    def act(value):
+        if value in (1, 2) and state["direction"] in (1, 2) and value != state["direction"]:
+            return False
+        state["direction"] = value
+        return True
+    ctrl.speed_ctrl_action.side_effect = act
+
+
+class TestLiveSpeedChange(unittest.TestCase):
+    """Channel 1 sets the JOG speed. It used to be read only on the rising edge,
+    so changing it while running did nothing."""
+
+    def setUp(self):
+        self.clock = FakeClock()
+        patcher = patch.object(artnet_server.time, "monotonic", self.clock)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_changing_channel_1_while_running_writes_the_new_speed(self):
+        server, ctrl = make_server(max_speed_rpm=100)
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        self.clock.advance(0.2)
+        server._handle_dmx(0, bytes([200, 200, 0]))
+        ctrl.config_speed_0x0903.assert_called_once_with(round(200 / 255 * 100))
+
+    def test_the_start_frame_does_not_write_the_speed_twice(self):
+        server, ctrl = make_server()
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        ctrl.enable_speed_ctrl.assert_called_once()
+        ctrl.config_speed_0x0903.assert_not_called()
+
+    def test_a_change_that_rounds_to_the_same_rpm_is_not_rewritten(self):
+        server, ctrl = make_server(max_speed_rpm=100)
+        server._handle_dmx(0, bytes([130, 200, 0]))   # 51 rpm
+        self.clock.advance(0.2)
+        server._handle_dmx(0, bytes([131, 200, 0]))   # also 51 rpm
+        ctrl.config_speed_0x0903.assert_not_called()
+
+    def test_writes_are_rate_limited_and_the_latest_value_wins(self):
+        server, ctrl = make_server(max_speed_rpm=100)
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        for value in (100, 150, 200):                 # a fader move: 3 frames in 60 ms
+            self.clock.advance(0.02)
+            server._handle_dmx(0, bytes([value, 200, 0]))
+        ctrl.config_speed_0x0903.assert_not_called()  # still inside the 100 ms window
+        self.clock.advance(0.1)
+        server._handle_dmx(0, bytes([200, 200, 0]))
+        ctrl.config_speed_0x0903.assert_called_once_with(round(200 / 255 * 100))
+
+    def test_a_pending_change_is_applied_when_frames_stop_arriving(self):
+        server, ctrl = make_server(max_speed_rpm=100)
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        self.clock.advance(0.02)
+        server._handle_dmx(0, bytes([200, 200, 0]))   # deferred
+        ctrl.config_speed_0x0903.assert_not_called()
+        self.clock.advance(0.2)
+        server._apply_pending_speed()                 # called by the receive loop
+        ctrl.config_speed_0x0903.assert_called_once_with(round(200 / 255 * 100))
+        server._apply_pending_speed()
+        ctrl.config_speed_0x0903.assert_called_once()
+
+    def test_lowering_to_zero_stops_it_is_not_a_speed_write(self):
+        server, ctrl = make_server()
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        self.clock.advance(0.2)
+        server._handle_dmx(0, bytes([0, 200, 0]))
+        ctrl.config_speed_0x0903.assert_not_called()
+        ctrl.speed_ctrl_action.assert_called_with(0)
+
+    def test_a_failed_speed_write_is_caught_and_retried(self):
+        server, ctrl = make_server(max_speed_rpm=100)
+        ctrl.config_speed_0x0903.side_effect = [RuntimeError("no reply"), None]
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        self.clock.advance(0.2)
+        server._handle_dmx(0, bytes([200, 200, 0]))   # fails, must not raise
+        self.clock.advance(0.2)
+        server._handle_dmx(0, bytes([200, 200, 0]))   # retried on the next frame
+        self.assertEqual(ctrl.config_speed_0x0903.call_count, 2)
+
+    def test_speed_is_not_written_while_the_signal_watchdog_has_stopped_motion(self):
+        server, ctrl = make_server(signal_timeout_s=1.0)
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        self.clock.advance(2.0)
+        server._check_signal_watchdog()
+        self.clock.advance(0.2)
+        server._handle_dmx(0, bytes([200, 200, 0]))
+        ctrl.config_speed_0x0903.assert_not_called()
+
+
+class TestStartSequence(unittest.TestCase):
+    """Starting continuous motion must always send the direction. It used to be
+    skipped when channel 2 had been set before channel 1, or had not changed
+    since the last run -- so the drive was armed but never told to turn."""
+
+    def setUp(self):
+        self.clock = FakeClock()
+        patcher = patch.object(artnet_server.time, "monotonic", self.clock)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_direction_set_before_speed_is_sent_when_speed_arrives(self):
+        server, ctrl = make_server()
+        server._handle_dmx(0, bytes([0, 200, 0]))     # direction first
+        ctrl.reset_mock()
+        server._handle_dmx(0, bytes([50, 200, 0]))    # then speed
+        self.assertEqual([c[0] for c in ctrl.method_calls], ["enable_speed_ctrl", "speed_ctrl_action"])
+        ctrl.speed_ctrl_action.assert_called_once_with(2)
+
+    def test_restart_with_the_same_direction_sends_it_again(self):
+        server, ctrl = make_server()
+        server._handle_dmx(0, bytes([50, 200, 0]))    # run CW
+        server._handle_dmx(0, bytes([0, 200, 0]))     # channel 1 -> 0: stop
+        ctrl.reset_mock()
+        server._handle_dmx(0, bytes([50, 200, 0]))    # run again, channel 2 unchanged
+        ctrl.enable_speed_ctrl.assert_called_once()
+        ctrl.speed_ctrl_action.assert_called_once_with(2)
+
+    def test_restart_after_signal_loss_sends_the_direction_again(self):
+        server, ctrl = make_server(signal_timeout_s=1.0)
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        self.clock.advance(2.0)
+        server._check_signal_watchdog()
+        server._handle_dmx(0, bytes([0, 200, 0]))     # sender back, channel 1 = 0 re-arms
+        ctrl.reset_mock()
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        ctrl.speed_ctrl_action.assert_called_once_with(2)
+
+    def test_a_direction_that_was_refused_before_a_stop_is_forgotten(self):
+        server, ctrl = make_server()
+        refuse_direct_reversal(ctrl)
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        server._handle_dmx(0, bytes([50, 60, 0]))     # refused
+        server._handle_dmx(0, bytes([0, 60, 0]))      # stop
+        ctrl.reset_mock()
+        server._handle_dmx(0, bytes([50, 60, 0]))     # a fresh start CCW
+        ctrl.speed_ctrl_action.assert_called_once_with(1)
+        self.assertFalse(server.get_stats()["direction_refused"])
+
+
+class TestDirectionRefusal(unittest.TestCase):
+    """The drive refuses a direct CW<->CCW switch (safety). The Art-Net side used
+    to treat the refused request as done, so nothing was retried or reported."""
+
+    def make(self):
+        server, ctrl = make_server()
+        refuse_direct_reversal(ctrl)
+        return server, ctrl
+
+    def test_a_refused_reversal_is_asked_once_not_every_frame(self):
+        server, ctrl = self.make()
+        server._handle_dmx(0, bytes([50, 200, 0]))            # CW
+        ctrl.speed_ctrl_action.reset_mock()
+        for _ in range(5):
+            server._handle_dmx(0, bytes([50, 60, 0]))         # CCW, refused
+        ctrl.speed_ctrl_action.assert_called_once_with(1)
+
+    def test_it_is_applied_once_channel_2_goes_through_zero(self):
+        server, ctrl = self.make()
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        server._handle_dmx(0, bytes([50, 60, 0]))             # refused
+        ctrl.speed_ctrl_action.reset_mock()
+        server._handle_dmx(0, bytes([50, 0, 0]))              # stop
+        server._handle_dmx(0, bytes([50, 60, 0]))             # now CCW is allowed
+        self.assertEqual([c.args[0] for c in ctrl.speed_ctrl_action.call_args_list], [0, 1])
+
+    def test_returning_to_the_direction_that_is_still_applied_needs_no_command(self):
+        server, ctrl = self.make()
+        server._handle_dmx(0, bytes([50, 200, 0]))            # CW applied
+        server._handle_dmx(0, bytes([50, 60, 0]))             # CCW refused
+        ctrl.speed_ctrl_action.reset_mock()
+        server._handle_dmx(0, bytes([50, 200, 0]))            # back to CW
+        ctrl.speed_ctrl_action.assert_not_called()
+        self.assertFalse(server.get_stats()["direction_refused"])
+
+    def test_the_refusal_is_visible_in_the_stats_and_the_monitor(self):
+        server, ctrl = self.make()
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        server._handle_dmx(0, bytes([50, 60, 0]))
+        stats = server.get_stats()
+        self.assertTrue(stats["direction_refused"])
+        self.assertEqual(stats["direction_refusals"], 1)
+        direction = server.get_channel_snapshot()["channels"][1]
+        self.assertIn("REFUSED", direction["interpreted"])
+
+    def test_an_allowed_change_is_not_flagged(self):
+        server, ctrl = self.make()
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        server._handle_dmx(0, bytes([50, 0, 0]))
+        server._handle_dmx(0, bytes([50, 60, 0]))
+        self.assertFalse(server.get_stats()["direction_refused"])
+        self.assertEqual(server.get_stats()["direction_refusals"], 0)
+
+
+class TestCancelLatch(unittest.TestCase):
+    """Channel 3 (cancel) leaves JOG mode. Afterwards channels 1/2 used to keep
+    writing to a mode that was no longer active."""
+
+    def test_after_cancel_nothing_is_sent_until_channel_1_returns_to_zero(self):
+        server, ctrl = make_server()
+        server._handle_dmx(0, bytes([50, 200, 0]))            # running CW
+        server._handle_dmx(0, bytes([50, 200, 255]))          # cancel
+        ctrl.cancel_continuous_reading.assert_called_once()
+        ctrl.reset_mock()
+        server._handle_dmx(0, bytes([50, 200, 0]))            # cancel released, ch1/2 still up
+        server._handle_dmx(0, bytes([90, 60, 0]))             # sender moves ch1 and ch2
+        ctrl.speed_ctrl_action.assert_not_called()
+        ctrl.enable_speed_ctrl.assert_not_called()
+        ctrl.config_speed_0x0903.assert_not_called()
+
+    def test_channel_1_at_zero_releases_the_latch_without_a_useless_stop(self):
+        server, ctrl = make_server()
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        server._handle_dmx(0, bytes([50, 200, 255]))
+        ctrl.reset_mock()
+        server._handle_dmx(0, bytes([0, 200, 0]))             # JOG already exited: no stop write
+        ctrl.speed_ctrl_action.assert_not_called()
+        server._handle_dmx(0, bytes([50, 60, 0]))             # a fresh start
+        ctrl.enable_speed_ctrl.assert_called_once()
+        ctrl.speed_ctrl_action.assert_called_once_with(1)
+
+    def test_cancel_with_channel_1_already_zero_does_not_latch(self):
+        server, ctrl = make_server()
+        server._handle_dmx(0, bytes([0, 0, 255]))
+        self.assertFalse(server.get_stats()["cancel_latched"])
+        server._handle_dmx(0, bytes([50, 0, 0]))
+        ctrl.enable_speed_ctrl.assert_called_once()
+
+    def test_the_latch_is_reported(self):
+        server, ctrl = make_server()
+        server._handle_dmx(0, bytes([50, 200, 0]))
+        server._handle_dmx(0, bytes([50, 200, 255]))
+        self.assertTrue(server.get_stats()["cancel_latched"])
+        server._handle_dmx(0, bytes([0, 200, 0]))
+        self.assertFalse(server.get_stats()["cancel_latched"])
 
 
 if __name__ == "__main__":

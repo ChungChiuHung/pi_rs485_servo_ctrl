@@ -13,17 +13,27 @@ actual upstream Art-Net source (lighting console, TouchDesigner, etc.) and
 its real channel layout are known -- this is a placeholder convention, not
 a standard):
   Channel 1 (enable/speed): 0 = disable continuous motion; 1-255 linearly
-      maps to speed_rpm (scaled by `max_speed_rpm`, minimum 1 rpm).
-  Channel 2 (direction): 0 = stop; 1-127 = CCW; 128-255 = CW.
+      maps to speed_rpm (scaled by `max_speed_rpm`, minimum 1 rpm). The speed
+      is applied when motion starts AND whenever the value changes while it
+      runs (at most one write per 100 ms, latest value wins).
+  Channel 2 (direction): 0 = stop; 1-127 = CCW; 128-255 = CW. It may be set
+      before or after channel 1: the direction is always sent when motion
+      starts. The drive refuses a direct CW<->CCW switch; that is reported
+      (log, Channel Monitor, stats) and the switch happens once channel 2 has
+      gone through 0.
   Channel 3 (cancel): 0 = normal; a 0->nonzero transition triggers the same
-      cancel behavior as OSC's /cancel_loop.
+      cancel behavior as OSC's /cancel_loop. If continuous motion was
+      requested (channel 1 > 0) it stays off, and channels 1-2 are ignored,
+      until channel 1 has been set to 0.
   Channel 4 (position-mode trigger): 0 = idle; a 0->nonzero transition
       triggers a single absolute-angle move (ServoController.post_step_motion_by(),
       the same call OSC's /set_point makes) using whatever channels 5-7
       currently hold. Optional -- a sender that only ever fills channels
       1-3 (continuous mode only) still works, this is just never triggered.
-  Channel 5-6 (target angle, high byte/low byte): a 16-bit big-endian value
-      0-65535, linearly mapped to 0..`position_mode_max_angle` degrees.
+  Channel 5-6 (target angle, high byte/low byte): 16-bit big-endian, 0.01
+      deg per step, 32768 = 0 deg: angle = (value - 32768) / 100, so 90 deg is
+      32768 + 9000 = 41768 (about +-327 deg; the drive's 180 deg guard still
+      applies to the resulting move).
   Channel 7 (position move speed): 1-255 linearly maps to speed_rpm (scaled
       by `max_speed_rpm`, minimum 1 rpm -- same scaling as channel 1).
   Channel 8 (servo on/off): 0 = Servo off; 1-255 = Servo on (level-based
@@ -42,19 +52,21 @@ a standard):
       mirroring OSC's /reset_initial_abs_position.
   Channels 8-12 are optional, like 4-7 -- a sender filling only channels
   1-3 (or 1-7) still works, these are just never triggered.
-  Channels 13-14 (relative move angle) and 15-16 (move time): an alternative
-  to channels 5-7 for the channel-4 trigger -- "move BY this angle in this
-  many seconds" instead of "go to this absolute angle at this rpm". The rpm
-  is calculated here, so the sender never has to know the gear ratio.
+  Channels 13-14 (relative move angle), 15-16 (move time) and 17 (trigger):
+  a second, independent way to move -- "move BY this angle in this many
+  seconds" instead of "go to this absolute angle at this rpm". It has its OWN
+  trigger (channel 17) and never involves channels 4-7, just as channel 4
+  never looks at channels 13-16. The rpm is calculated here, so the sender
+  never has to know the gear ratio.
     Channel 13-14 (high byte/low byte): 16-bit value, 32768 = no move; each
         step is 0.01 deg, so 32768+n = +n/100 deg and 32768-n = -n/100 deg
         (range about +-327 deg; the drive's 180 deg guard still applies).
         Positive = the direction in which the tracked angle increases.
     Channel 15-16 (high byte/low byte): 16-bit duration in 0.01 s steps
-        (0.01 .. 655.35 s). 0 = not used: the trigger falls back to
-        channels 5-7 exactly as before.
-  With a non-zero duration the trigger moves to (current angle + relative
-  angle) and ignores channels 5-7. rpm = motor revolutions / seconds * 60,
+        (0.01 .. 655.35 s). 0 = no time given: the move is refused.
+    Channel 17 (move-by trigger): 0 = idle; a 0->nonzero transition moves to
+        (current angle + relative angle). If channel 4 also rises in the same
+        frame, only the absolute move runs. rpm = motor revolutions / seconds * 60,
   worked out from PULSES (angle * base_pulse_per_degree, which already
   includes the gear ratio) so no division by an angle is needed and the only
   divisor (the duration) is checked to be non-zero first; it is then rounded
@@ -100,27 +112,34 @@ DEFAULT_SIGNAL_TIMEOUT_S = 2.0
 ARTNET_ID = b"Art-Net\x00"
 OP_OUTPUT_DMX = 0x5000
 
-# Channels 13-16 (relative move by angle over a time): units and midpoint.
-RELATIVE_ANGLE_CENTER = 32768   # raw value meaning "no move"
-RELATIVE_ANGLE_STEP_DEG = 0.01  # degrees per raw step
+# Angle encoding shared by channels 5-6 (absolute target) and 13-14 (relative
+# move): 16 bits, 0.01 deg per step, 32768 = 0 deg.
+ANGLE_CENTER = 32768
+ANGLE_STEP_DEG = 0.01
 DURATION_STEP_S = 0.01          # seconds per raw step of channels 15-16
+
+# Channel 1 speed changes while running are written at most this often.
+SPEED_UPDATE_MIN_INTERVAL_S = 0.1
+
+
+def decode_angle_centideg(high_byte: int, low_byte: int) -> int:
+    """Hundredths of a degree from a channel pair (5-6 or 13-14): an integer,
+    so nothing depends on floating-point angles until the very end."""
+    return ((high_byte << 8) | low_byte) - ANGLE_CENTER
 
 
 def decode_relative_move(data: bytes):
     """(delta_centideg, duration_centisec) from channels 13-16, or None if the
-    frame is shorter than 16 channels. Both are integers (hundredths of a
-    degree / of a second) so nothing below needs floating-point angles."""
+    frame is shorter than 16 channels."""
     if len(data) < 16:
         return None
-    delta_centideg = ((data[12] << 8) | data[13]) - RELATIVE_ANGLE_CENTER
-    duration_centisec = (data[14] << 8) | data[15]
-    return delta_centideg, duration_centisec
+    return decode_angle_centideg(data[12], data[13]), (data[14] << 8) | data[15]
 
 
 class ArtNetInputServer:
     def __init__(self, servo_ctrller, listen_ip="0.0.0.0", listen_port=ARTNET_PORT,
                  universe=DEFAULT_UNIVERSE, max_speed_rpm=100, acc_time=5000,
-                 position_mode_max_angle=360, signal_timeout_s=DEFAULT_SIGNAL_TIMEOUT_S,
+                 signal_timeout_s=DEFAULT_SIGNAL_TIMEOUT_S,
                  allowed_sources=None, enable_dangerous_channels=False):
         """listen_ip: bind to the NIC address the sender unicasts to (a
         specific address only receives unicast; Linux does not deliver
@@ -142,21 +161,34 @@ class ArtNetInputServer:
         self.enable_dangerous_channels = bool(enable_dangerous_channels)
         self.max_speed_rpm = max_speed_rpm
         self.acc_time = acc_time
-        self.position_mode_max_angle = position_mode_max_angle
 
         self._sock = None
         self._thread = None
         self._stop_event = threading.Event()
 
         self._last_enable_channel = None
+        # The direction channel value the drive has actually ACCEPTED (None =
+        # nothing sent since motion started, so the next start must send it).
         self._last_direction_channel = None
+        # A requested direction the drive refused (a direct CW<->CCW switch);
+        # not asked again until channel 2 changes.
+        self._refused_direction = None
         self._last_cancel_channel = 0
         self._last_position_trigger_channel = 0
+        self._last_relative_trigger_channel = 0
         self._last_servo_channel = None
         self._last_clear_alarm_channel = 0
         self._last_back_home_channel = 0
         self._last_set_home_channel = 0
         self._last_reset_initial_abs_pos_channel = 0
+        # After a channel-3 cancel while motion was requested: channels 1-2 are
+        # ignored until channel 1 returns to 0 (see _handle_dmx).
+        self._cancel_latched = False
+        # Live speed: the rpm channel 1 asks for now, the rpm last written to
+        # the drive, and when (see _apply_pending_speed()).
+        self._desired_speed_rpm = None
+        self._applied_speed_rpm = None
+        self._last_speed_write_monotonic = 0.0
 
         # Raw bytes of the most recently received DMX frame (for the
         # configured universe only), plus when it arrived -- for the web
@@ -174,7 +206,7 @@ class ArtNetInputServer:
         self._last_sequence = None
         self._last_sequence_time = 0.0
         self._stats = {"frames_ok": 0, "dropped_source": 0, "dropped_universe": 0,
-                       "dropped_sequence": 0, "watchdog_trips": 0}
+                       "dropped_sequence": 0, "watchdog_trips": 0, "direction_refusals": 0}
 
     @property
     def is_running(self) -> bool:
@@ -216,83 +248,183 @@ class ArtNetInputServer:
             if cancel_channel > 0 and self._last_cancel_channel == 0:
                 self.servo_ctrller.cancel_continuous_reading()
                 logger.info("Art-Net: cancel triggered (channel 3 rising edge).")
+                if enable_channel != 0 or self._last_enable_channel not in (None, 0):
+                    # The drive has left JOG mode. Writing speed/direction now
+                    # would go to a mode that is no longer active, so hold
+                    # everything until the sender sets channel 1 to 0.
+                    self._cancel_latched = True
+                    self._last_enable_channel = 0
+                    self._reset_motion_state()
+                    logger.info("Art-Net: continuous motion is off until channel 1 is set to 0.")
             self._last_cancel_channel = cancel_channel
 
+            absolute_fired = False
             if len(data) >= 7:
-                self._handle_position_mode_channels(data)
+                absolute_fired = self._handle_position_mode_channels(data)
+
+            if len(data) >= 17:
+                self._handle_relative_move_channel(data, absolute_fired)
 
             if len(data) >= 12:
                 self._handle_extended_channels(data)
 
-            if self._watchdog_tripped:
-                # The signal was lost and rotation was stopped. Resuming by
-                # itself when the sender comes back would be a surprise start,
-                # so continuous motion stays stopped until the sender
-                # explicitly sets channel 1 to 0 (which re-arms it).
+            if self._watchdog_tripped or self._cancel_latched:
+                # Signal lost, or the sender cancelled: resuming by itself would
+                # be a surprise start, so continuous motion stays off until the
+                # sender explicitly sets channel 1 to 0 (which re-arms it).
                 if enable_channel != 0:
                     return
+                was = "cancel" if self._cancel_latched else "signal loss"
                 self._watchdog_tripped = False
-                logger.info("Art-Net: signal restored and channel 1 = 0; continuous motion re-armed.")
+                self._cancel_latched = False
+                logger.info(f"Art-Net: channel 1 = 0 after {was}; continuous motion re-armed.")
 
             if enable_channel == 0:
                 if self._last_enable_channel not in (None, 0):
                     self.servo_ctrller.speed_ctrl_action(0)
                     logger.info("Art-Net: continuous motion disabled (channel 1 -> 0).")
+                self._reset_motion_state()
             else:
+                speed_rpm = max(1, round(enable_channel / 255 * self.max_speed_rpm))
                 if self._last_enable_channel in (None, 0):
-                    speed_rpm = max(1, round(enable_channel / 255 * self.max_speed_rpm))
                     self.servo_ctrller.enable_speed_ctrl(speed_rpm, self.acc_time, True)
+                    self._desired_speed_rpm = self._applied_speed_rpm = speed_rpm
+                    self._last_speed_write_monotonic = now
+                    # enable_speed_ctrl() re-enters JOG mode, so the direction
+                    # has to be sent again -- even if channel 2 was already
+                    # set before channel 1 came up, or did not change since
+                    # the last run.
+                    self._last_direction_channel = None
+                    self._refused_direction = None
                     logger.info(f"Art-Net: continuous motion enabled at {speed_rpm} rpm "
                                 f"(channel 1 = {enable_channel}).")
+                else:
+                    self._desired_speed_rpm = speed_rpm
+                    self._apply_pending_speed(now)
 
-                if direction_channel != self._last_direction_channel:
-                    # Per docs/en_manual.txt:10380-10382 (JOG_OPERATION,
-                    # 0x0904): 1 = forward rotation (CCW), 2 = reverse
-                    # rotation (CW).
-                    if direction_channel == 0:
-                        action_value = 0
-                    elif direction_channel < 128:
-                        action_value = 1  # CCW
-                    else:
-                        action_value = 2  # CW
-                    self.servo_ctrller.speed_ctrl_action(action_value)
-                    logger.info(f"Art-Net: direction channel={direction_channel} -> "
-                                f"action={action_value}")
+                self._apply_direction(direction_channel)
 
             self._last_enable_channel = enable_channel
-            self._last_direction_channel = direction_channel
         except Exception as e:
             logger.error(f"Error handling Art-Net DMX frame: {e}")
 
-    def _handle_position_mode_channels(self, data: bytes) -> None:
-        """Channels 4-7 -- absolute-angle position mode, the same call
-        OSC's /set_point makes. Requires len(data) >= 7 (checked by the
-        caller); a sender using only channels 1-3 never triggers this."""
+    def _reset_motion_state(self) -> None:
+        """Forget what was sent for continuous motion (it stopped or JOG was
+        left), so the next start sends everything again."""
+        self._last_direction_channel = None
+        self._refused_direction = None
+        self._desired_speed_rpm = None
+        self._applied_speed_rpm = None
+
+    def _apply_direction(self, direction_channel: int) -> None:
+        """Sends the direction channel 2 asks for, once per change. The drive
+        refuses a direct CW<->CCW switch (speed_ctrl_action() returns False);
+        that is remembered so it is neither retried on every frame nor mistaken
+        for done, and it clears when channel 2 changes again."""
+        if direction_channel == self._last_direction_channel:
+            self._refused_direction = None
+            return
+        if direction_channel == self._refused_direction:
+            return
+        # Per docs/en_manual.txt:10380-10382 (JOG_OPERATION, 0x0904): 1 =
+        # forward rotation (CCW), 2 = reverse rotation (CW).
+        if direction_channel == 0:
+            action_value = 0
+        elif direction_channel < 128:
+            action_value = 1  # CCW
+        else:
+            action_value = 2  # CW
+        applied = self.servo_ctrller.speed_ctrl_action(action_value)
+        if applied is False:
+            self._refused_direction = direction_channel
+            self._stats["direction_refusals"] += 1
+            logger.warning(
+                f"Art-Net: direction change refused by the drive (channel 2 = {direction_channel}): "
+                "a direct CW<->CCW switch is not allowed -- set channel 2 to 0 first."
+            )
+            return
+        self._last_direction_channel = direction_channel
+        self._refused_direction = None
+        logger.info(f"Art-Net: direction channel={direction_channel} -> action={action_value}")
+
+    def _apply_pending_speed(self, now=None) -> None:
+        """Writes the speed channel 1 asks for (0x0903) when it differs from
+        what the drive has, at most once per SPEED_UPDATE_MIN_INTERVAL_S so a
+        fader move does not flood the serial line; the latest value wins. Also
+        called by the receive loop when no frames arrive, so the last value is
+        not left pending. Does nothing unless continuous motion is running."""
+        if self._cancel_latched or self._watchdog_tripped:
+            return
+        if self._last_enable_channel in (None, 0):
+            return
+        desired = self._desired_speed_rpm
+        if desired is None or desired == self._applied_speed_rpm:
+            return
+        now = time.monotonic() if now is None else now
+        if now - self._last_speed_write_monotonic < SPEED_UPDATE_MIN_INTERVAL_S:
+            return
+        # Whatever happens, do not try again before the interval has passed.
+        self._last_speed_write_monotonic = now
+        try:
+            self.servo_ctrller.config_speed_0x0903(desired)
+        except Exception as e:
+            logger.error(f"Art-Net: could not change the speed to {desired} rpm: {e}")
+            return
+        self._applied_speed_rpm = desired
+        logger.info(f"Art-Net: speed changed to {desired} rpm (channel 1).")
+
+    def _handle_position_mode_channels(self, data: bytes) -> bool:
+        """Channels 4-7 -- absolute-angle position mode, the same call OSC's
+        /set_point makes. Requires len(data) >= 7 (checked by the caller); a
+        sender using only channels 1-3 never triggers this. Uses channels 5-7
+        only -- never channels 13-17. Returns True when this frame carried the
+        trigger's rising edge (whether the move ran or was refused)."""
         position_trigger_channel = data[3]
-        angle_high_byte, angle_low_byte, speed_channel = data[4], data[5], data[6]
+        fired = False
 
         if position_trigger_channel > 0 and self._last_position_trigger_channel == 0:
-            relative = decode_relative_move(data)
-            if relative is not None and relative[1] > 0:
-                self._last_position_trigger_channel = position_trigger_channel
-                self._move_by_angle_in_time(*relative)
-                return
-            angle_raw = (angle_high_byte << 8) | angle_low_byte
-            angle = angle_raw / 65535 * self.position_mode_max_angle
+            fired = True
+            angle_centideg = decode_angle_centideg(data[4], data[5])
+            angle = angle_centideg / 100
+            speed_channel = data[6]
             speed_rpm = max(1, round(speed_channel / 255 * self.max_speed_rpm))
             # Consume the edge BEFORE moving: a refused move (position
-            # unreadable) must not be retried on every frame at 30-44 fps.
+            # unreadable) must not be retried on every 30-44 fps frame.
             self._last_position_trigger_channel = position_trigger_channel
             try:
                 self.servo_ctrller.post_step_motion_by(angle, self.acc_time, speed_rpm)
             except Exception as e:
                 logger.error(f"Art-Net: position-mode move to {angle:.2f} deg refused: {e}")
-                return
+                return fired
             logger.info(
                 f"Art-Net: position-mode move to {angle:.2f} deg at {speed_rpm} rpm "
-                f"(channel 4 rising edge, channels 5-6 = {angle_raw}, channel 7 = {speed_channel})."
+                f"(channel 4 rising edge, channels 5-6 = {(data[4] << 8) | data[5]}, "
+                f"channel 7 = {speed_channel})."
             )
         self._last_position_trigger_channel = position_trigger_channel
+        return fired
+
+    def _handle_relative_move_channel(self, data: bytes, absolute_fired: bool) -> None:
+        """Channel 17 -- move BY the angle in channels 13-14 in the time in
+        channels 15-16. Requires len(data) >= 17 (checked by the caller). Uses
+        channels 13-16 only -- never channels 4-7."""
+        trigger = data[16]
+        if trigger > 0 and self._last_relative_trigger_channel == 0:
+            # Consume the edge first, like the absolute trigger.
+            self._last_relative_trigger_channel = trigger
+            if absolute_fired:
+                logger.warning(
+                    "Art-Net: channels 4 and 17 both fired in one frame; only the absolute "
+                    "move (channel 4) was run.")
+                return
+            delta_centideg, duration_centisec = decode_relative_move(data)
+            if duration_centisec == 0:
+                logger.warning(
+                    "Art-Net: move-by trigger (channel 17) refused: the time in channels "
+                    "15-16 is 0.")
+                return
+            self._move_by_angle_in_time(delta_centideg, duration_centisec)
+        self._last_relative_trigger_channel = trigger
 
     def calculate_move_rpm(self, delta_centideg: int, duration_centisec: int) -> int:
         """rpm needed to turn the output shaft by delta_centideg (hundredths of
@@ -316,7 +448,7 @@ class ArtNetInputServer:
         return max(1, min(rpm, self.max_speed_rpm))
 
     def _move_by_angle_in_time(self, delta_centideg: int, duration_centisec: int) -> None:
-        """Channel-4 trigger with channels 13-16: relative move over a time.
+        """Channel-17 trigger with channels 13-16: relative move over a time.
         The trigger edge was consumed by the caller, so a refused move is not
         retried on every frame."""
         if delta_centideg == 0:
@@ -324,7 +456,7 @@ class ArtNetInputServer:
             return
         try:
             speed_rpm = self.calculate_move_rpm(delta_centideg, duration_centisec)
-            delta_deg = delta_centideg * RELATIVE_ANGLE_STEP_DEG
+            delta_deg = delta_centideg / 100
             self.servo_ctrller.post_step_motion_by(
                 delta_deg, self.acc_time, speed_rpm, relative=True)
         except Exception as e:
@@ -334,7 +466,7 @@ class ArtNetInputServer:
             return
         logger.info(
             f"Art-Net: relative move {delta_centideg / 100:+.2f} deg in "
-            f"{duration_centisec / 100:g} s -> {speed_rpm} rpm (channel 4 rising edge)."
+            f"{duration_centisec / 100:g} s -> {speed_rpm} rpm (channel 17 rising edge)."
         )
 
     def _handle_extended_channels(self, data: bytes) -> None:
@@ -418,7 +550,8 @@ class ArtNetInputServer:
             self.servo_ctrller.speed_ctrl_action(0)
         except Exception as e:
             logger.error(f"Art-Net: failed to stop rotation after signal loss: {e}")
-        self._last_direction_channel = 0
+        # Motion stopped: whatever was sent for it has to be sent again on restart.
+        self._reset_motion_state()
 
     def get_stats(self) -> dict:
         """Receive statistics for the web UI: lets a user see the sender's real
@@ -435,6 +568,8 @@ class ArtNetInputServer:
             "frames_per_s": fps,
             "signal_timeout_s": self.signal_timeout_s,
             "watchdog_tripped": self._watchdog_tripped,
+            "cancel_latched": self._cancel_latched,
+            "direction_refused": self._refused_direction is not None,
             "allowed_sources": sorted(self.allowed_sources),
             "dangerous_channels_enabled": self.enable_dangerous_channels,
             "listen_ip": self.listen_ip,
@@ -462,16 +597,20 @@ class ArtNetInputServer:
         ))
         direction = data[1] if len(data) > 1 else 0
         direction_label = "stop" if direction == 0 else ("CCW" if direction < 128 else "CW")
+        if self._refused_direction is not None and direction == self._refused_direction:
+            direction_label += " - REFUSED by the drive (set channel 2 to 0 first)"
         channels.append(entry(2, "Direction", direction, direction_label))
         cancel = data[2] if len(data) > 2 else 0
-        channels.append(entry(3, "Cancel", cancel, "triggered" if cancel > 0 else "idle"))
+        cancel_note = "triggered" if cancel > 0 else "idle"
+        if self._cancel_latched:
+            cancel_note += " - motion held off: set channel 1 to 0"
+        channels.append(entry(3, "Cancel", cancel, cancel_note))
 
         if len(data) >= 7:
             trigger, angle_high, angle_low, speed_ch = data[3], data[4], data[5], data[6]
-            angle_raw = (angle_high << 8) | angle_low
-            angle = angle_raw / 65535 * self.position_mode_max_angle
+            angle = decode_angle_centideg(angle_high, angle_low) / 100
             channels.append(entry(4, "Position trigger", trigger, "armed" if trigger > 0 else "idle"))
-            channels.append(entry(5, "Angle (high byte)", angle_high, f"{angle:.2f} deg (combined w/ ch 6)"))
+            channels.append(entry(5, "Angle (high byte)", angle_high, f"{angle:+.2f} deg (combined w/ ch 6)"))
             channels.append(entry(6, "Angle (low byte)", angle_low, ""))
             channels.append(entry(
                 7, "Position speed", speed_ch,
@@ -497,13 +636,15 @@ class ArtNetInputServer:
                 time_note = f"{duration_centisec / 100:g} s (combined w/ ch 16)"
                 trigger_note = summary
             else:
-                angle_note = f"{delta_centideg / 100:+.2f} deg (unused: ch 15-16 = 0, ch 5-7 apply)"
-                time_note = "0 = off (ch 5-7 apply)"
+                angle_note = f"{delta_centideg / 100:+.2f} deg (ch 17 is refused while the time is 0)"
+                time_note = "0 = no time given"
                 trigger_note = None
             channels.append(entry(13, "Move by angle (high byte)", data[12], angle_note))
             channels.append(entry(14, "Move by angle (low byte)", data[13], ""))
             channels.append(entry(15, "Move time (high byte)", data[14], time_note))
             channels.append(entry(16, "Move time (low byte)", data[15], trigger_note or ""))
+        if len(data) >= 17:
+            channels.append(entry(17, "Move-by trigger", data[16], "armed" if data[16] > 0 else "idle"))
 
         return {"received_at": self._last_frame_time, "channels": channels}
 
@@ -553,15 +694,23 @@ class ArtNetInputServer:
             # arriving in a stream) -- the check must not depend on a
             # packet for OUR universe showing up.
             self._check_signal_watchdog()
+            # ...and the last speed change must not stay pending when the
+            # sender stops transmitting for a moment.
+            try:
+                self._apply_pending_speed()
+            except Exception as e:
+                logger.error(f"Art-Net: pending speed change failed: {e}")
 
     def start(self) -> None:
         if self.is_running:
             raise RuntimeError("Art-Net server is already running.")
         self._stop_event.clear()
         self._last_enable_channel = None
-        self._last_direction_channel = None
+        self._reset_motion_state()
+        self._cancel_latched = False
         self._last_cancel_channel = 0
         self._last_position_trigger_channel = 0
+        self._last_relative_trigger_channel = 0
         self._last_servo_channel = None
         self._last_clear_alarm_channel = 0
         self._last_back_home_channel = 0

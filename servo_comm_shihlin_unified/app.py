@@ -579,7 +579,6 @@ def _parse_artnet_options(payload):
             ("universe", DEFAULT_UNIVERSE, 0, 32767, int),
             ("max_speed_rpm", 100, 1, 3000, int),
             ("acc_time", 5000, 0, 60000, int),
-            ("position_mode_max_angle", 360, 1, 100000, float),
             ("signal_timeout_s", DEFAULT_SIGNAL_TIMEOUT_S, 0, 60, float)):
         value, error = number(key, default, lo, hi, kind)
         if error:
