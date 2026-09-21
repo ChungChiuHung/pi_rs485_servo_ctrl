@@ -45,6 +45,20 @@ runs the server in that window (`Ctrl+C` to stop).
 Not yet run on a real Mac — the script is written from the Windows launcher and
 syntax-checked only.
 
+## On Linux / the Raspberry Pi: use `start_server.sh`
+
+`./start_server.sh` (in this folder) starts the web app immediately: it installs
+nothing, uses the first interpreter that already has the packages (`../.venv`
+from `../setup_pi.sh`, then `./.venv`, then `python3`), picks the first
+`/dev/ttyUSB*` or `/dev/ttyACM*` adapter, and runs `app.py` in the terminal
+(`Ctrl+C` stops it; no browser is opened). Settings are environment variables,
+e.g. `SERVO_WEB_HOST=127.0.0.1 SERVO_SERIAL_PORT=/dev/ttyAMA0 ./start_server.sh`
+(the RS485 CAN HAT is `/dev/ttyAMA0`); the list is at the top of the script.
+Starting the app is not passive: like `python app.py` it opens the port, drives
+GPIO4, and writes PA23 if EEPROM writes are not yet inhibited (it never moves
+the motor by itself). With no adapter plugged in it still starts and shows the
+"No RS-485 serial port connection" bar.
+
 ## Prerequisites
 
 1. **Python 3.9+**, on PATH (`python --version` works from any terminal).
