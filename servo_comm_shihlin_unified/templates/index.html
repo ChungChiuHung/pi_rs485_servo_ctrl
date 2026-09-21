@@ -436,7 +436,6 @@
                         const timeout = parseFloat($('#artnet_signal_timeout').val());
                         payload.signal_timeout_s = isNaN(timeout) ? 2 : timeout;
                         payload.enable_dangerous_channels = $('#artnet_dangerous_channels').is(':checked');
-                        payload.position_mode_max_angle = parseFloat($('#artnet_position_max_angle').val()) || 360;
                     }
                     $('#input_server_action_status').text('Starting ' + type + '...');
                     $.ajax({
@@ -721,10 +720,19 @@
                         stats.dangerous_channels_enabled ? 'channels 10-12 ENABLED' : 'channels 10-12 disabled'
                     ];
                     let text = parts.join(' | ');
+                    // Conditions the sender has to react to, most important first.
+                    const warnings = [];
                     if (stats.watchdog_tripped) {
-                        text = 'SIGNAL LOST - rotation stopped; set channel 1 to 0 to re-arm. | ' + text;
+                        warnings.push('SIGNAL LOST - rotation stopped; set channel 1 to 0 to re-arm.');
                     }
-                    el.text(text).css('color', stats.watchdog_tripped ? '#e74c3c' : '');
+                    if (stats.cancel_latched) {
+                        warnings.push('CANCELLED - motion is held off; set channel 1 to 0 to re-arm.');
+                    }
+                    if (stats.direction_refused) {
+                        warnings.push('DIRECTION REFUSED by the drive (CW<->CCW); set channel 2 to 0 first.');
+                    }
+                    if (warnings.length) { text = warnings.join(' ') + ' | ' + text; }
+                    el.text(text).css('color', warnings.length ? '#e74c3c' : '');
                 }
 
                 function pollArtnetChannels() {
@@ -860,10 +868,6 @@
                         <input type="checkbox" id="artnet_dangerous_channels">
                     </div>
                     <span class="section-note artnet-only">Back home (real move), set home (overwrites the saved home) and reset absolute position. Ignored unless ticked.</span>
-                    <div class="form-group artnet-only">
-                        <label for="artnet_position_max_angle">Position-mode max angle (deg):</label>
-                        <input type="number" id="artnet_position_max_angle" value="360">
-                    </div>
                     <div class="button-container">
                         <button class="button" id="startInputServerBtn">Start</button>
                         <button class="button" id="stopInputServerBtn">Stop</button>
