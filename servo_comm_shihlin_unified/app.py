@@ -512,6 +512,31 @@ def get_activity_log():
     return jsonify({"entries": activity_log.get_since(since)})
 
 
+@app.route('/io/do', methods=['GET'])
+@hardware_serialized
+def get_do_status():
+    """Read-only view of the drive's digital outputs DO1~DO6 (CN1_41~CN1_46): ON/OFF
+    state and the function assigned to each pin. Sends function-code-0x03 reads
+    only -- never writes, never forces an output. Each call is THREE serial
+    transactions, so the page does not poll it unless the operator turns
+    auto-refresh on (Pi 3 B has little CPU/serial headroom). A failed read is a
+    503, never a set of guessed OFF values.
+    """
+    do = servo_ctrller.read_do_status()
+    if do is None:
+        return jsonify({
+            "status": "error",
+            "message": "Could not read the DO registers (communication failure). Nothing was written.",
+        }), 503
+    return jsonify({
+        "status": "success",
+        "do": do,
+        "note": "State is the raw bit of register 0x0205. The DO contact polarity "
+                "(PD27) is not applied, so on a pin defined as inverted ON may not "
+                "mean the pin is conducting.",
+    })
+
+
 def _parse_artnet_options(payload):
     """Validates the Art-Net start request. Returns (ArtNetInputServer kwargs,
     None) or (None, error message). The safe values are the defaults:

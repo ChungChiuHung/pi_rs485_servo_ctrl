@@ -619,6 +619,49 @@
                     });
                 });
 
+                // Digital outputs (read-only). One click = three serial reads, so
+                // it never runs by itself; auto-refresh is opt-in.
+                let doRequestInFlight = false;
+                let doAutoTimer = null;
+
+                function renderDoStatus(response) {
+                    const tbody = $('#doStatusTableBody');
+                    tbody.empty();
+                    Object.keys(response.do).forEach(function(name) {
+                        const pin = response.do[name];
+                        $('<tr>').append(
+                            $('<td>').text(name),
+                            $('<td>').text(pin.pin),
+                            $('<td>').text(pin.on ? 'ON' : 'off').css('font-weight', pin.on ? 'bold' : 'normal'),
+                            $('<td>').text(pin.function + ' (0x' + pin.function_code.toString(16).toUpperCase().padStart(2, '0') + ')')
+                        ).appendTo(tbody);
+                    });
+                    if (response.note) { $('#doStatusNote').text(response.note); }
+                }
+
+                function readDoStatus() {
+                    if (doRequestInFlight) { return; }
+                    doRequestInFlight = true;
+                    $.get('/io/do', function(response) {
+                        renderDoStatus(response);
+                        $('#doStatusFeedback').text('[' + timestamp() + '] read OK');
+                    }).fail(function(xhr) {
+                        // 429 = another command is running; skip this refresh quietly.
+                        const msg = xhr.status === 429 ? 'busy, try again'
+                            : ((xhr.responseJSON && xhr.responseJSON.message) || 'read failed');
+                        $('#doStatusFeedback').text('[' + timestamp() + '] ' + msg);
+                    }).always(function() { doRequestInFlight = false; });
+                }
+
+                $('#readDoBtn').click(readDoStatus);
+                $('#doAutoRefresh').change(function() {
+                    if (doAutoTimer) { clearInterval(doAutoTimer); doAutoTimer = null; }
+                    if ($(this).is(':checked')) {
+                        readDoStatus();
+                        doAutoTimer = setInterval(readDoStatus, 2000);
+                    }
+                });
+
                 // Activity log -- lets a user who isn't watching this
                 // process's own console see what every action (including
                 // ones triggered remotely via OSC/Art-Net) actually did.
@@ -948,6 +991,24 @@
                         <label for="rs485_receive">Received:</label>
                         <input type="text" id="rs485_receive" value="{{ RS485_read }}" readonly>
                     </div>
+                </section>
+
+                <section class="do-status" id="doStatusSection">
+                    <h2>Digital Outputs (DO1 - DO6)</h2>
+                    <div class="button-container">
+                        <button class="button" id="readDoBtn">READ DO STATUS</button>
+                        <label class="section-note"><input type="checkbox" id="doAutoRefresh"> Auto-refresh every 2 s</label>
+                        <span id="doStatusFeedback" class="section-note"></span>
+                    </div>
+                    <table class="channel-table">
+                        <thead>
+                            <tr><th>DO</th><th>CN1 pin</th><th>State</th><th>Assigned function</th></tr>
+                        </thead>
+                        <tbody id="doStatusTableBody">
+                            <tr><td colspan="4" class="section-note">Not read yet. Read-only: three serial reads per refresh.</td></tr>
+                        </tbody>
+                    </table>
+                    <p class="section-note" id="doStatusNote">State is the raw bit of register 0x0205; the DO contact polarity (PD27) is not applied.</p>
                 </section>
 
                 <section class="artnet-monitor" id="artnetMonitorSection" style="display:none;">
