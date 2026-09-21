@@ -1,6 +1,7 @@
 import time
 import logging
 import json
+import math
 import threading
 from typing import Union, Callable
 from threading import Thread, Event
@@ -84,6 +85,21 @@ class PositionUnavailableError(ValueError):
     """The drive's current position could not be read (or, in absolute mode,
     cannot be trusted), so a position-relative move was refused rather than
     computed from a stale angle."""
+
+
+# Command pulses the drive can be given for one positioning move: registers
+# 0x0905 (low word) and 0x0906 (high word) hold 0..(2^31-1) (manual,
+# docs/en_manual.txt ~10416). More would be truncated into a wrong, shorter
+# move. This is a hardware limit; the application itself sets no limit on how
+# far one move may go (the old 180 degree guard was removed 2026-09-21 -- it came
+# from an earlier application's requirement).
+MAX_POSITIONING_PULSES = 2**31 - 1
+
+
+class MoveOutOfRangeError(ValueError):
+    """The requested move cannot be expressed in the drive's command-pulse
+    register (0..2^31-1), or the angle is not a finite number. Nothing was
+    sent. A ValueError, so callers that already handle refused moves cope."""
 
 
 def alarm_name(alarm_code):
@@ -1480,10 +1496,10 @@ class ServoController:
 
         diff_pulses = target_pos - current_pos
 
-        if abs(diff_pulses) >= self.base_pulse_per_degree * 180:
-            logging.info(
-                "Target position change is 180 degrees or more; refusing to "
-                "move (see docs/servo_comm_shihlin_merge_design.md §2.2 #7)."
+        if abs(diff_pulses) > MAX_POSITIONING_PULSES:
+            logging.warning(
+                f"pos_step_motion_by: {abs(diff_pulses)} pulses is more than the drive's "
+                f"command-pulse register holds ({MAX_POSITIONING_PULSES}); not moving."
             )
             return 0.0
 
@@ -1513,7 +1529,15 @@ class ServoController:
         move computed from it lands at the wrong angle -- seen live
         2026-09-19 (target 14.43 deg landed at 28.86 deg). So the position is
         read from the drive first. Raises PositionUnavailableError, without
-        moving, if it can't be read or (absolute mode) can't be trusted."""
+        moving, if it can't be read or (absolute mode) can't be trusted.
+
+        There is no limit on how far one move may go (the 180 degree guard was
+        removed 2026-09-21). Only what the drive cannot represent is refused:
+        MoveOutOfRangeError (a ValueError) for an angle that is not a finite
+        number, or a move of more than 2^31-1 command pulses (about 6144 deg of
+        output shaft at 30:1). Nothing is read or sent in that case."""
+        if not math.isfinite(angle):
+            raise MoveOutOfRangeError(f"angle must be a finite number, got {angle!r}.")
         if not self._refresh_current_angle_from_hardware():
             raise PositionUnavailableError(
                 "Could not read the current position from the drive; refusing to move "
@@ -1529,16 +1553,15 @@ class ServoController:
             f"Previous Angle={self.previous_angle}"
         )
 
-        if abs(diff_angle) >= 180:
-            logger.warning(
-                f"Target angle change ({diff_angle} deg) is 180 degrees or "
-                "more; refusing to move (see "
-                "docs/servo_comm_shihlin_merge_design.md §2.2 #7)."
-            )
-            return
-
         if diff_angle != 0.0:
             total_pulse = self.base_pulse_per_degree * abs(diff_angle)
+            if total_pulse > MAX_POSITIONING_PULSES:
+                # Before any state (float_error, accumulate_pulse) is touched.
+                raise MoveOutOfRangeError(
+                    f"A move of {diff_angle:.1f} deg is {total_pulse:.0f} command pulses; the drive "
+                    f"holds at most {MAX_POSITIONING_PULSES} (about "
+                    f"{MAX_POSITIONING_PULSES / self.base_pulse_per_degree:.0f} deg). Nothing was sent."
+                )
             integer_pulse = int(total_pulse)
             fractional_pulse = total_pulse - integer_pulse
 

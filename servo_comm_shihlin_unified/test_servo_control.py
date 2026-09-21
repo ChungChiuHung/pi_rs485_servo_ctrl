@@ -4,7 +4,7 @@ Unit tests for servo_control.py.
 Two groups:
 1. New logic introduced by the servo_comm_shihlin_unified merge: closed-loop
    diff_angle basis, EncoderPulseTracker integration, the abs()-based
-   180-degree guard, directional float_error accumulation.
+   the drive's command-pulse range check, directional float_error accumulation.
 2. Register/address-correctness coverage for every read_*/write_*/config_*
    method ported from servo_comm_shihlin -- these were mechanically switched
    from ModbusASCIIClient to ModbusRTUClient (see design doc §0), and a
@@ -23,7 +23,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from servo_control import (
-    ServoController, PositionUnavailableError, is_alarm_active, NO_ALARM_CODES,
+    ServoController, PositionUnavailableError, MoveOutOfRangeError, is_alarm_active, NO_ALARM_CODES,
     STILL_THRESHOLD_PULSES, STILL_COUNT_TO_COMPLETE,
 )
 from modbus_utils import ModbusUtils
@@ -105,41 +105,53 @@ class TestPosStepMotionByUsesTracker(unittest.TestCase):
         self.assertEqual(result, 0.0)
         ctrl._execute_positioning.assert_not_called()
 
-    def test_180_degree_guard_blocks_large_positive_move(self):
+    def test_a_move_of_more_than_180_degrees_is_allowed(self):
+        """There is no 180 degree limit in this application (2026-09-21)."""
         ctrl = make_controller()
         ctrl._execute_positioning = MagicMock()
         ctrl.read_motor_feedback_pulses = MagicMock(return_value=0)
 
-        huge_target = int(ctrl.base_pulse_per_degree * 200)  # > 180 degrees worth
-        result = ctrl.pos_step_motion_by(target_pos=huge_target)
-
-        self.assertEqual(result, 0.0)
-        ctrl._execute_positioning.assert_not_called()
-
-    def test_180_degree_guard_blocks_large_negative_move(self):
-        """The pre-merge servo_comm_shihlin_50W guard only checked
-        diff_pulses >= threshold (no abs()), so it never caught large
-        negative moves. This is the regression test for that fix."""
-        ctrl = make_controller()
-        ctrl._execute_positioning = MagicMock()
-        ctrl.read_motor_feedback_pulses = MagicMock(return_value=0)
-
-        huge_negative_target = -int(ctrl.base_pulse_per_degree * 200)
-        result = ctrl.pos_step_motion_by(target_pos=huge_negative_target)
-
-        self.assertEqual(result, 0.0)
-        ctrl._execute_positioning.assert_not_called()
-
-    def test_move_just_under_180_degrees_is_allowed(self):
-        ctrl = make_controller()
-        ctrl._execute_positioning = MagicMock()
-        ctrl.read_motor_feedback_pulses = MagicMock(return_value=0)
-
-        just_under = int(ctrl.base_pulse_per_degree * 170)
-        result = ctrl.pos_step_motion_by(target_pos=just_under)
+        target = int(ctrl.base_pulse_per_degree * 200)
+        result = ctrl.pos_step_motion_by(target_pos=target)
 
         ctrl._execute_positioning.assert_called_once()
-        self.assertNotEqual(result, 0.0)
+        self.assertEqual(ctrl._execute_positioning.call_args[0][0], target)
+        self.assertAlmostEqual(result, 200.0, places=3)
+
+    def test_a_large_move_in_the_negative_direction_is_allowed(self):
+        ctrl = make_controller()
+        ctrl._execute_positioning = MagicMock()
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=0)
+
+        target = -int(ctrl.base_pulse_per_degree * 720)   # two full output turns back
+        result = ctrl.pos_step_motion_by(target_pos=target)
+
+        ctrl._execute_positioning.assert_called_once()
+        self.assertEqual(ctrl._execute_positioning.call_args[0][0], target)
+        self.assertAlmostEqual(result, -720.0, places=3)
+
+    def test_a_move_beyond_the_drives_pulse_register_is_refused(self):
+        """0x0905/0x0906 hold 0..2^31-1 command pulses (manual, docs/en_manual.txt
+        ~10416). More would be truncated into a wrong, shorter move -- that is a
+        hardware limit, not an application limit."""
+        ctrl = make_controller()
+        ctrl._execute_positioning = MagicMock()
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=0)
+
+        for target in (2**31, -(2**31)):
+            with self.subTest(target=target):
+                self.assertEqual(ctrl.pos_step_motion_by(target_pos=target), 0.0)
+        ctrl._execute_positioning.assert_not_called()
+
+    def test_the_largest_move_the_register_can_hold_is_still_sent(self):
+        ctrl = make_controller()
+        ctrl._execute_positioning = MagicMock()
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=0)
+
+        ctrl.pos_step_motion_by(target_pos=2**31 - 1)
+
+        ctrl._execute_positioning.assert_called_once()
+
 
 
 class TestPostStepMotionByClosedLoop(unittest.TestCase):
@@ -175,7 +187,7 @@ class TestPostStepMotionByClosedLoop(unittest.TestCase):
         self.assertAlmostEqual(ctrl.target_angle, 17.5)
         self.assertAlmostEqual(ctrl._execute_positioning.call_args[0][0], -12.5)
 
-    def test_relative_move_still_obeys_the_180_degree_guard(self):
+    def test_a_relative_move_of_more_than_180_degrees_is_allowed(self):
         ctrl = make_controller()
         ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)
         ctrl._execute_positioning = MagicMock()
@@ -183,7 +195,9 @@ class TestPostStepMotionByClosedLoop(unittest.TestCase):
 
         ctrl.post_step_motion_by(angle=200.0, relative=True)
 
-        ctrl._execute_positioning.assert_not_called()
+        ctrl._execute_positioning.assert_called_once()
+        self.assertAlmostEqual(ctrl._execute_positioning.call_args[0][0], 200.0)
+        self.assertAlmostEqual(ctrl.target_angle, 300.0)
 
     def test_relative_move_refuses_when_the_position_is_unreadable(self):
         ctrl = make_controller()
@@ -194,7 +208,7 @@ class TestPostStepMotionByClosedLoop(unittest.TestCase):
             ctrl.post_step_motion_by(angle=10.0, relative=True)
         ctrl._execute_positioning.assert_not_called()
 
-    def test_180_degree_guard_blocks_large_positive_change(self):
+    def test_a_large_positive_change_is_allowed_and_sends_the_right_pulses(self):
         ctrl = make_controller()
         ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)
         ctrl._execute_positioning = MagicMock()
@@ -202,17 +216,71 @@ class TestPostStepMotionByClosedLoop(unittest.TestCase):
 
         ctrl.post_step_motion_by(angle=200.0)
 
-        ctrl._execute_positioning.assert_not_called()
+        ctrl._execute_positioning.assert_called_once()
+        angle, low, high = ctrl._execute_positioning.call_args[0][:3]
+        self.assertAlmostEqual(angle, 200.0)
+        self.assertEqual((high << 16) | low, int(ctrl.base_pulse_per_degree * 200))
 
-    def test_180_degree_guard_blocks_large_negative_change(self):
+    def test_a_large_negative_change_is_allowed_and_keeps_its_sign(self):
+        ctrl = make_controller()
+        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)
+        ctrl._execute_positioning = MagicMock()
+        ctrl.current_angle = 220.0
+
+        ctrl.post_step_motion_by(angle=0.0)   # e.g. HOME from 220 deg away
+
+        ctrl._execute_positioning.assert_called_once()
+        angle, low, high = ctrl._execute_positioning.call_args[0][:3]
+        self.assertAlmostEqual(angle, -220.0)
+        self.assertEqual((high << 16) | low, int(ctrl.base_pulse_per_degree * 220))
+
+    def test_several_full_turns_are_allowed(self):
         ctrl = make_controller()
         ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)
         ctrl._execute_positioning = MagicMock()
         ctrl.current_angle = 0.0
+        ctrl.post_step_motion_by(angle=1080.0)
+        ctrl._execute_positioning.assert_called_once()
 
-        ctrl.post_step_motion_by(angle=-200.0)
+    def test_a_move_beyond_the_pulse_register_is_refused_and_changes_no_state(self):
+        ctrl = make_controller()
+        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)
+        ctrl._execute_positioning = MagicMock()
+        ctrl.current_angle = 0.0
+        ctrl.float_error, ctrl.accumulate_pulse = 0.25, 1000
+        too_far = (2**31 + 1000) / ctrl.base_pulse_per_degree      # about 6144.4 deg
+
+        with self.assertRaises(MoveOutOfRangeError):
+            ctrl.post_step_motion_by(angle=too_far)
+        with self.assertRaises(MoveOutOfRangeError):
+            ctrl.post_step_motion_by(angle=-too_far)
 
         ctrl._execute_positioning.assert_not_called()
+        self.assertEqual((ctrl.float_error, ctrl.accumulate_pulse), (0.25, 1000))
+
+    def test_the_largest_move_the_register_can_hold_is_still_sent(self):
+        ctrl = make_controller()
+        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)
+        ctrl._execute_positioning = MagicMock()
+        ctrl.current_angle = 0.0
+        ctrl.post_step_motion_by(angle=(2**31 - 2) / ctrl.base_pulse_per_degree)
+        ctrl._execute_positioning.assert_called_once()
+
+    def test_a_non_finite_angle_is_refused_before_anything_is_read_or_sent(self):
+        ctrl = make_controller()
+        ctrl._refresh_current_angle_from_hardware = MagicMock(return_value=True)
+        ctrl._execute_positioning = MagicMock()
+        for bad in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(angle=bad):
+                with self.assertRaises(MoveOutOfRangeError):
+                    ctrl.post_step_motion_by(angle=bad)
+                with self.assertRaises(MoveOutOfRangeError):
+                    ctrl.post_step_motion_by(angle=bad, relative=True)
+        ctrl._refresh_current_angle_from_hardware.assert_not_called()
+        ctrl._execute_positioning.assert_not_called()
+
+    def test_out_of_range_is_a_value_error_so_existing_callers_keep_working(self):
+        self.assertTrue(issubclass(MoveOutOfRangeError, ValueError))
 
     def test_directional_float_error_accumulation(self):
         ctrl = make_controller()

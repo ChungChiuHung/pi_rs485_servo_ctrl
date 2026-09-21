@@ -236,6 +236,12 @@ class HomeReminderAndSetHomeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 502)
         self.assertIn("no position", response.get_json()["message"])
 
+    def test_home_reports_400_when_the_move_is_out_of_the_drives_range(self):
+        self.ctrl.post_step_motion_by.side_effect = app_module.MoveOutOfRangeError("too far for the drive")
+        response = self.client.post("/action", json={"action": "Home"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("too far", response.get_json()["message"])
+
     def test_home_moves_when_the_position_is_readable(self):
         response = self.client.post("/action", json={"action": "Home"})
         self.assertEqual(response.status_code, 200)
