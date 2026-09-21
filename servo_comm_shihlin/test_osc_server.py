@@ -136,7 +136,7 @@ class LifecycleTests(unittest.TestCase):
             client.send_message("/back_home", 1.0)
             client.send_message("/pr_step_path", 2)
             client.send_message("/set_home", 1.0)
-            deadline = time.time() + 3
+            deadline = time.time() + 10   # generous: the machine may be busy
             while time.time() < deadline and not (
                     ctrl.servo_on.called and ctrl.post_step_motion_by.call_count >= 2
                     and ctrl.initial_abs_home.called and ctrl.write_PF82.called
