@@ -160,6 +160,58 @@ report back whether PA28 == 1.
 
 <!-- New verified entries go below this line -->
 
+## [2026-09-22] ENABLE SPEED CONTROL MODE could auto-resume rotation -- 0x0904 is sticky
+**Relates to:** `servo_comm_shihlin_unified/servo_control.py` (`enable_speed_ctrl()`)
+**What happened:** User reported that a single click of "ENABLE SPEED CONTROL
+MODE" in the web UI could still start continuous rotation, even with the
+MOTION START CW/CCW buttons already removed (keyboard-only control). Root
+cause: `enable_speed_ctrl()`'s enable=True path never wrote 0x0904
+(JOG_OPERATION, the actual run/stop register) -- it only entered JOG mode
+and configured accel/speed. Confirmed live: 0x0904 is a STICKY register on
+this drive, not reset by entering/leaving JOG mode. If a prior session left
+it at 1/2 (CW/CCW) -- e.g. a MOTION PAUSE keyup that never landed -- merely
+re-arming JOG mode later resumed rotation with no CW/CCW pressed that time.
+**Lesson:** Also confirmed live: leaving JOG mode (0x0901=0) DOES stop the
+physical rotation itself (encoder settled to ~0 delta within 0.5s), so the
+danger was specifically the NEXT arm, not a rotation that never stopped.
+Don't assume a register the manual only documents as part of one
+mode-entry sequence gets reset by that same sequence -- verify explicitly.
+**Fix:** `enable_speed_ctrl()`'s enable=True path now ends with an explicit
+`speed_ctrl_action(0)` (0x0904=0) before starting the keep-alive polling,
+guaranteeing every arm ends in a definite stopped state regardless of
+leftover register state. The CW/CCW/stop API itself is unchanged.
+**Status:** verified live 2026-09-22 via `verify_jog_enable_no_autospin.py`
+(kept in the repo): manually left 0x0904 dirty at CW, confirmed rotation
+had genuinely stopped after leaving JOG mode, then confirmed the fixed
+`enable_speed_ctrl(enable=True)` produced only 115 pulses of drift over 2s
+(noise) instead of resuming rotation, and that an explicit CW afterward
+still worked normally.
+
+## [2026-09-22] Live JOG speed change confirmed on real hardware
+**Relates to:** `servo_comm_shihlin_unified/servo_control.py`
+(`change_jog_speed_by()`), `app.py` (`jogSpeedAdjust` action), `osc_server.py`
+(`/jog_speed_adjust`), `artnet_server.py` (Channel 1's docstring)
+**What happened:** User asked for a merged ENABLE SPEED CONTROL MODE /
+MOTION CANCEL toggle button, arrow-key JOG control (Left/Right = MOTION
+START CW/CCW + release = MOTION PAUSE, Up/Down = speed +/-1rpm), and asked
+to investigate whether the JOG speed (0x0903) can actually be changed while
+the motor is already rotating -- Art-Net's `artnet_server.py` was designed
+assuming yes (Channel 1 writes speed live), but nothing in this repo's
+history had confirmed it against a real drive. Verified via
+`verify_jog_speed_adjust_live.py`: commanded 10rpm CW JOG rotation, measured
+real speed from the raw encoder (9.94rpm), nudged to 15rpm mid-rotation via
+`change_jog_speed_by(+5)` (a bare 0x0903 write, no re-trigger of 0x0904),
+measured again (15.08rpm) -- the change took effect live, no stop/restart
+needed.
+**Lesson:** For this drive, 0x0903 (JOG speed command) is a true live
+setpoint while 0x0904 (JOG_OPERATION) is running, not a value only read at
+the moment 0x0904 is triggered. Safe to keep relying on this for both
+Art-Net's continuous fader (already did) and the new discrete +/-1 rpm
+keyboard/OSC nudge.
+**Status:** done. All three surfaces (web keyboard, OSC `/jog_speed_adjust`,
+Art-Net Channel 1) share the same underlying confirmed behavior; 243+
+new/updated unit tests pass, full suite 514 tests green.
+
 ## [2026-09-22] PA28 switched to 1 (absolute mode) on real hardware — supersedes prior "PA28=0" entries
 **Relates to:** CLAUDE.md §3 (`servo_comm_shihlin_unified` row), the two
 entries above ("Absolute encoder overflow risk", "PA28 fail-safe check

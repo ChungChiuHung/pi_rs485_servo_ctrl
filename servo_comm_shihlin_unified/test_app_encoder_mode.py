@@ -145,6 +145,7 @@ class EepromProtectionWiringTests(unittest.TestCase):
         self.ctrl.current_angle = 0.0
         self.ctrl.current_encoder = 0
         self.ctrl.set_point_1 = self.ctrl.set_point_2 = None
+        self.ctrl.jog_speed_rpm = None
         manager = MagicMock()
         manager.get_connected_port.return_value = "COM_TEST"
         manager.get_baud_rate.return_value = 115200
@@ -170,6 +171,7 @@ class HomeReminderAndSetHomeTests(unittest.TestCase):
         self.ctrl.current_angle = 0.0
         self.ctrl.current_encoder = 0
         self.ctrl.set_point_1 = self.ctrl.set_point_2 = None
+        self.ctrl.jog_speed_rpm = None
         self.ctrl.read_current_alarm_code.return_value = 255
         self.ctrl.read_servo_state.return_value = True
         self.ctrl.read_test_mode_0x0901.return_value = 0

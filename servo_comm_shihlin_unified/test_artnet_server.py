@@ -963,20 +963,20 @@ class TestLiveSpeedChange(unittest.TestCase):
         server._handle_dmx(0, bytes([50, 200, 0]))
         self.clock.advance(0.2)
         server._handle_dmx(0, bytes([200, 200, 0]))
-        ctrl.config_speed_0x0903.assert_called_once_with(round(200 / 255 * 100))
+        ctrl.set_jog_speed.assert_called_once_with(round(200 / 255 * 100))
 
     def test_the_start_frame_does_not_write_the_speed_twice(self):
         server, ctrl = make_server()
         server._handle_dmx(0, bytes([50, 200, 0]))
         ctrl.enable_speed_ctrl.assert_called_once()
-        ctrl.config_speed_0x0903.assert_not_called()
+        ctrl.set_jog_speed.assert_not_called()
 
     def test_a_change_that_rounds_to_the_same_rpm_is_not_rewritten(self):
         server, ctrl = make_server(max_speed_rpm=100)
         server._handle_dmx(0, bytes([130, 200, 0]))   # 51 rpm
         self.clock.advance(0.2)
         server._handle_dmx(0, bytes([131, 200, 0]))   # also 51 rpm
-        ctrl.config_speed_0x0903.assert_not_called()
+        ctrl.set_jog_speed.assert_not_called()
 
     def test_writes_are_rate_limited_and_the_latest_value_wins(self):
         server, ctrl = make_server(max_speed_rpm=100)
@@ -984,40 +984,40 @@ class TestLiveSpeedChange(unittest.TestCase):
         for value in (100, 150, 200):                 # a fader move: 3 frames in 60 ms
             self.clock.advance(0.02)
             server._handle_dmx(0, bytes([value, 200, 0]))
-        ctrl.config_speed_0x0903.assert_not_called()  # still inside the 100 ms window
+        ctrl.set_jog_speed.assert_not_called()  # still inside the 100 ms window
         self.clock.advance(0.1)
         server._handle_dmx(0, bytes([200, 200, 0]))
-        ctrl.config_speed_0x0903.assert_called_once_with(round(200 / 255 * 100))
+        ctrl.set_jog_speed.assert_called_once_with(round(200 / 255 * 100))
 
     def test_a_pending_change_is_applied_when_frames_stop_arriving(self):
         server, ctrl = make_server(max_speed_rpm=100)
         server._handle_dmx(0, bytes([50, 200, 0]))
         self.clock.advance(0.02)
         server._handle_dmx(0, bytes([200, 200, 0]))   # deferred
-        ctrl.config_speed_0x0903.assert_not_called()
+        ctrl.set_jog_speed.assert_not_called()
         self.clock.advance(0.2)
         server._apply_pending_speed()                 # called by the receive loop
-        ctrl.config_speed_0x0903.assert_called_once_with(round(200 / 255 * 100))
+        ctrl.set_jog_speed.assert_called_once_with(round(200 / 255 * 100))
         server._apply_pending_speed()
-        ctrl.config_speed_0x0903.assert_called_once()
+        ctrl.set_jog_speed.assert_called_once()
 
     def test_lowering_to_zero_stops_it_is_not_a_speed_write(self):
         server, ctrl = make_server()
         server._handle_dmx(0, bytes([50, 200, 0]))
         self.clock.advance(0.2)
         server._handle_dmx(0, bytes([0, 200, 0]))
-        ctrl.config_speed_0x0903.assert_not_called()
+        ctrl.set_jog_speed.assert_not_called()
         ctrl.speed_ctrl_action.assert_called_with(0)
 
     def test_a_failed_speed_write_is_caught_and_retried(self):
         server, ctrl = make_server(max_speed_rpm=100)
-        ctrl.config_speed_0x0903.side_effect = [RuntimeError("no reply"), None]
+        ctrl.set_jog_speed.side_effect = [RuntimeError("no reply"), None]
         server._handle_dmx(0, bytes([50, 200, 0]))
         self.clock.advance(0.2)
         server._handle_dmx(0, bytes([200, 200, 0]))   # fails, must not raise
         self.clock.advance(0.2)
         server._handle_dmx(0, bytes([200, 200, 0]))   # retried on the next frame
-        self.assertEqual(ctrl.config_speed_0x0903.call_count, 2)
+        self.assertEqual(ctrl.set_jog_speed.call_count, 2)
 
     def test_speed_is_not_written_while_the_signal_watchdog_has_stopped_motion(self):
         server, ctrl = make_server(signal_timeout_s=1.0)
@@ -1026,7 +1026,7 @@ class TestLiveSpeedChange(unittest.TestCase):
         server._check_signal_watchdog()
         self.clock.advance(0.2)
         server._handle_dmx(0, bytes([200, 200, 0]))
-        ctrl.config_speed_0x0903.assert_not_called()
+        ctrl.set_jog_speed.assert_not_called()
 
 
 class TestStartSequence(unittest.TestCase):
@@ -1190,7 +1190,7 @@ class TestCancelLatch(unittest.TestCase):
         server._handle_dmx(0, bytes([90, 60, 0]))             # sender moves ch1 and ch2
         ctrl.speed_ctrl_action.assert_not_called()
         ctrl.enable_speed_ctrl.assert_not_called()
-        ctrl.config_speed_0x0903.assert_not_called()
+        ctrl.set_jog_speed.assert_not_called()
 
     def test_channel_1_at_zero_releases_the_latch_without_a_useless_stop(self):
         server, ctrl = make_server()

@@ -15,7 +15,17 @@ a standard):
   Channel 1 (enable/speed): 0 = disable continuous motion; 1-255 linearly
       maps to speed_rpm (scaled by `max_speed_rpm`, minimum 1 rpm). The speed
       is applied when motion starts AND whenever the value changes while it
-      runs (at most one write per 100 ms, latest value wins).
+      runs (at most one write per 100 ms, latest value wins) -- confirmed
+      live on real hardware 2026-09-22 (10rpm JOG rotation nudged to 15rpm
+      mid-rotation via a direct 0x0903 write; measured actual speed went
+      9.94 -> 15.08rpm), not just assumed. This already covers "change speed
+      while running" -- the web UI's Up/Down arrow-key +/-1 rpm nudge
+      (ServoController.change_jog_speed_by(), also exposed to OSC as
+      /jog_speed_adjust) is a discrete-step alternative for a keyboard, not
+      a capability Art-Net lacks: a console/TouchDesigner fader on channel 1
+      can already set the running speed to any value directly, which is
+      strictly more capable than a +/-1 nudge. No separate Art-Net channel
+      was added for the nudge -- deliberate, 2026-09-22.
   Channel 2 (direction): 0 = stop; 1-127 = CCW; 128-255 = CW. It may be set
       before or after channel 1: the direction is always sent when motion
       starts. The drive refuses a direct CW<->CCW switch; that is reported
@@ -394,7 +404,11 @@ class ArtNetInputServer:
         # Whatever happens, do not try again before the interval has passed.
         self._last_speed_write_monotonic = now
         try:
-            self.servo_ctrller.config_speed_0x0903(desired)
+            # set_jog_speed() (not a bare config_speed_0x0903()) so the web
+            # UI's /status polling and change_jog_speed_by() (the arrow-key
+            # nudge) see the speed Art-Net's Channel 1 actually set, not a
+            # stale value from whichever source configured it last.
+            self.servo_ctrller.set_jog_speed(desired)
         except Exception as e:
             logger.error(f"Art-Net: could not change the speed to {desired} rpm: {e}")
             return

@@ -331,6 +331,11 @@ def get_status():
             and not (servo_ctrller.absolute_mode
                      and servo_ctrller.abs_home_pos_absolute is not None)),
         "absolute_home_set": servo_ctrller.abs_home_pos_absolute is not None,
+        # The JOG speed actually last commanded (0x0903), from whichever
+        # input source set it last -- web arrow keys, OSC, or Art-Net (see
+        # ServoController.set_jog_speed()). None = JOG mode isn't armed.
+        # Cached, no extra serial traffic.
+        "jog_speed_rpm": servo_ctrller.jog_speed_rpm,
     })
 
 
@@ -935,6 +940,30 @@ def handle_action():
     elif action == "motionCancel":
         servo_ctrller.stop_continuous_reading()
         servo_ctrller.Enable_Position_Mode(False)
+        # Also serves as the "off" half of the merged ENABLE SPEED CONTROL
+        # MODE / MOTION CANCEL toggle button -- without this,
+        # change_jog_speed_by() would still see a stale _jog_speed_rpm and
+        # let an arrow-key speed nudge appear to "succeed" after JOG mode
+        # has actually been torn down.
+        servo_ctrller.clear_jog_speed()
+    elif action == "jogSpeedAdjust":
+        # Arrow-key (or OSC /jog_speed_adjust) nudge of the running JOG
+        # speed, e.g. delta_rpm=+1/-1 -- see change_jog_speed_by()'s
+        # docstring. Distinct from enableSpeedCtrlMode, which sets an
+        # absolute starting speed before motion begins.
+        delta_rpm, error = validate_int_range(data.get('delta_rpm', 1), -3000, 3000, 'delta_rpm')
+        if error:
+            return jsonify({"status": "error", "action": action, "message": error}), 400
+        try:
+            new_speed = servo_ctrller.change_jog_speed_by(delta_rpm)
+        except RuntimeError as e:
+            return jsonify({"status": "error", "action": action, "message": str(e)}), 409
+        rs485_send, rs485_read = _current_rs485_traffic()
+        return jsonify({
+            "status": "success", "action": action, "speed_rpm": new_speed,
+            "RS485_send": rs485_send, "RS485_read": rs485_read,
+            "message": f"JOG speed now {new_speed} rpm",
+        })
     else:
         return jsonify({
             "status": "error",

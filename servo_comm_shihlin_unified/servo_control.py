@@ -175,6 +175,10 @@ class ServoController:
         # currently commanded CW/CCW (only a matching repeat or an explicit
         # stop is allowed next -- see speed_ctrl_action()'s comment).
         self._last_motion_direction = None
+        # The JOG speed (0x0903) last written by enable_speed_ctrl(), so
+        # change_jog_speed_by() has a baseline to nudge from. None = JOG/
+        # speed-control mode is not currently armed.
+        self.jog_speed_rpm = None
         self._auto_stop_on_stillness = True
         self.abs_home_pos = self.load_abs_home_pos()
         # Set Point 1/2 (degrees) -- recorded, not moved-to: SET POINT 1/2
@@ -1688,7 +1692,21 @@ class ServoController:
             self.delay_ms(100)
             self.config_acc_dec_0x0902(acc_time)
             self.delay_ms(100)
-            self.config_speed_0x0903(speed_rpm)
+            self.set_jog_speed(speed_rpm)
+            self.delay_ms(100)
+            # Explicit stop (0x0904=0) as the LAST step of arming -- found
+            # 2026-09-22: 0x0904 (JOG_OPERATION) is a sticky register on this
+            # drive, not reset by (re-)entering JOG mode. If a previous
+            # session left it at 1/2 (CW/CCW) -- e.g. a MOTION PAUSE that
+            # never landed (keyup missed while the browser tab lost focus,
+            # a dropped request) -- simply re-arming JOG mode resumed
+            # rotation immediately, with no CW/CCW ever explicitly pressed
+            # this time. Forcing 0x0904=0 here guarantees every arm ends in
+            # a definite stopped state regardless of leftover register
+            # state. speed_ctrl_action() (not a bare write) so
+            # _last_motion_direction is reset too, letting the very next
+            # CW/CCW press through without needing an extra MOTION PAUSE.
+            self.speed_ctrl_action(0)
             self.delay_ms(100)
             # auto_stop_on_stillness=False: JOG mode is continuous-run, not
             # a discrete move -- pressing MOTION PAUSE (speed_ctrl_action(0))
@@ -1712,6 +1730,50 @@ class ServoController:
             # request. Confirmed live via OSC 2026-09-19: /set_continous_motion
             # ...,False left reading_active=True.
             self.stop_continuous_reading()
+            self.clear_jog_speed()
+
+    # Manual's documented range for 0x0903 (docs/en_manual.txt:10367-10373).
+    JOG_SPEED_MIN_RPM = 0
+    JOG_SPEED_MAX_RPM = 3000
+
+    def set_jog_speed(self, speed_rpm) -> int:
+        """Sets the JOG speed (0x0903) to an absolute value, clamped to the
+        manual's documented range, and records it in self.jog_speed_rpm --
+        the single source of truth change_jog_speed_by() and the web UI's
+        /status polling use to report "the actual running speed", regardless
+        of which input source (web ENABLE SPEED CONTROL MODE / arrow keys,
+        OSC /set_continous_motion or /jog_speed_adjust, Art-Net Channel 1)
+        set it last. Always call this (not a bare config_speed_0x0903())
+        for a JOG speed that should be tracked -- config_speed_0x0903() is
+        also used for unrelated things (e.g. positioning-test speed) that
+        must NOT overwrite this. Returns the resulting speed."""
+        new_speed = max(self.JOG_SPEED_MIN_RPM, min(self.JOG_SPEED_MAX_RPM, int(speed_rpm)))
+        self.config_speed_0x0903(new_speed)
+        self.jog_speed_rpm = new_speed
+        return new_speed
+
+    def clear_jog_speed(self) -> None:
+        """Forgets the tracked JOG speed -- call whenever JOG mode is torn
+        down (enable_speed_ctrl(enable=False), MOTION CANCEL) so a stale
+        value doesn't let change_jog_speed_by() appear to succeed, or
+        /status report a running speed, for a mode that is no longer
+        active."""
+        self.jog_speed_rpm = None
+
+    def change_jog_speed_by(self, delta_rpm: int) -> int:
+        """Nudges the running JOG speed by delta_rpm (e.g. +1/-1 from an
+        arrow-key press) instead of setting an absolute value -- see
+        set_jog_speed(). Requires enable_speed_ctrl() to have been called
+        with enable=True first -- raises RuntimeError rather than silently
+        guessing a starting speed if it hasn't (or if MOTION CANCEL/
+        enable=False has since torn the mode down). Returns the resulting
+        speed."""
+        if self.jog_speed_rpm is None:
+            raise RuntimeError(
+                "change_jog_speed_by: JOG/speed-control mode is not active "
+                "(press ENABLE SPEED CONTROL MODE first) -- nothing to adjust."
+            )
+        return self.set_jog_speed(self.jog_speed_rpm + delta_rpm)
 
     # 0: Stop
     # 1: CW

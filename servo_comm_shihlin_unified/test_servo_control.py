@@ -1513,6 +1513,7 @@ class TestEnableSpeedCtrl(unittest.TestCase):
         ctrl.config_speed_0x0903 = MagicMock(side_effect=lambda v: call_order.append("speed"))
         ctrl.config_acc_dec_0x0902 = MagicMock(side_effect=lambda v: call_order.append("accel"))
         ctrl.Enable_JOG_Mode = MagicMock(side_effect=lambda v: call_order.append("jog_mode"))
+        ctrl.speed_ctrl_action = MagicMock(side_effect=lambda v: call_order.append("stop"))
         ctrl.start_continuous_reading = MagicMock()
         ctrl.delay_ms = MagicMock()
 
@@ -1525,8 +1526,17 @@ class TestEnableSpeedCtrl(unittest.TestCase):
         # Manual step order (docs/en_manual.txt:10346-10373): enter JOG mode
         # (Step 2) BEFORE setting accel (Step 3) and speed (Step 4) -- not
         # after. Getting this backwards was why the typed-in speed never
-        # actually took effect on the drive.
-        self.assertEqual(call_order, ["clear_alarm_12", "jog_mode", "accel", "speed"])
+        # actually took effect on the drive. "stop" (0x0904=0) is a final,
+        # explicit step added 2026-09-22: see speed_ctrl_action.assert
+        # below for why.
+        self.assertEqual(call_order, ["clear_alarm_12", "jog_mode", "accel", "speed", "stop"])
+        # Regression coverage for a real-hardware bug (2026-09-22): 0x0904
+        # (JOG_OPERATION) is sticky on this drive -- entering JOG mode does
+        # NOT reset it, so a stale 1/2 (CW/CCW) left over from a MOTION
+        # PAUSE that never landed made a single ENABLE SPEED CONTROL MODE
+        # click resume rotation with no CW/CCW press this time. Every arm
+        # must now explicitly stop first.
+        ctrl.speed_ctrl_action.assert_called_once_with(0)
         # auto_stop_on_stillness=False: JOG mode runs continuously until
         # explicitly stopped -- a deliberate MOTION PAUSE must not be
         # mistaken for "the move finished" (see
@@ -1567,6 +1577,7 @@ class TestEnableSpeedCtrl(unittest.TestCase):
         ctrl.config_speed_0x0903 = MagicMock()
         ctrl.config_acc_dec_0x0902 = MagicMock()
         ctrl.Enable_JOG_Mode = MagicMock()
+        ctrl.speed_ctrl_action = MagicMock()
         ctrl.start_continuous_reading = MagicMock()
         ctrl.delay_ms = MagicMock()
 
@@ -1584,6 +1595,96 @@ class TestEnableSpeedCtrl(unittest.TestCase):
         ctrl.enable_speed_ctrl(speed_rpm=100, acc_time=5000, enable="False")
 
         ctrl.Enable_JOG_Mode.assert_called_once_with(False)
+
+    def test_enable_true_records_the_jog_speed_for_change_jog_speed_by(self):
+        ctrl = make_controller()
+        ctrl.clear_alarm_12 = MagicMock()
+        ctrl.config_speed_0x0903 = MagicMock()
+        ctrl.config_acc_dec_0x0902 = MagicMock()
+        ctrl.Enable_JOG_Mode = MagicMock()
+        ctrl.speed_ctrl_action = MagicMock()
+        ctrl.start_continuous_reading = MagicMock()
+        ctrl.delay_ms = MagicMock()
+
+        ctrl.enable_speed_ctrl(speed_rpm=100, acc_time=5000, enable=True)
+
+        self.assertEqual(ctrl.jog_speed_rpm, 100)
+
+    def test_enable_false_clears_the_jog_speed(self):
+        ctrl = make_controller()
+        ctrl.Enable_JOG_Mode = MagicMock()
+        ctrl.stop_continuous_reading = MagicMock()
+        ctrl.delay_ms = MagicMock()
+        ctrl.jog_speed_rpm = 100
+
+        ctrl.enable_speed_ctrl(speed_rpm=200, acc_time=5000, enable=False)
+
+        self.assertIsNone(ctrl.jog_speed_rpm)
+
+
+class TestChangeJogSpeedBy(unittest.TestCase):
+    """change_jog_speed_by() -- the web UI's Up/Down arrow-key +/-1 rpm
+    nudge (also exposed to OSC as /jog_speed_adjust), distinct from
+    enable_speed_ctrl() which sets an absolute starting speed."""
+
+    def test_raises_if_jog_mode_was_never_enabled(self):
+        ctrl = make_controller()
+        self.assertIsNone(ctrl.jog_speed_rpm)
+        with self.assertRaises(RuntimeError):
+            ctrl.change_jog_speed_by(1)
+
+    def test_nudges_up_from_the_speed_enable_speed_ctrl_set(self):
+        ctrl = make_controller()
+        ctrl.jog_speed_rpm = 100
+        ctrl.config_speed_0x0903 = MagicMock()
+
+        result = ctrl.change_jog_speed_by(1)
+
+        self.assertEqual(result, 101)
+        self.assertEqual(ctrl.jog_speed_rpm, 101)
+        ctrl.config_speed_0x0903.assert_called_once_with(101)
+
+    def test_nudges_down(self):
+        ctrl = make_controller()
+        ctrl.jog_speed_rpm = 100
+        ctrl.config_speed_0x0903 = MagicMock()
+
+        result = ctrl.change_jog_speed_by(-1)
+
+        self.assertEqual(result, 99)
+        ctrl.config_speed_0x0903.assert_called_once_with(99)
+
+    def test_clamped_to_zero_not_negative(self):
+        ctrl = make_controller()
+        ctrl.jog_speed_rpm = 0
+        ctrl.config_speed_0x0903 = MagicMock()
+
+        result = ctrl.change_jog_speed_by(-1)
+
+        self.assertEqual(result, 0)
+        ctrl.config_speed_0x0903.assert_called_once_with(0)
+
+    def test_clamped_to_the_manual_documented_maximum(self):
+        ctrl = make_controller()
+        ctrl.jog_speed_rpm = 3000
+        ctrl.config_speed_0x0903 = MagicMock()
+
+        result = ctrl.change_jog_speed_by(1)
+
+        self.assertEqual(result, 3000)
+        ctrl.config_speed_0x0903.assert_called_once_with(3000)
+
+    def test_after_motion_cancel_clears_jog_speed_it_raises_again(self):
+        """Regression coverage for the merged ENABLE SPEED CONTROL MODE /
+        MOTION CANCEL toggle button's off-path (app.py's "motionCancel"
+        action): it must clear jog_speed_rpm itself (it does not call
+        enable_speed_ctrl(enable=False)), or a stale value would let this
+        method appear to succeed after JOG mode was actually torn down."""
+        ctrl = make_controller()
+        ctrl.jog_speed_rpm = 100
+        ctrl.jog_speed_rpm = None  # what app.py's motionCancel action now does
+        with self.assertRaises(RuntimeError):
+            ctrl.change_jog_speed_by(1)
 
 
 class TestIsAlarmActive(unittest.TestCase):
