@@ -209,6 +209,44 @@ their own acc_time explicitly, so neither needed a change.
 **Status:** verified live 2026-09-22 via `verify_jog_release_stops_fast.py`
 (kept in the repo): stop-to-settled time dropped from up to 5s to 0.344s.
 
+## [2026-09-22] "Fast tap on the arrow key still spins forever" -- the STOP request itself was being dropped
+**Relates to:** `hardware_lock.py` (`hardware_serialized`, `STOP_ACTIONS`)
+**What happened:** User reported that pressing and quickly releasing a JOG
+arrow key still left the motor spinning continuously. Root cause: keydown's
+motionStart_CW/CCW and keyup's motionPause are two independent /action
+requests; `hardware_serialized`'s busy-lock REJECTS (429) any request that
+arrives while another is in flight rather than queuing it (deliberate
+design, to stop a stale double-click firing later out of order -- see the
+module's own docstring). A fast enough tap fires motionPause while
+motionStart_CW/CCW is still being processed, so the stop gets flatly
+rejected -- and since the key has already been released, nothing ever
+retries it. The motor keeps running with no other path to stop it.
+**Lesson:** A "reject if busy" concurrency policy that's correct for
+preventing stale duplicate actions is actively dangerous for a STOP-type
+action specifically: unlike a duplicate start, a stop is never "stale" --
+it's always correct to run as soon as the bus is free, and dropping it has
+no other safety net. Don't apply one blanket concurrency policy to every
+action without asking whether some of them have fundamentally different
+correctness requirements.
+**Fix:** `STOP_ACTIONS = {"motionPause", "motionCancel"}` now WAIT
+(blocking, bounded by `STOP_ACTION_WAIT_TIMEOUT_S = 2.0`) for the lock
+instead of being rejected immediately; every other action keeps the
+original immediate-reject behavior unchanged.
+**Status:** verified two ways 2026-09-22: (1) `test_hardware_lock.py` (9
+tests, kept) exercises the race directly via real threading against a
+throwaway Flask app -- confirms the wait/timeout/fallback logic in
+isolation; (2) `verify_fast_tap_stops_motor.py` (kept) imports the REAL
+app.py (real hardware) and fires motionStart_CW/motionPause from two
+threads via Flask's test client (which runs the WSGI app synchronously per
+calling thread, so two threads genuinely race the same lock -- no live
+server or extra HTTP client library needed). Both requests returned 200;
+the motor moved only ~7173 pulses (~0.02deg output-shaft, two-plus orders
+of magnitude below what 3s of sustained 10rpm rotation would cover) before
+settling, then read exactly 0 pulses drift on a follow-up check. (The
+script's own first-pass pulse threshold of a flat 5000 wrongly flagged
+this tiny, expected blip as "still spinning" -- fixed to scale against the
+theoretical sustained-rotation pulse count instead of a flat number.)
+
 ## [2026-09-22] Live JOG speed change confirmed on real hardware
 **Relates to:** `servo_comm_shihlin_unified/servo_control.py`
 (`change_jog_speed_by()`), `app.py` (`jogSpeedAdjust` action), `osc_server.py`
