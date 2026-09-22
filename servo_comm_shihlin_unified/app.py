@@ -15,7 +15,7 @@ from servo_control import (ServoController, PositionUnavailableError, MoveOutOfR
                            is_alarm_active, alarm_name)
 from motor_profile import load_profiles, resolve_profile
 from hardware_lock import hardware_serialized, run_when_idle
-from input_validation import validate_int_range
+from input_validation import validate_int_range, validate_float_range
 from activity_log import ActivityLog, ActivityLogHandler
 from osc_server import OSCInputServer
 from artnet_server import ArtNetInputServer, DEFAULT_UNIVERSE, DEFAULT_SIGNAL_TIMEOUT_S
@@ -768,6 +768,11 @@ def clear_alarm_12_endpoint():
     }), (200 if success else 502)
 
 
+# POS TEST START CW/CCW default nudge size (see the action below).
+DEFAULT_POS_TEST_STEP_DEGREES = 0.5
+DEFAULT_POS_TEST_STEP_ACC_DEC_MS = 200
+
+
 @app.route('/action', methods=['POST'])
 @json_response
 @hardware_serialized
@@ -837,10 +842,32 @@ def handle_action():
         # test mode" write regardless of which mode was active.
         servo_ctrller.stop_continuous_reading()
         servo_ctrller.Enable_Position_Mode(False)
-    elif action == "posTestStart_CW":
-        servo_ctrller.pos_step_motion_test(CW=True)
-    elif action == "posTestStart_CCW":
-        servo_ctrller.pos_step_motion_test(CW=False)
+    elif action in ("posTestStart_CW", "posTestStart_CCW"):
+        # A fixed-size nudge (default 0.5deg) via post_step_motion_by()'s
+        # relative=True path, not the old bare 0x0907 trigger
+        # (pos_step_motion_test()) -- confirmed live 2026-09-22 that the
+        # bare trigger only reliably moved the motor on the first press
+        # after ENABLE POS MODE; a second press left reading_active stuck
+        # True with the encoder barely moving. post_step_motion_by()
+        # already redoes the full clear_alarm_12()-through-trigger sequence
+        # every call (see _execute_positioning()'s comment), exactly like
+        # HOME/Set Point -- reusing it here fixes the same way.
+        degrees, error = validate_float_range(
+            data.get('degrees', DEFAULT_POS_TEST_STEP_DEGREES), 0.001, 180, 'degrees')
+        if error:
+            return jsonify({"status": "error", "action": action, "message": error}), 400
+        speed_rpm, error = validate_int_range(data.get('speed_rpm', 10), 0, 3000, 'speed_rpm')
+        if error:
+            return jsonify({"status": "error", "action": action, "message": error}), 400
+        signed_degrees = degrees if action == "posTestStart_CW" else -degrees
+        try:
+            servo_ctrller.post_step_motion_by(
+                signed_degrees, acc_dec_time=DEFAULT_POS_TEST_STEP_ACC_DEC_MS,
+                speed_rpm=speed_rpm, relative=True)
+        except PositionUnavailableError as e:
+            return jsonify({"status": "error", "action": action, "message": str(e)}), 502
+        except MoveOutOfRangeError as e:
+            return jsonify({"status": "error", "action": action, "message": str(e)}), 400
     elif action == "setPoint_1":
         # Records the CURRENT tracked angle as Set Point 1 -- does not move
         # the motor. Persisted per-profile (servo_config_<profile>.json),

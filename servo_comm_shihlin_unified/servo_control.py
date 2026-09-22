@@ -392,7 +392,22 @@ class ServoController:
         # make progress (found via a stress test that reliably hit this
         # ordering -- not just a theoretical race).
         if thread_to_join and threading.current_thread() is not thread_to_join:
-            thread_to_join.join()
+            # Bounded, defense-in-depth: this join() itself had no timeout,
+            # so if the background thread ever got stuck for some other
+            # reason (e.g. blocked inside a Modbus transaction), whichever
+            # caller is stopping it -- possibly a Flask request holding
+            # hardware_lock.py's _hardware_busy_lock -- would hang forever
+            # with no way to recover short of restarting the process. A
+            # stuck thread is leaked rather than joined in that case;
+            # logged so it's visible. Ported from servo_comm_shihlin's
+            # identical fix (2026-09-22), applied there after a receive()
+            # loop with no absolute deadline caused exactly this.
+            thread_to_join.join(timeout=5.0)
+            if thread_to_join.is_alive():
+                logging.error(
+                    "Background reading thread did not stop within 5s; "
+                    "continuing without it (it will be abandoned)."
+                )
 
         logging.info("Motion Completed Signal Reading Stopped.")
         self._notify_event_listeners("on_motion_completed")
@@ -1468,6 +1483,16 @@ class ServoController:
         # changes _read_continuously()'s poll interval or retry/backoff
         # timing, it must stay well under 1s or real in-progress moves can
         # get cut off by the drive itself, not just by our own software.
+        #
+        # NOTE: deliberately NOT stopping a stale reading_active session
+        # here first (servo_comm_shihlin's own version of this method does,
+        # after finding a *different* bug there -- its start_continuous_reading()
+        # still had the old toggle-off-if-already-active behavior this
+        # project already moved away from). Doing that here would defeat
+        # the fix described in start_continuous_reading()'s own comment:
+        # tearing down and restarting the keep-alive thread reopens exactly
+        # the >1s communication gap that lets the drive auto-exit test
+        # mode mid-move.
         self.start_continuous_reading()
         self.delay_ms(100)
         if CW == True:

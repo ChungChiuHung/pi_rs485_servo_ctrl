@@ -1792,6 +1792,32 @@ class TestSoftwareMotionCompleteDetection(unittest.TestCase):
         finally:
             ctrl.stop_continuous_reading()
 
+    def test_stop_continuous_reading_does_not_hang_forever_on_a_stuck_thread(self):
+        """Regression test ported from servo_comm_shihlin's identical fix
+        2026-09-22: thread_to_join.join() here had no timeout, so if the
+        background thread ever got stuck for any reason (e.g. blocked
+        inside a Modbus transaction), whichever caller is stopping it --
+        possibly a Flask request holding hardware_lock.py's
+        _hardware_busy_lock -- would hang forever with no way to recover
+        short of restarting the process. Simulates a thread that never
+        actually stops; asserts stop_continuous_reading() still returns
+        (bounded by its own 5s join timeout) rather than blocking
+        indefinitely."""
+        ctrl = make_controller()
+        ctrl.reading_active = True
+        stuck_thread = MagicMock()
+        stuck_thread.is_alive.return_value = True
+        ctrl.read_thread = stuck_thread
+
+        started = time.time()
+        ctrl.stop_continuous_reading()
+        elapsed = time.time() - started
+
+        stuck_thread.join.assert_called_once_with(timeout=5.0)
+        self.assertFalse(ctrl.reading_active)
+        self.assertLess(elapsed, 1.0, "stop_continuous_reading() should not itself sleep/block "
+                                       "beyond the mocked join() call")
+
 
 class TestReadServoState(unittest.TestCase):
 
