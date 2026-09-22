@@ -125,6 +125,17 @@ class ServoController:
         # home saved by an earlier run may not match the shaft.
         self.home_set_since_start = False
         self._event_listeners = {"on_motion_completed": [], "on_moving": []}
+        # None/0 = not currently running in either direction (reversal guard
+        # in speed_ctrl_action() allows the next action freely); 1/2 =
+        # currently commanded (whichever this drive's speed_ctrl_action()
+        # convention maps to CW/CCW) -- only a matching repeat or an
+        # explicit stop is allowed next. Ported from servo_comm_shihlin_unified.
+        self._last_motion_direction = None
+        # The JOG speed (0x0903) last written by enable_speed_ctrl(), so
+        # change_jog_speed_by() has a baseline to nudge from. None = JOG/
+        # speed-control mode is not currently armed. Ported from
+        # servo_comm_shihlin_unified.
+        self.jog_speed_rpm = None
 
     def _load_config_dict(self) -> dict:
         try:
@@ -657,12 +668,25 @@ class ServoController:
         response_object = ModbusResponse(self.response)
         logging.info(response_object)
 
-    # Select test mode 0x0004 (Pos test mode)
     def read_test_mode_0x0901(self):
+        """Read CTRL_MODE_SEL (0x0901): 0=idle/normal, 2=DO forced output,
+        3=JOG test, 4=Positioning test. Returns the raw int, or None on a
+        communication/parse failure. Diagnostic (/status) and the
+        ENABLE POS MODE / ENABLE SPEED CONTROL MODE mutual-exclusion guard
+        (_reject_if_other_mode_active() in app.py) both rely on this
+        actually returning a value -- it used to only log and fall through
+        to an implicit `None` return unconditionally, so neither could ever
+        tell JOG from Positioning from idle."""
         message = self.modbus_client.build_read_message(0x0901, 1)
         response = self.modbus_client.send_and_receive(message)
-        response_object = ModbusResponse(response)
-        logging.info(response_object)
+        if response is None:
+            logger.error("No response reading CTRL_MODE_SEL (0x0901).")
+            return None
+        try:
+            return ModbusResponse(response).get_value()
+        except Exception as e:
+            logger.error(f"Failed to parse CTRL_MODE_SEL response: {e}")
+            return None
 
     # PR (procedure) sequence control
     def read_PF82(self):
@@ -1101,7 +1125,7 @@ class ServoController:
             logger.info("Running Servo CCW")
             self.pos_step_motion_test(False)
 
-    def enable_speed_ctrl(self, speed_rpm):
+    def enable_speed_ctrl(self, speed_rpm=100, acc_time=5000, enable=True):
         # Manual (9) Step 1 for JOG test (docs/en_manual.txt:10390 has the
         # identical wording for Positioning test): the drive only accepts
         # entering JOG mode "without any alarm occurrence or Servo ON
@@ -1115,22 +1139,110 @@ class ServoController:
         # ON!" log line), trading "Servo ON blocks JOG mode" for "Alarm 12
         # blocks JOG mode". clear_alarm_12() sets Servo OFF while keeping
         # that bit set, satisfying both halves of Step 1 at once.
-        self.clear_alarm_12()
-        self.delay_ms(100)
-        self.Enable_JOG_Mode(True)
-        self.delay_ms(100)
-        self.config_speed_0x0903(speed_rpm)
-        self.delay_ms(100)
-        # auto_stop_on_stillness=False: this is continuous JOG/speed-control
-        # mode, which runs until explicitly stopped -- a deliberate pause
-        # must not be misread as "the move finished" and tear the reading
-        # session down. See start_continuous_reading()'s comment.
-        self.start_continuous_reading(0.1, auto_stop_on_stillness=False)
+        #
+        # enable/acc_time ported from servo_comm_shihlin_unified 2026-09-22:
+        # this method previously had no way to leave JOG mode at all (every
+        # caller only ever entered it) and no accel/decel control (always
+        # whatever the drive already had configured).
+        if isinstance(enable, str):
+            enable = enable.strip().lower() in ("true", "1", "on", "yes")
+
+        if enable:
+            self.clear_alarm_12()
+            self.delay_ms(100)
+            self.Enable_JOG_Mode(True)
+            self.delay_ms(100)
+            self.config_acc_dec_0x0902(acc_time)
+            self.delay_ms(100)
+            self.set_jog_speed(speed_rpm)
+            self.delay_ms(100)
+            # Explicit stop (0x0904=0) as the LAST step of arming -- found
+            # 2026-09-22 on servo_comm_shihlin_unified: 0x0904 (JOG_OPERATION)
+            # is a sticky register on this drive family, not reset by
+            # (re-)entering JOG mode. If a previous session left it at 1/2
+            # (a direction) -- e.g. a MOTION PAUSE that never landed --
+            # simply re-arming JOG mode resumed rotation immediately, with
+            # no direction ever explicitly pressed this time. Forcing
+            # 0x0904=0 here guarantees every arm ends in a definite stopped
+            # state regardless of leftover register state.
+            # speed_ctrl_action() (not a bare write) so _last_motion_direction
+            # is reset too, letting the very next direction press through
+            # without needing an extra MOTION PAUSE first.
+            self.speed_ctrl_action(0)
+            self.delay_ms(100)
+            # auto_stop_on_stillness=False: this is continuous JOG/speed-control
+            # mode, which runs until explicitly stopped -- a deliberate pause
+            # must not be misread as "the move finished" and tear the reading
+            # session down. See start_continuous_reading()'s comment.
+            self.start_continuous_reading(0.1, auto_stop_on_stillness=False)
+        else:
+            self.Enable_JOG_Mode(False)
+            self.delay_ms(100)
+            self.stop_continuous_reading()
+            self.clear_jog_speed()
+
+    # Manual's documented range for 0x0903 (docs/en_manual.txt:10367-10373).
+    JOG_SPEED_MIN_RPM = 0
+    JOG_SPEED_MAX_RPM = 3000
+
+    def set_jog_speed(self, speed_rpm) -> int:
+        """Sets the JOG speed (0x0903) to an absolute value, clamped to the
+        manual's documented range, and records it in self.jog_speed_rpm --
+        the single source of truth change_jog_speed_by() and the web UI's
+        /status polling use to report "the actual running speed", regardless
+        of which input source (web ENABLE SPEED CONTROL MODE / arrow keys)
+        set it last. Always call this (not a bare config_speed_0x0903())
+        for a JOG speed that should be tracked -- config_speed_0x0903() is
+        also used for unrelated things (e.g. positioning-test speed) that
+        must NOT overwrite this. Returns the resulting speed. Ported from
+        servo_comm_shihlin_unified."""
+        new_speed = max(self.JOG_SPEED_MIN_RPM, min(self.JOG_SPEED_MAX_RPM, int(speed_rpm)))
+        self.config_speed_0x0903(new_speed)
+        self.jog_speed_rpm = new_speed
+        return new_speed
+
+    def clear_jog_speed(self) -> None:
+        """Forgets the tracked JOG speed -- call whenever JOG mode is torn
+        down (enable_speed_ctrl(enable=False), MOTION CANCEL) so a stale
+        value doesn't let change_jog_speed_by() appear to succeed, or
+        /status report a running speed, for a mode that is no longer
+        active. Ported from servo_comm_shihlin_unified."""
+        self.jog_speed_rpm = None
+
+    def change_jog_speed_by(self, delta_rpm: int) -> int:
+        """Nudges the running JOG speed by delta_rpm (e.g. +1/-1 from an
+        arrow-key press) instead of setting an absolute value -- see
+        set_jog_speed(). Requires enable_speed_ctrl() to have been called
+        with enable=True first -- raises RuntimeError rather than silently
+        guessing a starting speed if it hasn't (or if MOTION CANCEL/
+        enable=False has since torn the mode down). Returns the resulting
+        speed. Ported from servo_comm_shihlin_unified."""
+        if self.jog_speed_rpm is None:
+            raise RuntimeError(
+                "change_jog_speed_by: JOG/speed-control mode is not active "
+                "(press ENABLE SPEED CONTROL MODE first) -- nothing to adjust."
+            )
+        return self.set_jog_speed(self.jog_speed_rpm + delta_rpm)
 
     # 0: Stop
     # 1: CW
     # 2: CCW
     def speed_ctrl_action(self, action_value):
+        # Fail-safe: refuse to jump straight from one direction to the
+        # other while the motor is still running that way -- an abrupt
+        # reversal without stopping first can shock the mechanism. Requires
+        # an explicit action_value=0 (MOTION PAUSE) in between. Only guards
+        # a direct 1<->2 switch; 0 (stop) and repeating the same direction
+        # are always allowed. Ported from servo_comm_shihlin_unified.
+        if action_value in (1, 2) and self._last_motion_direction in (1, 2) \
+                and action_value != self._last_motion_direction:
+            logging.warning(
+                f"Refusing direct direction reversal (currently "
+                f"{self._last_motion_direction}, requested {action_value}) "
+                "-- send MOTION PAUSE (action_value=0) first."
+            )
+            return False
+
         if action_value == 0:
             logging.info("Servo Stop!")
         elif action_value == 1:
@@ -1145,6 +1257,10 @@ class ServoController:
         response = self.modbus_client.send_and_receive(message)
         response_object = ModbusResponse(response)
         logging.info(response_object)
+
+        if action_value in (0, 1, 2):
+            self._last_motion_direction = action_value
+        return True
 
     def set_home_position(self):
         # Read first: a failed read must change nothing (it used to zero the

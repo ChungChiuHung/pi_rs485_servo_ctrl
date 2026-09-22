@@ -140,10 +140,16 @@ class ConnectedTests(unittest.TestCase):
         self.assertEqual(status["electronic_gear"], [4, 1])
         self.assertIs(status["electronic_gear_ok"], False)
 
-    def test_status_sends_nothing_to_the_drive(self):
+    def test_status_only_reads_ctrl_mode_sel_never_writes(self):
+        """/status used to send nothing at all; it now does exactly one
+        read (CTRL_MODE_SEL, 0x0901 -- read_test_mode_0x0901(), ported from
+        servo_comm_shihlin_unified 2026-09-22 for the ENABLE POS MODE /
+        ENABLE SPEED CONTROL MODE mutual-exclusion lock). Safe now that
+        modbus_ascii_client.py's _transaction_lock serializes it against
+        the continuous-reading thread. Still must never WRITE anything."""
         self.ctrl.modbus_client = MagicMock()
         self.client.get("/status")
-        self.ctrl.modbus_client.send_and_receive.assert_not_called()
+        self.assertEqual(self.ctrl.modbus_client.send_and_receive.call_count, 1)
         self.ctrl.modbus_client.send.assert_not_called()
 
     def action(self, name):
@@ -307,10 +313,13 @@ class ActionValidationTests(unittest.TestCase):
         self.ctrl.enable_speed_ctrl.assert_not_called()
 
     def test_jog_speed_defaults_to_100_and_can_be_set(self):
+        # acc_time=JOG_ACC_DEC_MS (200ms, not enable_speed_ctrl()'s own 5000ms
+        # default) ported from servo_comm_shihlin_unified 2026-09-22 so the
+        # web UI's press-and-hold arrow keys stop quickly on release.
         self.post(action="enableSpeedCtrlMode")
-        self.ctrl.enable_speed_ctrl.assert_called_with(100)
+        self.ctrl.enable_speed_ctrl.assert_called_with(100, acc_time=self.app_module.JOG_ACC_DEC_MS)
         self.post(action="enableSpeedCtrlMode", speed_rpm=250)
-        self.ctrl.enable_speed_ctrl.assert_called_with(250)
+        self.ctrl.enable_speed_ctrl.assert_called_with(250, acc_time=self.app_module.JOG_ACC_DEC_MS)
 
     def test_disable_pos_mode_stops_reading_and_leaves_test_mode(self):
         self.ctrl.stop_continuous_reading = MagicMock()

@@ -160,6 +160,49 @@ report back whether PA28 == 1.
 
 <!-- New verified entries go below this line -->
 
+## [2026-09-22] Ported unified's JOG/Position-Mode keyboard-control feature set to servo_comm_shihlin (ASCII)
+**Relates to:** CLAUDE.md §3 (`servo_comm_shihlin/` row), `servo_comm_shihlin_unified/`'s
+whole 2026-09-22 session (mutual exclusion, sticky-0x0904 fix, toggle race
+fix, JOG_ACC_DEC_MS fix, hardware_lock STOP_ACTIONS fix, arrow-key UI)
+**What happened:** User asked to port everything developed/fixed in
+`servo_comm_shihlin_unified` this session, except Art-Net, into
+`servo_comm_shihlin`. Before starting, found the current branch's
+`servo_comm_shihlin` was missing an entire separate, already-complete,
+never-merged local branch (`fix/shihlin-positioning-test-reliability`: the
+Lock->RLock fix, Servo-ON JOG-mode precondition, ASCII transaction-lock
+reliability, `pos_test_step()`) -- merged that in first (clean, no
+conflicts, only touches `servo_comm_shihlin/` files) as the correct
+baseline, per user confirmation.
+Also found (and fixed as part of the port, since the ported mutual-exclusion
+feature depends on it): `read_test_mode_0x0901()` never actually returned a
+value (logged and implicitly returned `None` always) -- copied unified's
+working implementation. `/status`'s own docstring claimed "no serial lock
+for that" as a reason to avoid fresh reads, but the merged reliability
+branch had already added the needed `_transaction_lock` to
+`modbus_ascii_client.py`, making that claim stale; safe to add the
+`ctrl_mode_sel` read now.
+**Explicitly out of scope (user-confirmed):** OSC's `/jog_speed_adjust` --
+this folder's OSC server has no continuous-motion foundation at all
+(`/set_continous_motion`, `/ctrl_continuous_motion` don't exist), so
+porting just the nudge endpoint would have nothing to nudge; porting the
+whole foundation was judged separate, bigger scope. Art-Net -- this folder
+never had it.
+**Noteworthy, NOT changed:** `speed_ctrl_action()`'s CW/CCW numeric mapping
+here is `1=CW, 2=CCW` in `app.py`'s `motionStart_CW/CCW` calls -- the
+OPPOSITE of unified's `2=CW, 1=CCW`. This folder's own existing comment
+already flags the mapping as "unconfirmed" (manual says 1=forward/CCW,
+2=reverse/CW; this code assumed the opposite for logging purposes only).
+Left as-is -- correcting it would flip real motor direction for these
+buttons and is a separate decision, not part of this port.
+**Status:** done. 26 new tests (`test_jog_speed_control.py`,
+`test_mode_mutual_exclusion.py`, `test_hardware_lock.py`) plus updates to
+2 pre-existing tests whose assertions matched the old (now intentionally
+changed) behavior. Full suite: 181 tests, only 2 pre-existing unrelated
+failures (`test_modbus_rtu_client.py` references a
+`ServoControlRegistry.POS_PULSES_CMD_1` constant that doesn't exist --
+predates this port, not touched). Unit-tested with mocks only, per this
+folder's own convention -- never run against a drive.
+
 ## [2026-09-22] ENABLE SPEED CONTROL MODE could auto-resume rotation -- 0x0904 is sticky
 **Relates to:** `servo_comm_shihlin_unified/servo_control.py` (`enable_speed_ctrl()`)
 **What happened:** User reported that a single click of "ENABLE SPEED CONTROL

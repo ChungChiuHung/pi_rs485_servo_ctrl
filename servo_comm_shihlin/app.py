@@ -196,11 +196,14 @@ def index():
 
 @app.route('/status', methods=['GET'])
 def get_status():
-    """Read-only status snapshot for the web UI. Uses only state the
-    ServoController already tracks (no serial traffic of its own, so it
-    cannot interleave with a command or the continuous-reading thread -- this
-    folder has no serial lock for that), and answers {"connected": false, ...}
-    with the reason while there is no serial connection."""
+    """Read-only status snapshot for the web UI. Mostly state the
+    ServoController already tracks (no extra serial traffic), plus one
+    fresh read (ctrl_mode_sel) -- safe now that modbus_ascii_client.py's
+    _transaction_lock (added alongside the positioning-test reliability fix)
+    serializes it against the continuous-reading thread; the module
+    docstring's older "this folder has no serial lock for that" note no
+    longer applies. Answers {"connected": false, ...} with the reason while
+    there is no serial connection."""
     controller = servo_ctrller
     if controller is None:
         return jsonify({
@@ -214,6 +217,15 @@ def get_status():
         "connected_port": serial_manager.get_connected_port(),
         "baud_rate": serial_manager.get_baud_rate(),
         "reading_active": controller.reading_active,
+        # Diagnostic: what CTRL_MODE_SEL (0x0901) actually reads back as
+        # right now -- 0=idle, 3=JOG test, 4=Positioning test. Drives the
+        # web UI's ENABLE POS MODE / ENABLE SPEED CONTROL MODE toggle
+        # buttons and their mutual-exclusion lock. Ported from
+        # servo_comm_shihlin_unified 2026-09-22.
+        "ctrl_mode_sel": controller.read_test_mode_0x0901(),
+        # The JOG speed actually last commanded (0x0903). None = JOG mode
+        # isn't armed. Ported from servo_comm_shihlin_unified 2026-09-22.
+        "jog_speed_rpm": controller.jog_speed_rpm,
         "current_angle": controller.current_angle,
         "current_encoder": controller.current_encoder,
         # None means "never recorded" -- see ServoController.record_set_point().
@@ -408,9 +420,40 @@ DEFAULT_JOG_SPEED_RPM = 100
 # POS TEST START CW/CCW default nudge size (see ServoController.pos_test_step()).
 DEFAULT_POS_TEST_STEP_DEGREES = 0.5
 
+# ENABLE SPEED CONTROL MODE's accel/decel time -- deliberately short (see
+# the action below) so the web UI's press-and-hold arrow keys feel
+# immediate on release, not enable_speed_ctrl()'s 5000ms smooth-ramp
+# default. Ported from servo_comm_shihlin_unified 2026-09-22.
+JOG_ACC_DEC_MS = 200
+
+# CTRL_MODE_SEL (0x0901) values that mean "the drive is latched into this
+# test mode right now" -- see ServoController.read_test_mode_0x0901()'s
+# docstring. Used to keep ENABLE POS MODE and ENABLE SPEED CONTROL MODE
+# mutually exclusive. Ported from servo_comm_shihlin_unified 2026-09-22.
+CTRL_MODE_JOG = 3
+CTRL_MODE_POSITIONING = 4
+
 
 def _refused(action, message, status):
     return jsonify({"status": "error", "action": action, "message": message}), status
+
+
+def _reject_if_other_mode_active(action, other_mode_value, other_mode_name):
+    """Mutual exclusion between ENABLE POS MODE and ENABLE SPEED CONTROL
+    MODE: the drive can only be latched into one CTRL_MODE_SEL test mode at
+    a time, so letting a user arm one while the other is already active
+    would silently conflict (or require them to notice and press the other
+    toggle off first themselves). Returns a (response, status_code) error
+    tuple to return immediately if `other_mode_value` (the OTHER section's
+    CTRL_MODE_SEL code) is what the drive is actually in right now, else
+    None. A None/unreadable read does NOT block -- fails open rather than
+    locking both toggles out over one flaky read; the mode-entry sequences
+    themselves (_execute_positioning()/enable_speed_ctrl()) already have
+    their own "no alarm + Servo OFF" precondition as a second layer.
+    Ported from servo_comm_shihlin_unified 2026-09-22."""
+    if servo_ctrller.read_test_mode_0x0901() == other_mode_value:
+        return _refused(action, f"{other_mode_name} is active -- turn it off first.", 409)
+    return None
 
 
 @app.route('/action', methods=['POST'])
@@ -447,6 +490,9 @@ def handle_action():
         servo_ctrller.clear_alarm_12()
 
     elif action == "enablePosMode":
+        conflict = _reject_if_other_mode_active(action, CTRL_MODE_JOG, "Speed Control (JOG) mode")
+        if conflict:
+            return conflict
         # Command pulses (0x0905/0x0906): 0~(2^31-1); speed (0x0903): 0~3000 rpm.
         pulses, error = validate_int_range(
             data.get('pulses', DEFAULT_POS_MODE_PULSES), 0, 2**31 - 1, 'pulses')
@@ -539,28 +585,66 @@ def handle_action():
             return _refused(action, str(e), 400)
 
     elif action == "enableSpeedCtrlMode":
+        conflict = _reject_if_other_mode_active(action, CTRL_MODE_POSITIONING, "Position Mode")
+        if conflict:
+            return conflict
         speed_rpm, error = validate_int_range(
             data.get('speed_rpm', DEFAULT_JOG_SPEED_RPM), 0, 3000, 'speed_rpm')
         if error:
             return _refused(action, error, 400)
-        servo_ctrller.enable_speed_ctrl(speed_rpm)
+        # acc_time defaults to 5000ms in enable_speed_ctrl() -- fine for a
+        # smooth ramp, much too slow for the web UI's press-and-hold arrow
+        # keys: releasing the key sends MOTION PAUSE immediately, but the
+        # drive still takes up to 5s to decelerate, which looks like "the
+        # motor didn't stop". JOG_ACC_DEC_MS makes release feel immediate.
+        # Ported from servo_comm_shihlin_unified 2026-09-22.
+        servo_ctrller.enable_speed_ctrl(speed_rpm, acc_time=JOG_ACC_DEC_MS)
 
     elif action == "motionStart_CW":
-        servo_ctrller.speed_ctrl_action(1)
+        # speed_ctrl_action() refuses (returns False) a direct reversal
+        # while still running the other direction -- see its own comment.
+        if not servo_ctrller.speed_ctrl_action(1):
+            return _refused(action, "Press MOTION PAUSE before switching direction.", 409)
 
     elif action == "motionStart_CCW":
-        servo_ctrller.speed_ctrl_action(2)
+        if not servo_ctrller.speed_ctrl_action(2):
+            return _refused(action, "Press MOTION PAUSE before switching direction.", 409)
 
     elif action == "motionPause":
 
         print("motion pause")
         servo_ctrller.speed_ctrl_action(0)
 
+    elif action == "jogSpeedAdjust":
+        # Arrow-key (Up/Down) nudge of the running JOG speed, e.g.
+        # delta_rpm=+1/-1 -- see change_jog_speed_by()'s docstring. Distinct
+        # from enableSpeedCtrlMode, which sets an absolute starting speed
+        # before motion begins. Ported from servo_comm_shihlin_unified 2026-09-22.
+        delta_rpm, error = validate_int_range(data.get('delta_rpm', 1), -3000, 3000, 'delta_rpm')
+        if error:
+            return _refused(action, error, 400)
+        try:
+            new_speed = servo_ctrller.change_jog_speed_by(delta_rpm)
+        except RuntimeError as e:
+            return _refused(action, str(e), 409)
+        rs485_send, rs485_read = _current_rs485_traffic()
+        return jsonify({
+            "status": "success", "action": action, "speed_rpm": new_speed,
+            "RS485_send": rs485_send, "RS485_read": rs485_read,
+            "message": f"JOG speed now {new_speed} rpm",
+        })
+
     elif action == "motionCancel":
 
         print("motion cancel")
         servo_ctrller.stop_continuous_reading()
         servo_ctrller.Enable_Position_Mode(False)
+        # Also serves as the "off" half of the merged ENABLE SPEED CONTROL
+        # MODE / MOTION CANCEL toggle button -- without this,
+        # change_jog_speed_by() would still see a stale tracked speed and
+        # let an arrow-key speed nudge appear to "succeed" after JOG mode
+        # has actually been torn down. Ported from servo_comm_shihlin_unified.
+        servo_ctrller.clear_jog_speed()
     else:
         return _refused(action, f"Action '{action}' not recognized.", 400)
 
