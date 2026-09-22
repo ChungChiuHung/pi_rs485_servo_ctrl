@@ -55,6 +55,22 @@ class ModbusASCIIClient:
         # transaction" panel (see format_frame()).
         self.last_sent = None
         self.last_received = None
+        # Serializes send_and_receive() across threads. RS-485 is a shared
+        # half-duplex bus and Flask handles requests concurrently -- e.g. the
+        # web UI's status poll landing while an /action handler is mid-move,
+        # or (confirmed live 2026-09-22 on this project's own COM4 rig) the
+        # continuous-reading background thread's own encoder polling racing
+        # the main thread's pos_motion_start_0x0907() trigger write, which
+        # start_continuous_reading() deliberately starts just before sending.
+        # Without this lock the two threads' send()/receive() calls can
+        # interleave on the wire: one thread's write can land between
+        # another thread's request and response, or reset_input_buffer() in
+        # send() can wipe out a response a different thread was still
+        # waiting for. Ported from servo_comm_shihlin_unified's
+        # ModbusRTUClient._transaction_lock, which was added there after
+        # real production logs showed CRC mismatches from exactly this kind
+        # of collision (2026-09-18).
+        self._transaction_lock = threading.Lock()
         self._is_initialized = True
         logger.info("ModbusASCIIClient initialized.")
 
@@ -79,12 +95,56 @@ class ModbusASCIIClient:
         return full_message.encode('utf-8')
 
     def send_and_receive(self, message: bytes, expected_length: int = None, timeout:float = 0.1) -> Union[bytes, None]:
+        with self._transaction_lock:
+            try:
+                self.send(message)
+                if expected_length is None:
+                    expected_length = self._infer_expected_length(message)
+                return self.receive(expected_length, timeout)
+            except Exception as e:
+                logger.error(f"Error in send_and_receive: {e}")
+                return None
+
+    @staticmethod
+    def _infer_expected_length(message: bytes) -> Union[int, None]:
+        """The exact ASCII response length a request calls for, computed
+        from the request itself, so receive() can stop the instant that
+        many bytes have arrived instead of waiting for a "quiet period"
+        with nothing more coming in. No call site had ever passed
+        expected_length before this (it defaulted to None everywhere), so
+        every single Modbus transaction in this project was paying that
+        quiet-period wait -- confirmed live 2026-09-22 that this, not the
+        code's explicit delay_ms() pacing, was the dominant cost behind a
+        ~1.9s positioning-test button press (each of its ~7 transactions
+        was costing ~100-250ms on its own). Ported from
+        servo_comm_shihlin_unified's ModbusRTUClient._infer_expected_length(),
+        adapted to ASCII framing:
+          - WRITE_DATA (0x06): the drive always echoes back the exact
+            request frame, a fixed ":"+ADR(2)+CMD(2)+ADDR(4)+DATA(4)+LRC(2)
+            +CRLF(2) = 17 bytes.
+          - READ_DATA (0x03): ":"+ADR(2)+CMD(2)+BYTECOUNT(2)+DATA(4*N)+
+            LRC(2)+CRLF(2) = 11 + 4*word_count bytes, where word_count is
+            the request's own word-length field.
+        Returns None (falls back to the timeout-based "quiet period" wait)
+        for any other command or a malformed/undecodable message -- never
+        guesses.
+        """
         try:
-            self.send(message)
-            return self.receive(expected_length, timeout)
-        except Exception as e:
-            logger.error(f"Error in send_and_receive: {e}")
+            text = message.decode('ascii')
+        except (UnicodeDecodeError, AttributeError):
             return None
+        if len(text) < 13 or text[0] != ':':
+            return None
+        cmd = text[3:5]
+        if cmd == f'{CmdCode.WRITE_DATA.value:02X}':
+            return 17
+        if cmd == f'{CmdCode.READ_DATA.value:02X}':
+            try:
+                word_length = int(text[9:13], 16)
+            except ValueError:
+                return None
+            return 11 + 4 * word_length
+        return None
 
     @staticmethod
     def format_frame(frame) -> str:
@@ -100,7 +160,15 @@ class ModbusASCIIClient:
         if self.ensure_connection():
             self.last_sent = message
             try:
-                self.serial_port_manager.get_serial_instance().write(message)
+                serial_instance = self.serial_port_manager.get_serial_instance()
+                # Defensive: discard any bytes still sitting unread from an
+                # earlier transaction (e.g. one that timed out, or a stray
+                # echo from before this lock existed) before this new
+                # request's response can arrive and get concatenated onto
+                # that leftover data. Safe under _transaction_lock -- no
+                # other thread can be mid-transaction when this runs.
+                serial_instance.reset_input_buffer()
+                serial_instance.write(message)
                 logger.debug(f"Message sent: {message}")
             except serial.SerialException as e:
                 logger.error(f"Failed to send message due to serial error: {e}")
@@ -115,9 +183,27 @@ class ModbusASCIIClient:
 
         response = bytearray()
         start_time = time.time()
+        # Absolute deadline, independent of the "quiet period" timer below:
+        # that timer resets every time in_waiting is nonzero (see the loop),
+        # so a continuous trickle of incoming bytes -- noise, an echo, a
+        # slow/garbled response -- can keep this loop running forever with
+        # no sleep, holding _transaction_lock the whole time. Confirmed
+        # live 2026-09-22 via the web UI: repeated POS TEST START CCW
+        # clicks froze the whole server for 6+ minutes -- both the
+        # continuous-reading background thread's own polling AND every new
+        # /action request stopped making any progress at the exact same
+        # moment, consistent with one receive() call never returning and
+        # every other Modbus user then blocking on the same lock forever.
+        hard_deadline = start_time + timeout + 1.0
 
         try:
             while True:
+                if time.time() > hard_deadline:
+                    logger.error(
+                        "receive() hit its hard deadline without going quiet; "
+                        "giving up on this transaction."
+                    )
+                    break
                 if time.time() - start_time > timeout:
                     if not self.serial_port_manager.get_serial_instance().in_waiting:
                         break
@@ -127,6 +213,17 @@ class ModbusASCIIClient:
                     if expected_length and len(response) >= expected_length:
                         break
                     start_time = time.time()
+                else:
+                    # Nothing to read yet: this was a tight busy-loop with
+                    # no sleep at all, polling in_waiting as fast as the
+                    # interpreter could go (confirmed live 2026-09-22 --
+                    # this same loop was also the site of the "can run
+                    # forever" hang above). A short sleep only on the
+                    # "still waiting" path cuts CPU usage dramatically
+                    # without adding latency to actually draining a
+                    # response: once bytes start arriving, this branch
+                    # isn't taken and they're read immediately.
+                    time.sleep(0.001)
 
             if response:
                 logger.debug(f"Response received: {response}")
