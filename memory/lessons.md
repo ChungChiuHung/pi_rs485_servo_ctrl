@@ -159,3 +159,39 @@ throwaway).
 report back whether PA28 == 1.
 
 <!-- New verified entries go below this line -->
+
+## [2026-09-22] PA28 switched to 1 (absolute mode) on real hardware — supersedes prior "PA28=0" entries
+**Relates to:** CLAUDE.md §3 (`servo_comm_shihlin_unified` row), the two
+entries above ("Absolute encoder overflow risk", "PA28 fail-safe check
+built"), `docs/servo_comm_shihlin_merge_design.md` §2.4/§7.C
+**What happened:** User confirmed the SDH-BAT-SET backup battery is now
+installed and the motor (SME-L04030MCB) is a genuine absolute-encoder type.
+Ran the design doc's pre-written §7.C "C1" switch sequence against the real
+drive via COM4/RTU/115200, using `ServoController.write_PA28_Encoder_Mode()`
+(already implemented, previously only unit-tested):
+wrote PA28=1 (read-back confirmed) -> physical power-cycle -> AL.2A (expected)
+-> physical power-cycle again -> AL.2C (expected) -> `write_PA29_Initial_Abs_Pos()`
+(PA29=1) cleared AL.2C, PA31(APST) read back 0 (no fault bits) ->
+power-cycling reset PD16/PD25 to 0, so AL.12 (EMG) reappeared (known existing
+behavior, not new) -> cleared via the established
+`write_PD_16_Enable_DI_Control()` + `clear_alarm_12()` sequence -> final state:
+alarm=0xFF (none), PA28=1, PA31=0, `read_absolute_position_pulses()` reading
+-1 then -95 (noise-level, consistent with the origin PA29=1 just set). No
+AL.24 appeared at any point.
+**Lesson:** CLAUDE.md §3's `servo_comm_shihlin_unified` row currently states
+"PA28 confirmed 0/incremental-mode, so the merge uses software-side
+wraparound tracking, not PA32/PA33" — **this is now stale** and needs
+updating; the drive is live in absolute mode as of this date. Don't trust a
+dated "confirmed on real hardware" note as permanent — PA28 is exactly the
+kind of parameter this project itself documented as switchable, and it was
+switched.
+**Status:** C1 (the switch itself) verified live; CLAUDE.md §3 updated same
+session. C5's core claim also now verified live the same session: SET HOME
++ a real 90deg/20rpm move (landed +0.0008deg) -> user power-cycled the
+drive -> a fresh ServoController, WITHOUT calling set_home_position()
+again, read back an angle only 0.0039deg off -- position genuinely survives
+a power cycle. C2-C4, C6-C10 in `docs/servo_comm_shihlin_merge_design.md`
+§7.C (PA30 handshake timing, APR/APP register layout, battery-removed
+degraded behavior, moving the shaft while powered off, JOG coexistence,
+switching back to PA28=0) are still unverified on real hardware — only
+unit-tested.
