@@ -61,6 +61,7 @@ Default listen port: **5005** (UDP). Every address below is handled by
 | `/reset_initial_abs_position` | — | `write_PA29_Initial_Abs_Pos()` | `/reset_initial_abs_position "reset"` |
 | `/set_continous_motion` | `speed_rpm`, `acc_time` (ms), `enable` (bool) | Arms/disarms continuous JOG mode (does **not** move by itself) | `/continuous_mode_start speed_rpm acc_time` |
 | `/ctrl_continuous_motion` | `action` (`"start"`/`"stop"`), `CW_CCW` (`"CW"`/`"CCW"`) | Starts/stops continuous rotation (requires `/set_continous_motion` with `enable=true` first) | `/continuous_mode_start CW_CCW` / `/continuous_mode_stop "stop"` |
+| `/jog_speed_adjust` | `delta_rpm` (int, e.g. `1`/`-1`) | `change_jog_speed_by()` — **nudges** the running JOG speed by this amount (requires JOG mode already armed via `/set_continous_motion`); raises/logs an error instead of moving if it isn't | `/jog_speed_adjust <new speed_rpm>` |
 | `/cancel_loop` | — | Stops continuous reading **and** explicitly exits whatever test mode is active | `/cancel_loop <current_angle>` |
 
 Two more feedback-only messages fire automatically while a move is in
@@ -84,10 +85,21 @@ address name in the code, not a typo in this doc.)`
 ```
 /set_continous_motion 50 5000 true   # arm JOG mode at 50rpm
 /ctrl_continuous_motion "start" "CW" # start spinning
+/jog_speed_adjust 1                  # nudge to 51rpm while it's still running
+/jog_speed_adjust -1                 # nudge back to 50rpm
 ...
 /ctrl_continuous_motion "stop" "CW"  # pause (CW_CCW arg is ignored when stopping)
 /cancel_loop                          # fully exit JOG mode when done
 ```
+
+The web UI's Up/Down arrow keys send `/jog_speed_adjust` under the hood
+(via the `/action` `jogSpeedAdjust` HTTP action) while the Speed Control
+(JOG) section is armed; Left/Right arrow keys map to
+`/ctrl_continuous_motion "start" "CW"/"CCW"`, and releasing either sends
+`"stop"`. Art-Net's Channel 1 already supports changing the speed while
+running (a continuous fader value, not a nudge) — see artnet_server.py's
+Channel 1 docstring; no separate Art-Net channel was added for
+`/jog_speed_adjust`'s equivalent.
 
 **⚠️ Reversing direction requires a pause in between** — sending
 `"start" "CCW"` directly after `"start" "CW"` (no `"stop"` in between)

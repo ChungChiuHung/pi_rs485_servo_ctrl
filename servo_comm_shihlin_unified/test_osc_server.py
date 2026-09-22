@@ -90,6 +90,29 @@ class TestContinuousMotionHandlers(unittest.TestCase):
         ctrl.speed_ctrl_action.assert_called_once_with(0)
 
 
+class TestJogSpeedAdjustHandler(unittest.TestCase):
+
+    def test_converts_type_and_forwards(self):
+        server, ctrl = make_server()
+        ctrl.change_jog_speed_by.return_value = 101
+        server._jog_speed_adjust_handler(None, [], "1")
+        ctrl.change_jog_speed_by.assert_called_once_with(1)
+
+    def test_negative_delta(self):
+        server, ctrl = make_server()
+        ctrl.change_jog_speed_by.return_value = 99
+        server._jog_speed_adjust_handler(None, [], "-1")
+        ctrl.change_jog_speed_by.assert_called_once_with(-1)
+
+    def test_runtime_error_is_caught_not_raised(self):
+        """change_jog_speed_by() raises RuntimeError when JOG mode isn't
+        active -- like every other handler here, that must not crash the
+        OSC dispatch thread."""
+        server, ctrl = make_server()
+        ctrl.change_jog_speed_by.side_effect = RuntimeError("JOG mode is not active")
+        server._jog_speed_adjust_handler(None, [], "1")  # must not raise
+
+
 class TestSetPointHandler(unittest.TestCase):
 
     def test_converts_types_and_forwards(self):

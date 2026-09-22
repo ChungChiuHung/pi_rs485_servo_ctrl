@@ -116,6 +116,19 @@ class OSCInputServer:
         except Exception as e:
             logger.error(f"Error in ctrl_continuous_motion_handler: {e}")
 
+    def _jog_speed_adjust_handler(self, unused_addr, args, delta_rpm):
+        """Nudges the running JOG speed by delta_rpm (e.g. +1/-1), the same
+        API the web UI's Up/Down arrow keys use -- see
+        ServoController.change_jog_speed_by()'s docstring. Distinct from
+        /set_continous_motion, which sets an absolute starting speed before
+        motion begins; this requires JOG mode to already be armed."""
+        try:
+            delta_rpm = int(delta_rpm)
+            new_speed = self.servo_ctrller.change_jog_speed_by(delta_rpm)
+            self._send_feedback("/jog_speed_adjust", new_speed)
+        except Exception as e:
+            logger.error(f"Error in jog_speed_adjust_handler: {e}")
+
     def _set_point_handler(self, unused_addr, args, angle, acc_time, rpm):
         try:
             angle = float(angle)
@@ -172,6 +185,7 @@ class OSCInputServer:
                         "speed_rpm", "acc_time", "enable")
         dispatcher.map("/ctrl_continuous_motion", self._ctrl_continuous_motion_handler,
                         "action", "CW_CCW")
+        dispatcher.map("/jog_speed_adjust", self._jog_speed_adjust_handler, "delta_rpm")
         dispatcher.map("/cancel_loop", self._cancel_loop_handler)
         return dispatcher
 
