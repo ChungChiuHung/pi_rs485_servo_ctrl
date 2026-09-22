@@ -11,7 +11,7 @@
         <script>
             $(document).ready(function(){
                 function clearStatuses(excludeAction){
-                    let actions = ['servoOn','servoOff','getMsg','enablePosMode','posTestStart_CW','posTestStart_CCW','setPoint_1','setPoint_2','setHome','gotoSetPoint_1','gotoSetPoint_2','Home','enableSpeedCtrlMode','motionStart_CW','motionStart_CCW','motionPause','motionCancel'];
+                    let actions = ['servoOn','servoOff','getMsg','enablePosMode','posTest','setPoint_1','setPoint_2','setHome','gotoSetPoint_1','gotoSetPoint_2','Home','enableSpeedCtrlMode','jogSpeedAdjust'];
                     actions.forEach(function(action){
                         if(action !== excludeAction){
                             $('#'+action+'_status').text('');
@@ -133,14 +133,34 @@
                     }
                 }
 
+                // In-flight guard for the two mode-toggle buttons: neither
+                // has a data-action attribute, so setButtonsEnabled() (which
+                // only disables .button[data-action]) never covers them --
+                // without this, a fast double-click could fire the toggle
+                // twice before its own AJAX response comes back, and BOTH
+                // clicks would see the same stale posModeActive/jogModeActive
+                // and take the same branch (e.g. "enable" twice in a row
+                // instead of "enable" then "disable") -- see the 2026-09-22
+                // continuous-rotation report this was found from.
+                let modeToggleInFlight = false;
+
                 $('#enablePosModeBtn').click(function(){
+                    if (modeToggleInFlight) { return; }
                     if (posModeActive) {
                         // Status feedback still keys off 'enablePosMode'
                         // (there's no separate #disablePosMode_status span)
                         // -- extraPayload's own "action" wins the
                         // Object.assign in sendCommand(), so the server
                         // still receives "disablePosMode".
-                        sendCommand('enablePosMode', {action: 'disablePosMode'});
+                        modeToggleInFlight = true;
+                        sendCommand('enablePosMode', {action: 'disablePosMode'}, {
+                            success: function() {
+                                posModeActive = false;
+                                updatePosModeButton();
+                                updateModeLockButtons();
+                            },
+                            done: function() { modeToggleInFlight = false; }
+                        });
                         return;
                     }
                     // Pulses/speed validated client-side against the same
@@ -158,18 +178,228 @@
                         setFeedback('enablePosMode', 'Speed must be a whole number between 0 and 3000 rpm.', false);
                         return;
                     }
-                    sendCommand('enablePosMode', {pulses: pulses, speed_rpm: speedRpm});
+                    modeToggleInFlight = true;
+                    sendCommand('enablePosMode', {pulses: pulses, speed_rpm: speedRpm}, {
+                        success: function() {
+                            posModeActive = true;
+                            updatePosModeButton();
+                            updateModeLockButtons();
+                        },
+                        done: function() { modeToggleInFlight = false; }
+                    });
                 });
 
-                // ENABLE SPEED CONTROL MODE needs a JOG speed -- manual's
-                // documented range for 0x0903 is 0~3000 rpm.
+                // ENABLE SPEED CONTROL MODE / MOTION CANCEL merged into one
+                // toggle button, same pattern as ENABLE POS MODE above: the
+                // toggle state is driven by pollStatus()'s ctrl_mode_sel
+                // reading (updateSpeedCtrlButton() below), not just "did I
+                // last click enable" -- JOG mode can exit on its own (e.g.
+                // MOTION PAUSE followed by a communication gap), and the
+                // button must reflect that rather than getting stuck showing
+                // "DISABLE" for a mode that isn't actually active.
+                let jogModeActive = false;
+
+                function updateSpeedCtrlButton() {
+                    const btn = $('#enableSpeedCtrlModeBtn');
+                    if (jogModeActive) {
+                        btn.text('DISABLE SPEED CONTROL MODE').addClass('button-active');
+                    } else {
+                        btn.text('ENABLE SPEED CONTROL MODE').removeClass('button-active');
+                    }
+                }
+
                 $('#enableSpeedCtrlModeBtn').click(function(){
+                    if (modeToggleInFlight) { return; }
+                    if (jogModeActive) {
+                        // Status feedback still keys off 'enableSpeedCtrlMode'
+                        // (there's no separate #motionCancel_status span) --
+                        // extraPayload's own "action" wins the Object.assign
+                        // in sendCommand(), so the server still receives
+                        // "motionCancel".
+                        modeToggleInFlight = true;
+                        sendCommand('enableSpeedCtrlMode', {action: 'motionCancel'}, {
+                            success: function() {
+                                jogModeActive = false;
+                                updateSpeedCtrlButton();
+                                updateArrowKeyPadArmedState();
+                                updateModeLockButtons();
+                            },
+                            done: function() { modeToggleInFlight = false; }
+                        });
+                        return;
+                    }
+                    // Manual's documented range for 0x0903 is 0~3000 rpm.
                     const speedRpm = parseInt($('#speedCtrl_rpm').val(), 10);
                     if (isNaN(speedRpm) || speedRpm < 0 || speedRpm > 3000) {
                         setFeedback('enableSpeedCtrlMode', 'Speed must be a whole number between 0 and 3000 rpm.', false);
                         return;
                     }
-                    sendCommand('enableSpeedCtrlMode', {speed_rpm: speedRpm});
+                    modeToggleInFlight = true;
+                    sendCommand('enableSpeedCtrlMode', {speed_rpm: speedRpm}, {
+                        success: function() {
+                            jogModeActive = true;
+                            updateSpeedCtrlButton();
+                            updateArrowKeyPadArmedState();
+                            updateModeLockButtons();
+                        },
+                        done: function() { modeToggleInFlight = false; }
+                    });
+                });
+
+                // Keyboard shortcuts, shared between Speed Control (JOG) and
+                // Position Mode -- only one of jogModeActive/posModeActive is
+                // ever true at once (the two modes are mutually exclusive
+                // server-side, see /action's enablePosMode/enableSpeedCtrlMode
+                // handling), and keys are ignored entirely while focus is in a
+                // text/number input, so typing elsewhere on the page can't
+                // accidentally move the motor.
+                //   JOG:      Left/Right = MOTION START CW/CCW (release =
+                //             MOTION PAUSE, i.e. press-and-hold to rotate);
+                //             Up/Down = JOG speed +/-1 rpm (a live nudge,
+                //             round-trips to the drive).
+                //   Position: Left/Right = POS TEST START CW/CCW, one
+                //             fixed-size nudge per press (not press-and-hold
+                //             -- a discrete move has nothing to "release");
+                //             Up/Down = adjust the Speed (rpm) field used for
+                //             the NEXT nudge, purely client-side (no move).
+                // OS key-repeat (holding a key down) is ignored (event.repeat)
+                // for all four keys in both modes: JOG's Left/Right don't need
+                // it (the drive keeps rotating on its own once started), and
+                // every other case is deliberately one discrete step per
+                // physical press, not a runaway repeat while held.
+                let leftArrowDown = false;
+                let rightArrowDown = false;
+
+                function isTypingTarget() {
+                    const tag = (document.activeElement && document.activeElement.tagName) || '';
+                    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+                }
+
+                // Arrow-key indicator pads -- lit only while a key is actually
+                // doing something (same gating as the commands themselves),
+                // so a lit key always means "this is currently commanding the
+                // motor / adjusting speed", never a keypress with no effect.
+                // Two separate pads (one per section) since each reflects a
+                // different mode, even though only one is ever active.
+                const JOG_INDICATOR_IDS = {
+                    ArrowLeft: 'keyIndicator_Left', ArrowRight: 'keyIndicator_Right',
+                    ArrowUp: 'keyIndicator_Up', ArrowDown: 'keyIndicator_Down',
+                };
+                const POS_INDICATOR_IDS = {
+                    ArrowLeft: 'posKeyIndicator_Left', ArrowRight: 'posKeyIndicator_Right',
+                    ArrowUp: 'posKeyIndicator_Up', ArrowDown: 'posKeyIndicator_Down',
+                };
+
+                function setKeyIndicator(idMap, key, active) {
+                    const id = idMap[key];
+                    if (id) { $('#' + id).toggleClass('key-active', active); }
+                }
+
+                function updateArrowKeyPadArmedState() {
+                    $('#arrowKeyPad').toggleClass('disarmed', !jogModeActive);
+                    $('#posArrowKeyPad').toggleClass('disarmed', !posModeActive);
+                }
+
+                // ENABLE POS MODE and ENABLE SPEED CONTROL MODE are mutually
+                // exclusive (the drive can only be latched into one
+                // CTRL_MODE_SEL test mode at a time -- see /action's
+                // server-side _reject_if_other_mode_active(), which is the
+                // real enforcement; this just keeps the UI from inviting a
+                // click that would be refused anyway). Each toggle's OWN
+                // button stays enabled while ITS mode is the active one, so
+                // it can still be switched off.
+                function updateModeLockButtons() {
+                    $('#enablePosModeBtn').prop('disabled', jogModeActive);
+                    $('#enableSpeedCtrlModeBtn').prop('disabled', posModeActive);
+                }
+
+                // Live "Speed (rpm)" sync for Speed Control (JOG): reflects
+                // the actually-running JOG speed after an arrow-key nudge,
+                // without fighting the user if they're mid-edit of that same
+                // field (skipped while it has focus -- also see pollStatus()
+                // below for the other half of this, which syncs speed changes
+                // made from OSC/Art-Net or another browser tab).
+                function updateSpeedRpmField(newSpeed) {
+                    if (newSpeed === null || newSpeed === undefined) { return; }
+                    if (document.activeElement === $('#speedCtrl_rpm')[0]) { return; }
+                    $('#speedCtrl_rpm').val(newSpeed);
+                }
+
+                // Position Mode's Up/Down speed adjust: purely local (no
+                // server round-trip, unlike JOG's) -- it only prepares the
+                // speed_rpm the NEXT POS TEST START nudge will send.
+                function adjustPosModeSpeedBy(delta) {
+                    const field = $('#posMode_speed_rpm');
+                    const current = parseInt(field.val(), 10);
+                    const base = isNaN(current) ? 10 : current;
+                    const next = Math.max(0, Math.min(3000, base + delta));
+                    field.val(next);
+                }
+
+                $(document).on('keydown', function(e){
+                    if (isTypingTarget() || e.repeat) { return; }
+                    if (!(e.key in JOG_INDICATOR_IDS)) { return; }
+
+                    if (jogModeActive) {
+                        if (e.key === 'ArrowLeft' && !leftArrowDown) {
+                            leftArrowDown = true;
+                            e.preventDefault();
+                            setKeyIndicator(JOG_INDICATOR_IDS, 'ArrowLeft', true);
+                            sendCommand('motionStart_CW');
+                        } else if (e.key === 'ArrowRight' && !rightArrowDown) {
+                            rightArrowDown = true;
+                            e.preventDefault();
+                            setKeyIndicator(JOG_INDICATOR_IDS, 'ArrowRight', true);
+                            sendCommand('motionStart_CCW');
+                        } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            setKeyIndicator(JOG_INDICATOR_IDS, 'ArrowUp', true);
+                            sendCommand('jogSpeedAdjust', {delta_rpm: 1}, {
+                                success: function(response) { updateSpeedRpmField(response.speed_rpm); }
+                            });
+                        } else if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            setKeyIndicator(JOG_INDICATOR_IDS, 'ArrowDown', true);
+                            sendCommand('jogSpeedAdjust', {delta_rpm: -1}, {
+                                success: function(response) { updateSpeedRpmField(response.speed_rpm); }
+                            });
+                        }
+                    } else if (posModeActive) {
+                        const speedRpm = parseInt($('#posMode_speed_rpm').val(), 10);
+                        if (e.key === 'ArrowLeft') {
+                            e.preventDefault();
+                            setKeyIndicator(POS_INDICATOR_IDS, 'ArrowLeft', true);
+                            sendCommand('posTest', {action: 'posTestStart_CW', speed_rpm: speedRpm});
+                        } else if (e.key === 'ArrowRight') {
+                            e.preventDefault();
+                            setKeyIndicator(POS_INDICATOR_IDS, 'ArrowRight', true);
+                            sendCommand('posTest', {action: 'posTestStart_CCW', speed_rpm: speedRpm});
+                        } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            setKeyIndicator(POS_INDICATOR_IDS, 'ArrowUp', true);
+                            adjustPosModeSpeedBy(1);
+                        } else if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            setKeyIndicator(POS_INDICATOR_IDS, 'ArrowDown', true);
+                            adjustPosModeSpeedBy(-1);
+                        }
+                    }
+                });
+
+                $(document).on('keyup', function(e){
+                    // Always clear both pads' indicators on keyup, even if
+                    // the active mode changed or focus moved away while the
+                    // key was down -- an indicator must never stay lit for a
+                    // key that is no longer physically pressed.
+                    setKeyIndicator(JOG_INDICATOR_IDS, e.key, false);
+                    setKeyIndicator(POS_INDICATOR_IDS, e.key, false);
+                    if (e.key === 'ArrowLeft') {
+                        leftArrowDown = false;
+                        if (jogModeActive && !isTypingTarget()) { sendCommand('motionPause'); }
+                    } else if (e.key === 'ArrowRight') {
+                        rightArrowDown = false;
+                        if (jogModeActive && !isTypingTarget()) { sendCommand('motionPause'); }
+                    }
                 });
 
                 // Alarm 12 clear -- routes through /alarm/clear (confirm +
@@ -508,6 +738,19 @@
                         // happens instead of staying stuck on "DISABLE".
                         posModeActive = (response.ctrl_mode_sel === 4);
                         updatePosModeButton();
+
+                        // Same catch-up logic as ENABLE POS MODE above, for
+                        // the merged ENABLE SPEED CONTROL MODE / MOTION
+                        // CANCEL toggle button.
+                        jogModeActive = (response.ctrl_mode_sel === 3);
+                        updateSpeedCtrlButton();
+                        updateArrowKeyPadArmedState();
+                        updateModeLockButtons();
+                        // Keeps "Speed (rpm)" showing the speed actually
+                        // running, even when it was last changed by OSC,
+                        // Art-Net, or another browser tab rather than this
+                        // page's own arrow keys.
+                        updateSpeedRpmField(response.jog_speed_rpm);
 
                         $('#setPoint_1_display').text('Set Point 1: ' +
                             (response.set_point_1 === null ? 'Not recorded' : response.set_point_1.toFixed(4) + ' deg'));
@@ -905,8 +1148,16 @@
                         <input type="number" id="posMode_speed_rpm" min="0" max="3000" value="10">
                     </div>
                     <div class="button-container"><button class="button" id="enablePosModeBtn">ENABLE POS MODE</button><span id="enablePosMode_status"></span></div>
-                    <div class="button-container"><button class="button" data-action="posTestStart_CW">POS TEST START CW</button><span id="posTest_status_CW"></span></div>
-                    <div class="button-container"><button class="button" data-action="posTestStart_CCW">POS TEST START CCW</button><span id="posTest_status_CCW"></span></div>
+                    <div class="arrow-key-pad" id="posArrowKeyPad">
+                        <span class="key-indicator key-up" id="posKeyIndicator_Up">&uarr;</span>
+                        <span class="key-indicator key-left" id="posKeyIndicator_Left">&larr;</span>
+                        <span class="key-indicator key-down" id="posKeyIndicator_Down">&darr;</span>
+                        <span class="key-indicator key-right" id="posKeyIndicator_Right">&rarr;</span>
+                    </div>
+                    <span class="section-note">While enabled -- Left/Right arrow keys = POS TEST START CW/CCW (one
+                        0.5deg nudge per press); Up/Down arrow keys = adjust the Speed (rpm) above by +/-1 for the
+                        next nudge (no move by itself).</span>
+                    <span class="section-note" id="posTest_status"></span>
                     <span class="section-note" id="setPoint_1_display">Set Point 1: Not recorded</span>
                     <div class="button-container"><button class="button" data-action="setPoint_1">SET POINT 1</button><span id="setPoint_1_status"></span></div>
                     <div class="button-container"><button class="button" data-action="gotoSetPoint_1" id="gotoSetPoint_1Btn" disabled>MOVE TO SET POINT 1</button><span id="gotoSetPoint_1_status"></span></div>
@@ -923,10 +1174,17 @@
                         <input type="number" id="speedCtrl_rpm" min="0" max="3000" value="100">
                     </div>
                     <div class="button-container"><button class="button" id="enableSpeedCtrlModeBtn">ENABLE SPEED CONTROL MODE</button><span id="enableSpeedCtrlMode_status"></span></div>
-                    <div class="button-container"><button class="button" data-action="motionStart_CW">MOTION START CW</button><span id="motionStart_CW_status"></span></div>
-                    <div class="button-container"><button class="button" data-action="motionStart_CCW">MOTION START CCW</button><span id="motionStart_CCW_status"></span></div>
-                    <div class="button-container"><button class="button" data-action="motionPause">MOTION PAUSE</button><span id="motionPause_status"></span></div>
-                    <div class="button-container"><button class="button" data-action="motionCancel">MOTION CANCEL</button><span id="motionCancel_status"></span></div>
+                    <div class="arrow-key-pad" id="arrowKeyPad">
+                        <span class="key-indicator key-up" id="keyIndicator_Up">&uarr;</span>
+                        <span class="key-indicator key-left" id="keyIndicator_Left">&larr;</span>
+                        <span class="key-indicator key-down" id="keyIndicator_Down">&darr;</span>
+                        <span class="key-indicator key-right" id="keyIndicator_Right">&rarr;</span>
+                    </div>
+                    <span class="section-note">No click-to-spin buttons here on purpose: rotation only runs while a
+                        key is physically held down, so it can never be left spinning by a stray click. While enabled --
+                        Left/Right arrow keys = rotate CW/CCW (release the key = stop immediately); Up/Down arrow keys =
+                        speed +/-1 rpm. Keys only act while this page has focus and the cursor isn't in a text/number field.</span>
+                    <span class="section-note" id="jogSpeedAdjust_status"></span>
                 </nav>
             </aside>
 

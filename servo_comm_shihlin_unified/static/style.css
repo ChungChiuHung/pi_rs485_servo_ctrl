@@ -352,6 +352,49 @@ main {
     color: #fff !important;
 }
 
+/* Arrow-key indicator for Speed Control (JOG) -- shows which keys are
+   physically held down right now, laid out like the keys themselves
+   (Up on top, Left/Down/Right below). Purely visual, never clicked. */
+.arrow-key-pad {
+    display: grid;
+    grid-template-columns: repeat(3, 40px);
+    grid-template-rows: repeat(2, 40px);
+    gap: 4px;
+    margin: 10px 0;
+}
+
+.key-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #888;
+    border-radius: 4px;
+    font-size: 18px;
+    background-color: #333;
+    color: #aaa;
+    user-select: none;
+    transition: background-color 0.05s, color 0.05s;
+}
+
+.key-indicator.key-up { grid-column: 2; grid-row: 1; }
+.key-indicator.key-left { grid-column: 1; grid-row: 2; }
+.key-indicator.key-down { grid-column: 2; grid-row: 2; }
+.key-indicator.key-right { grid-column: 3; grid-row: 2; }
+
+/* A key currently held down. Same blue as .button-active, for the same
+   "currently active" meaning. */
+.key-indicator.key-active {
+    background-color: #2E86DE;
+    color: #fff;
+    border-color: #2E86DE;
+}
+
+/* Dimmed further while Speed Control (JOG) isn't armed -- pressing a
+   key does nothing, and the pad should look inert, not inviting. */
+.arrow-key-pad.disarmed .key-indicator {
+    opacity: 0.4;
+}
+
 /* Shown across the top while the app has no serial port connection. */
 .connection-banner {
     position: sticky;

@@ -187,6 +187,40 @@ had genuinely stopped after leaving JOG mode, then confirmed the fixed
 (noise) instead of resuming rotation, and that an explicit CW afterward
 still worked normally.
 
+## [2026-09-22] Follow-up: "click twice+ still spins" was a client-side race, not the server
+**Relates to:** the entry above, `templates/index.html` (ENABLE POS MODE /
+ENABLE SPEED CONTROL MODE toggle buttons)
+**What happened:** User reported that clicking ENABLE SPEED CONTROL MODE
+two-or-more times still produced continuous rotation, even with the fix
+above in place. Code review found the real mechanism: the toggle buttons'
+"enable vs disable" decision reads `jogModeActive`/`posModeActive`, which
+were ONLY ever updated by the periodic `/status` poll -- never immediately
+from the toggle's own click response. Neither button has a `data-action`
+attribute, so `setButtonsEnabled()` (which disables `.button[data-action]`
+while a request is in flight) never covers them either. A user clicking
+twice quickly (trying to turn it back off) would have BOTH clicks see the
+same stale "not active" flag and take the SAME "enable" branch -- so every
+click kept re-arming instead of the second one ever actually disarming,
+and the button never visibly changed to "DISABLE" either.
+**Investigated on real hardware whether the re-arm itself was the danger**:
+called `enable_speed_ctrl(enable=True)` twice in a row 0.3s apart (a
+realistic fast double-click, simulating the race directly) via
+`verify_double_enable_no_spin.py` (kept in the repo) -- result: 34 pulses
+over 3s (noise), motor did NOT spin. So the server/drive side was already
+safe after the earlier fix; the "still spinning" symptom was entirely the
+client never routing a second click to the correct (disable) action.
+**Fix:** both toggle buttons now update their own tracked
+state (`jogModeActive`/`posModeActive`) and the buttons/lock/indicator UI
+immediately from their own AJAX success callback, plus a
+`modeToggleInFlight` guard so a second click before the first's response
+lands is ignored outright rather than racing.
+**Status:** client-side fix in place; server-side re-arm safety confirmed
+live. Not yet re-tested end-to-end through an actual browser double-click
+(no browser automation available in this environment) -- the underlying
+ServoController calls are verified and the JS race is gone by code
+inspection, but the user should click through it once in a real browser
+to be sure.
+
 ## [2026-09-22] "Released the arrow key but the motor kept turning" -- 5s decel ramp, not a stuck stop
 **Relates to:** `app.py`'s `enableSpeedCtrlMode` action
 **What happened:** User reported releasing a JOG arrow key didn't stop the
