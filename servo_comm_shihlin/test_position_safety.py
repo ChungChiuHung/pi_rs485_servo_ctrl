@@ -54,7 +54,11 @@ class RefreshAndAbsoluteMoveTests(unittest.TestCase):
         ctrl.post_step_motion_by(angle=50.0, speed_rpm=5)
 
         self.assertAlmostEqual(ctrl.current_angle, 30.0, places=3)
-        self.assertAlmostEqual(ctrl._execute_positioning.call_args[0][0], 20.0, places=3)
+        # _execute_positioning()'s first argument is the absolute target
+        # ENCODER value (2026-09-22 redesign -- see its docstring), not the
+        # diff angle: current_encoder (raw) + the 20-degree diff in pulses.
+        expected_target_encoder = raw + int(BASE_PULSE_PER_DEGREE * 20.0)
+        self.assertEqual(ctrl._execute_positioning.call_args[0][0], expected_target_encoder)
 
     def test_an_unreadable_position_refuses_to_move(self):
         ctrl = make_controller()
@@ -85,9 +89,14 @@ class RefreshAndAbsoluteMoveTests(unittest.TestCase):
                 ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=0)
                 ctrl.post_step_motion_by(angle=target)
                 ctrl._execute_positioning.assert_called_once()
-                angle, low, high = ctrl._execute_positioning.call_args[0][:3]
-                self.assertAlmostEqual(angle, expected)
-                self.assertEqual((high << 16) | low, int(BASE_PULSE_PER_DEGREE * abs(expected)))
+                target_encoder, low, high = ctrl._execute_positioning.call_args[0][:3]
+                # First argument is the absolute target ENCODER value
+                # (2026-09-22 redesign): current_encoder (0 here) +/- the
+                # move's pulse count, signed to match the move direction.
+                expected_pulses = int(BASE_PULSE_PER_DEGREE * abs(expected))
+                expected_target_encoder = expected_pulses if expected > 0 else -expected_pulses
+                self.assertEqual(target_encoder, expected_target_encoder)
+                self.assertEqual((high << 16) | low, expected_pulses)
 
     def test_a_move_beyond_the_pulse_register_is_refused(self):
         ctrl = make_controller()
