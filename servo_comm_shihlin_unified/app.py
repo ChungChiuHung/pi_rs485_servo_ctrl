@@ -225,6 +225,34 @@ def _current_rs485_traffic():
     return client.format_hex(client.last_sent), client.format_hex(client.last_received)
 
 
+# CTRL_MODE_SEL (0x0901) values that mean "the drive is latched into this
+# test mode right now" -- see ServoController.read_test_mode_0x0901()'s
+# docstring. Used to keep ENABLE POS MODE and ENABLE SPEED CONTROL MODE
+# mutually exclusive (see _reject_if_other_mode_active()).
+CTRL_MODE_JOG = 3
+CTRL_MODE_POSITIONING = 4
+
+
+def _reject_if_other_mode_active(action, other_mode_value, other_mode_name):
+    """Mutual exclusion between ENABLE POS MODE and ENABLE SPEED CONTROL
+    MODE: the drive can only be latched into one CTRL_MODE_SEL test mode at
+    a time, so letting a user arm one while the other is already active
+    would silently conflict (or require them to notice and press the other
+    toggle off first themselves). Returns a (response, status_code) error
+    tuple to return immediately if `other_mode_value` (the OTHER section's
+    CTRL_MODE_SEL code) is what the drive is actually in right now, else
+    None. A None/unreadable read does NOT block -- fails open rather than
+    locking both toggles out over one flaky read; the mode-entry sequences
+    themselves (_execute_positioning()/enable_speed_ctrl()) already have
+    their own "no alarm + Servo OFF" precondition as a second layer."""
+    if servo_ctrller.read_test_mode_0x0901() == other_mode_value:
+        return jsonify({
+            "status": "error", "action": action,
+            "message": f"{other_mode_name} is active -- turn it off first.",
+        }), 409
+    return None
+
+
 def json_response(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -808,6 +836,9 @@ def handle_action():
     elif action == "getMsg":
         state_values = servo_ctrller.Read_Pos_Related_Paremters()
     elif action == "enablePosMode":
+        conflict = _reject_if_other_mode_active(action, CTRL_MODE_JOG, "Speed Control (JOG) mode")
+        if conflict:
+            return conflict
         # Command pulses (0x0905/0x0906): manual's documented range is
         # 0~(2^31-1) -- see docs/en_manual.txt:10416-10422.
         pulses, error = validate_int_range(data.get('pulses', 1920), 0, 2**31 - 1, 'pulses')
@@ -913,6 +944,9 @@ def handle_action():
         except MoveOutOfRangeError as e:
             return jsonify({"status": "error", "action": action, "message": str(e)}), 400
     elif action == "enableSpeedCtrlMode":
+        conflict = _reject_if_other_mode_active(action, CTRL_MODE_POSITIONING, "Position Mode")
+        if conflict:
+            return conflict
         # JOG speed command (0x0903): manual's documented range is 0~3000
         # rpm -- see docs/en_manual.txt:10367-10373.
         speed_rpm, error = validate_int_range(data.get('speed_rpm', 100), 0, 3000, 'speed_rpm')
