@@ -30,6 +30,19 @@ logger = logging.getLogger(__name__)
 # both as "no alarm"; None (communication failure) is NOT "no alarm".
 NO_ALARM_CODES = frozenset({0, 0xFF})
 
+# Per-poll encoder delta at or below this many pulses counts as "not moving"
+# for the motion-complete auto-stop in _read_continuously(). Ported from
+# servo_comm_shihlin_unified (same constant, same rationale: calibrated
+# above a stationary encoder's few-pulse noise floor and the larger dither
+# a real move exhibits while holding its target under closed-loop torque)
+# after real-hardware testing on this project's own COM4 rig (2026-09-22)
+# found the old PF.PRCM-based check (Read_Motion_Completed_Signal()) falsely
+# declared a positioning-test move "complete" long before the encoder had
+# actually finished moving -- see _read_continuously()'s comment.
+STILL_THRESHOLD_PULSES = 200
+# Consecutive "not moving" polls required before declaring motion complete.
+STILL_COUNT_TO_COMPLETE = 12
+
 
 def is_alarm_active(alarm_code) -> bool:
     if alarm_code is None:
@@ -68,7 +81,18 @@ class ServoController:
         self.read_thread: Union[Thread, None] = None
         self.read_thread_stop_event = threading.Event()
         self.reading_active = False
-        self.lock = threading.Lock()
+        # RLock (not Lock): start_continuous_reading() can call
+        # stop_continuous_reading() from inside its own `with self.lock`
+        # block when reading is already active (see its comment) -- a plain
+        # Lock deadlocks there, confirmed live 2026-09-22 via the web UI:
+        # ENABLE POS MODE leaves reading_active True, so the next POS TEST
+        # START CW/CCW click hung forever inside start_continuous_reading(),
+        # never releasing hardware_lock.py's _hardware_busy_lock either --
+        # every other button then got rejected (429) until the server was
+        # restarted, while the original background thread kept polling.
+        # Ported from servo_comm_shihlin_unified, which already uses RLock
+        # here for the same reason.
+        self.lock = threading.RLock()
         self.stop_event = Event()
         self.response = ""
         self.current_angle = 0.0
@@ -81,6 +105,11 @@ class ServoController:
         self.on_initial_home = False
         self.completed_tag = False
         self.completed_cnt = 0
+        # Motion-complete auto-stop state for _read_continuously() -- see its
+        # comment and start_continuous_reading()'s auto_stop_on_stillness.
+        self._motion_seen = False
+        self._still_count = 0
+        self._auto_stop_on_stillness = True
         #self.abs_home_pos = 1184347
         self.abs_home_pos = self.load_abs_home_pos()
         # Recorded by SET POINT 1/2 (degrees from home, None = never recorded)
@@ -196,13 +225,25 @@ class ServoController:
         logger.info(f"{data_name}: {hex_string}")
 
     # default address = 0x0205
-    def start_continuous_reading(self, interval: float = 0.1) -> None:
+    def start_continuous_reading(self, interval: float = 0.1, auto_stop_on_stillness: bool = True) -> None:
         with self.lock:
             if self.reading_active:
                 self.stop_continuous_reading()
                 return
 
             self.read_thread_stop_event.clear()
+            # Fresh motion-complete detection state per reading session --
+            # see _read_continuously()'s comment.
+            self._motion_seen = False
+            self._still_count = 0
+            # False for continuous JOG/speed-control mode (enable_speed_ctrl()):
+            # that mode runs until explicitly stopped/cancelled, so a
+            # deliberate pause (encoder goes still) must not be mistaken for
+            # "the move finished" and tear the session down. True (default)
+            # for discrete positioning-test moves, where stillness really
+            # does mean the move completed. Ported from
+            # servo_comm_shihlin_unified.
+            self._auto_stop_on_stillness = auto_stop_on_stillness
             self.read_thread = threading.Thread(target=self._read_continuously, args=(interval,))
             self.reading_active = True
             self.read_thread.start()
@@ -217,7 +258,21 @@ class ServoController:
             self.reading_active = False
             self.read_thread_stop_event.set()
             if self.read_thread and threading.current_thread() is not self.read_thread:
-                self.read_thread.join()
+                # Bounded, defense-in-depth: the real fix for the 2026-09-22
+                # web UI freeze was ModbusASCIIClient.receive()'s own
+                # unbounded loop (see its comment), but this join() had no
+                # timeout either, so ANY future way for the background
+                # thread to get stuck would hang whichever caller (a Flask
+                # request, holding hardware_lock.py's _hardware_busy_lock)
+                # is trying to stop it -- forever, with no way to recover
+                # short of restarting the process. A stuck thread is leaked
+                # rather than joined in that case; logged so it's visible.
+                self.read_thread.join(timeout=5.0)
+                if self.read_thread.is_alive():
+                    logging.error(
+                        "Background reading thread did not stop within 5s; "
+                        "continuing without it (it will be abandoned)."
+                    )
 
             self.read_thread = None
             self.completed_cnt = 0
@@ -230,24 +285,66 @@ class ServoController:
             
 
     def _read_continuously(self, interval: float) -> None:
+        # Software motion-complete detection instead of
+        # Read_Motion_Completed_Signal() (PF.PRCM) -- ported from
+        # servo_comm_shihlin_unified after real-hardware testing there
+        # (2026-09-18) found PF.PRCM is a PATH-execution status register,
+        # unrelated to the raw-pulse positioning workflow this loop actually
+        # monitors (pos_step_motion_test()/_execute_positioning(), driven by
+        # 0x0905/0x0906/0x0907 -- not PF82 PATH execution).
+        #
+        # Confirmed live on this project's own COM4 rig (2026-09-22): the old
+        # check declared a commanded move "complete" after ~3s while the
+        # encoder had barely moved at all. Root cause was two-layered --
+        # Enable_Position_Mode()/config_acc_dec_0x0902()/config_speed_0x0903()/
+        # config_pulses_0x0905_low_byte()/config_pulses_0x0906_high_byte()/
+        # pos_motion_start_0x0907() used to fire-and-forget (.send(), never
+        # .send_and_receive()), so their write-echoes sat undrained in the
+        # serial input buffer; the next receive() (this loop's first
+        # Read_Motion_Completed_Signal() call) then scooped up all of them
+        # concatenated together, ModbusResponse parsed the leading (garbled)
+        # WRITE echo instead of the intended READ response, and
+        # get_value() on a write-shaped response returns None -- "None != 0"
+        # is True, so completed_tag was wrongly True from the very first
+        # poll. The six methods above now drain their own echo via
+        # send_and_receive() (see their comments), but PF.PRCM was never a
+        # reliable completion signal for this workflow to begin with, so the
+        # check itself is replaced too: track the raw per-poll encoder
+        # delta, and once the encoder has genuinely moved (delta above
+        # STILL_THRESHOLD_PULSES, safely above a stationary encoder's few-
+        # pulse jitter) at least once, require STILL_COUNT_TO_COMPLETE
+        # consecutive polls back below that threshold before declaring the
+        # motion complete and auto-stopping. If the encoder never moves at
+        # all, reading is deliberately left running rather than auto-stopped
+        # -- stop it explicitly (MOTION CANCEL / stop_continuous_reading())
+        # instead. auto_stop_on_stillness (see start_continuous_reading())
+        # disables this entirely for continuous JOG/speed-control mode,
+        # where a deliberate pause must not be mistaken for "done".
+        #
+        # An earlier version of this comment (2026-09-22, during this same
+        # investigation) concluded 0x0907 never auto-stops and added a
+        # software target-tracked active stop on top of this stillness
+        # check. That was wrong: docs/en_manual.txt §4.5.3(2) ("Positioning
+        # operation", the official Shihlin PC software's version of this
+        # same feature) documents the drive stopping on its own "after
+        # moving the command route set by the user", and manual (10)'s "0:
+        # pause" wording is that section's Pause button (interrupt
+        # mid-route), not evidence 1/2 run forever. Confirmed 2026-09-22:
+        # the official software's own JOG and Positioning operation tests,
+        # run repeatedly against this same drive, worked correctly every
+        # time. The real reason this project's own 0x0907 triggers were
+        # never producing motion was a precondition bug (see
+        # _execute_positioning()'s comment), not a stopping-mechanism bug --
+        # the active target-tracking layer was reverted.
         base_pulse_per_degree = 349525.3333333333
+        previous_encoder_for_stillness = None
+
         while not self.read_thread_stop_event.is_set():
             if not self.serial_port.keep_running:
                 logger.info("Reconnection attempts stopped.")
                 break
 
-            # 1) Read “motion completed” flag
-            try:
-                self.completed_tag = self.Read_Motion_Completed_Signal()
-            except Exception as e:
-                logger.warning(f"Failed to read motion-completed signal ({e}); retrying...")
-                self.delay_ms(interval * 1000)
-                continue
-
-            # small inter-read delay
-            self.delay_ms(100)
-
-            # 2) Read encoder position
+            # Read encoder position
             try:
                 encoder = self.read_encoder_before_gear_ratio()
             except Exception as e:
@@ -260,7 +357,7 @@ class ServoController:
                 self.delay_ms(interval * 1000)
                 continue
 
-            # 3) Process valid encoder reading (unwrapped -- see
+            # Process valid encoder reading (unwrapped -- see
             # encoder_pulse_tracker.py / docs/servo_comm_shihlin_merge_design.md
             # §2.4 for why the raw 0x0000 register can't be trusted directly)
             self.current_encoder = self._encoder_tracker.update(encoder)
@@ -270,13 +367,22 @@ class ServoController:
             logger.info(f"Diff Angle: {diff_angle}")
             self._notify_event_listeners("on_moving", diff_angle)
 
-            # 4) Check for motion-complete bursts
-            if self.completed_tag:
-                self.completed_cnt += 1
-                if self.completed_cnt > 6:
-                    logger.info(f"Motion Completed Signal Detected: {self.completed_cnt}")
-                    self.stop_continuous_reading()
-                    break
+            if previous_encoder_for_stillness is not None:
+                delta = abs(self.current_encoder - previous_encoder_for_stillness)
+                if delta > STILL_THRESHOLD_PULSES:
+                    self._motion_seen = True
+                    self._still_count = 0
+                else:
+                    self._still_count += 1
+            previous_encoder_for_stillness = self.current_encoder
+
+            if (self._auto_stop_on_stillness and self._motion_seen
+                    and self._still_count >= STILL_COUNT_TO_COMPLETE):
+                logger.info(
+                    f"Motion complete: encoder stable for {self._still_count} consecutive reads."
+                )
+                self.stop_continuous_reading()
+                break
 
             # loop delay
             self.delay_ms(interval * 1000)
@@ -642,9 +748,17 @@ class ServoController:
             config_value = 0x0004
 
         message = self.modbus_client.build_write_message(address, config_value)
-        # print(f"Build Read Command: {message}")
-        # self.response = self.modbus_client.send_and_receive(message)
-        self.modbus_client.send(message)
+        # send_and_receive (not the old fire-and-forget send()) so the
+        # drive's write-echo gets drained here instead of sitting unread in
+        # the serial input buffer, where it would silently concatenate onto
+        # a later, unrelated response -- ModbusASCIIClient.receive() has no
+        # per-transaction framing/resync, so it returns whatever bytes are
+        # sitting in the buffer, echo included. Confirmed live 2026-09-22:
+        # this is what made _read_continuously()'s first
+        # Read_Motion_Completed_Signal() call misparse a garbled multi-frame
+        # response as an instant "motion complete" -- see that method's
+        # comment.
+        self.modbus_client.send_and_receive(message)
 
 
     def Enable_JOG_Mode(self, enable=True):
@@ -660,18 +774,17 @@ class ServoController:
         # print(f"Address 0x0902, 1 word")
         config_value = acc_dec_time
         message = self.modbus_client.build_write_message(0x0902, config_value)
-        # print(f"Build Write Command: {message}")
-        # self.response = self.modbus_client.send_and_receive(message)
-        self.modbus_client.send(message)
-        
+        # See Enable_Position_Mode()'s comment: drains the write echo
+        # instead of leaving it unread for a later transaction to inherit.
+        self.modbus_client.send_and_receive(message)
+
 
     def config_speed_0x0903(self, speed_rpm):
         # print(f"Address 0x0903, 1 word")
         config_value = speed_rpm
         message = self.modbus_client.build_write_message(0x0903, config_value)
-        # print(f"Build Write Command: {message}")
-        # self.response = self.modbus_client.send_and_receive(message)
-        self.modbus_client.send(message)
+        # See Enable_Position_Mode()'s comment.
+        self.modbus_client.send_and_receive(message)
 
 
     def config_pulses_0x0905_low_byte(self, low_byte):
@@ -679,9 +792,8 @@ class ServoController:
         # print(f"Address {address}, 1 word")
         config_value = low_byte
         message = self.modbus_client.build_write_message(address, config_value)
-        # print(f"Build Write Command: {message}")
-        # self.response = self.modbus_client.send_and_receive(message)
-        self.modbus_client.send(message)
+        # See Enable_Position_Mode()'s comment.
+        self.modbus_client.send_and_receive(message)
 
 
     def config_pulses_0x0906_high_byte(self, high_byte):
@@ -689,9 +801,8 @@ class ServoController:
         # print(f"Address {address}, 1 word")
         config_value = high_byte
         message = self.modbus_client.build_write_message(address, config_value)
-        # print(f"Build Write Command: {message}")
-        # response = self.modbus_client.send_and_receive(message)
-        self.modbus_client.send(message)
+        # See Enable_Position_Mode()'s comment.
+        self.modbus_client.send_and_receive(message)
 
     def read_0x0905_low_byte(self):
         # print(f"Address 0x0905, 1 word")
@@ -711,7 +822,8 @@ class ServoController:
         # print(f"Address 0x0907, 1 word")
         config_value = value
         message = self.modbus_client.build_write_message(0x0907, config_value)
-        self.modbus_client.send(message)
+        # See Enable_Position_Mode()'s comment.
+        self.modbus_client.send_and_receive(message)
 
     def read_encoder_before_gear_ratio(self):
         message = self.modbus_client.build_read_message(0x0000, 2)
@@ -803,12 +915,57 @@ class ServoController:
         return True
 
     def pos_step_motion_test(self, CW=True):
+        # Explicitly stop any stale reading session first rather than
+        # relying on start_continuous_reading()'s own toggle-if-already-
+        # active behavior: confirmed live 2026-09-22 via the web UI that
+        # ENABLE POS MODE leaves reading_active True, so this call's own
+        # start_continuous_reading() would just toggle that session OFF and
+        # return -- meaning the move triggered by pos_motion_start_0x0907()
+        # below actually runs with NO active monitoring thread at all (the
+        # web UI's /status then shows reading_active=false while the motor
+        # is still physically moving). This makes sure a fresh session is
+        # always running for THIS move.
+        if self.reading_active:
+            self.stop_continuous_reading()
         self.start_continuous_reading()
         self.delay_ms(100)
         if CW == True:
             self.pos_motion_start_0x0907(1)
         else:
             self.pos_motion_start_0x0907(2)
+
+    def pos_test_step(self, cw: bool, degrees: float = 0.5, acc_dec_time: int = 200,
+                       speed_rpm: int = 10) -> None:
+        """One fixed-size nudge in the given direction, via the same
+        reliable post_step_motion_by()/_execute_positioning() path as
+        HOME/Set Point (clear_alarm_12() precondition satisfied and the
+        full 0x0901/0x0902/0x0903/0x0905/0x0906 setup redone every call,
+        stillness-based completion) -- not the old bare 0x0907 trigger
+        (pos_step_motion_test(), still used by the legacy
+        ENABLE POS MODE + POS TEST START CW/CCW web UI flow this replaces
+        the trigger of). Confirmed live 2026-09-22: a second bare 0x0907
+        trigger, sent without redoing that setup, produced no real motion
+        at all -- most likely because whatever makes positioning-test mode
+        accept the drive is only satisfied at the moment 0x0901 is written,
+        and a later bare trigger with no fresh 0x0901 write doesn't
+        re-satisfy it. Redoing the full sequence every press (exactly like
+        HOME/Set Point already did) fixed that for those actions, so the
+        same pattern is used here instead of trying to keep the two-step
+        ENABLE POS MODE + bare-trigger flow working.
+
+        cw picks the sign relative to the CURRENT angle (True: +degrees,
+        False: -degrees) -- matches the direction _execute_positioning()
+        logs as "CW" for a positive diff_angle. Which physical direction
+        that actually is on this drive is unconfirmed (see
+        _execute_positioning()'s own comment on the 1/2 mapping).
+        Raises PositionUnavailableError, without moving, if the current
+        position can't be read."""
+        if not self._refresh_current_angle_from_hardware():
+            raise PositionUnavailableError(
+                "Could not read the current position from the drive; refusing to move."
+            )
+        delta = degrees if cw else -degrees
+        self.post_step_motion_by(self.current_angle + delta, acc_dec_time, speed_rpm)
 
     def pos_step_motion_by(self, target_pos: int = 0, acc_dec_time=5000, speed_rpm=10):
         base_pulse_per_degree = 349525.3333333333
@@ -837,7 +994,7 @@ class ServoController:
         low_byte = move_pulses & 0xFFFF
         high_byte = (move_pulses >> 16) & 0xFFFF
 
-        self._execute_positioning(diff_pulses, low_byte, high_byte, acc_dec_time, speed_rpm)
+        self._execute_positioning(target_pos, low_byte, high_byte, acc_dec_time, speed_rpm)
 
         # Calculate and return the angle rotated
         angle_rotated = diff_pulses / base_pulse_per_degree
@@ -899,10 +1056,26 @@ class ServoController:
 
             logger.info(f"Motion Pulses: {integer_pulse}, float_error: {self.float_error}")
 
-            self._execute_positioning(diff_angle, low_byte, high_byte, acc_dec_time, speed_rpm)
-    
-    def _execute_positioning(self, angle, low_byte, high_byte, acc_dec_time, speed_rpm):
-        # self.stop_continuous_reading()
+            target_encoder = self.current_encoder + (integer_pulse if diff_angle > 0 else -integer_pulse)
+            self._execute_positioning(target_encoder, low_byte, high_byte, acc_dec_time, speed_rpm)
+
+    def _execute_positioning(self, target_encoder, low_byte, high_byte, acc_dec_time, speed_rpm):
+        # Manual (10) Step 1 for Positioning test (docs/en_manual.txt:10390),
+        # identical wording to JOG test's own Step 1 (see
+        # enable_speed_ctrl()'s comment): the drive only accepts entering
+        # this mode "without any alarm occurrence or Servo ON activated".
+        # Confirmed live 2026-09-22 on this project's own COM4 rig: every
+        # positioning-test attempt after servo_on() had already been called
+        # produced zero real motion (encoder stayed within its noise floor)
+        # while the write echoes all came back looking normal -- exactly
+        # the "accepted at the wire level but silently ignored" symptom this
+        # precondition predicts. Ported from servo_comm_shihlin_unified
+        # (commit dc67fda, confirmed on real hardware), which found the same
+        # bug for this same _execute_positioning() call. See
+        # clear_alarm_12()'s own comment for why that method (not
+        # servo_off()) is used to reach "Servo OFF" here.
+        self.clear_alarm_12()
+        self.delay_ms(100)
         self.Enable_Position_Mode(True)
         self.delay_ms(100)
         self.config_acc_dec_0x0902(acc_dec_time)
@@ -913,8 +1086,15 @@ class ServoController:
         self.delay_ms(50)
         self.config_pulses_0x0906_high_byte(high_byte)
         self.delay_ms(50)
-        
-        if angle > 0:
+
+        # Direction is decided from the actual encoder vs. target -- not
+        # from the caller's angle/pulse sign -- so both call sites
+        # (pos_step_motion_by()'s raw-pulse target, post_step_motion_by()'s
+        # degree target) go through one consistent source of truth. Which of
+        # 1/2 is really CW vs CCW on this drive is unconfirmed (manual (10)
+        # Step 6 says "1: forward (CCW)", "2: reverse (CW)"; this code
+        # previously assumed the opposite for logging purposes only).
+        if target_encoder > self.current_encoder:
             logger.info("Running Servo CW")
             self.pos_step_motion_test(True)
         else:
@@ -922,11 +1102,30 @@ class ServoController:
             self.pos_step_motion_test(False)
 
     def enable_speed_ctrl(self, speed_rpm):
+        # Manual (9) Step 1 for JOG test (docs/en_manual.txt:10390 has the
+        # identical wording for Positioning test): the drive only accepts
+        # entering JOG mode "without any alarm occurrence or Servo ON
+        # activated". Ported from servo_comm_shihlin_unified (commit
+        # 3ae9f18, confirmed on real hardware) after this session's own
+        # COM4 testing showed writes into position-test mode having no
+        # effect while Servo was already ON -- see _execute_positioning()'s
+        # comment, which has the same fix for the positioning-test path.
+        # Deliberately clear_alarm_12(), not servo_off(): servo_off() zeroes
+        # the DI bit that keeps Alarm 12 suppressed (see its own "Alarm 12
+        # ON!" log line), trading "Servo ON blocks JOG mode" for "Alarm 12
+        # blocks JOG mode". clear_alarm_12() sets Servo OFF while keeping
+        # that bit set, satisfying both halves of Step 1 at once.
+        self.clear_alarm_12()
+        self.delay_ms(100)
         self.Enable_JOG_Mode(True)
         self.delay_ms(100)
         self.config_speed_0x0903(speed_rpm)
         self.delay_ms(100)
-        self.start_continuous_reading(0.1)
+        # auto_stop_on_stillness=False: this is continuous JOG/speed-control
+        # mode, which runs until explicitly stopped -- a deliberate pause
+        # must not be misread as "the move finished" and tear the reading
+        # session down. See start_continuous_reading()'s comment.
+        self.start_continuous_reading(0.1, auto_stop_on_stillness=False)
 
     # 0: Stop
     # 1: CW

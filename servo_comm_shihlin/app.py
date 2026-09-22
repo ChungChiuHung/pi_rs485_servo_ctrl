@@ -10,7 +10,7 @@ import traceback
 from serial_port_manager import SerialPortManager
 from servo_control import ServoController, PositionUnavailableError, MoveOutOfRangeError, is_alarm_active
 from hardware_lock import hardware_serialized
-from input_validation import validate_int_range
+from input_validation import validate_int_range, validate_float_range
 from activity_log import ActivityLog, ActivityLogHandler
 from osc_server import OSCInputServer
 
@@ -405,6 +405,8 @@ def clear_alarm_12_endpoint():
 DEFAULT_POS_MODE_PULSES = 0x07800000
 DEFAULT_POS_MODE_SPEED_RPM = 10
 DEFAULT_JOG_SPEED_RPM = 100
+# POS TEST START CW/CCW default nudge size (see ServoController.pos_test_step()).
+DEFAULT_POS_TEST_STEP_DEGREES = 0.5
 
 
 def _refused(action, message, status):
@@ -454,6 +456,11 @@ def handle_action():
             data.get('speed_rpm', DEFAULT_POS_MODE_SPEED_RPM), 0, 3000, 'speed_rpm')
         if error:
             return _refused(action, error, 400)
+        # Positioning-test mode requires "no alarm occurrence or Servo ON
+        # activated" (docs/en_manual.txt:10390) -- same precondition as JOG
+        # mode; see _execute_positioning()'s comment in servo_control.py.
+        servo_ctrller.clear_alarm_12()
+        time.sleep(0.1)
         servo_ctrller.Enable_Position_Mode(True)
         time.sleep(0.05)
         servo_ctrller.config_acc_dec_0x0902(0)
@@ -473,11 +480,25 @@ def handle_action():
         servo_ctrller.stop_continuous_reading()
         servo_ctrller.Enable_Position_Mode(False)
 
-    elif action == "posTestStart_CW":
-        servo_ctrller.pos_step_motion_test(CW=True)
-
-    elif action == "posTestStart_CCW":
-        servo_ctrller.pos_step_motion_test(CW=False)
+    elif action in ("posTestStart_CW", "posTestStart_CCW"):
+        # A fixed-size nudge (default 0.5 deg) via post_step_motion_by()'s
+        # reliable path, not the old bare 0x0907 trigger -- see
+        # ServoController.pos_test_step()'s comment for why (confirmed live
+        # 2026-09-22: the bare trigger only worked once per ENABLE POS MODE
+        # click, silently doing nothing on a second press).
+        degrees, error = validate_float_range(
+            data.get('degrees', DEFAULT_POS_TEST_STEP_DEGREES), 0.001, 180, 'degrees')
+        if error:
+            return _refused(action, error, 400)
+        speed_rpm, error = validate_int_range(
+            data.get('speed_rpm', DEFAULT_POS_MODE_SPEED_RPM), 0, 3000, 'speed_rpm')
+        if error:
+            return _refused(action, error, 400)
+        try:
+            servo_ctrller.pos_test_step(cw=(action == "posTestStart_CW"),
+                                        degrees=degrees, speed_rpm=speed_rpm)
+        except PositionUnavailableError as e:
+            return _refused(action, str(e), 502)
 
     elif action in ("setPoint_1", "setPoint_2"):
         # Records the drive's CURRENT angle as Set Point 1/2 -- does not move

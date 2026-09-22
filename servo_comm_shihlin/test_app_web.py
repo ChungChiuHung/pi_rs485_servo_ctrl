@@ -252,7 +252,11 @@ class SetPointTests(unittest.TestCase):
         self.ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=0)
         response = self.action("gotoSetPoint_1")
         self.assertEqual(response.status_code, 200)
-        self.assertAlmostEqual(self.ctrl._execute_positioning.call_args[0][0], 90.0, places=3)
+        # _execute_positioning()'s first argument is the absolute target
+        # ENCODER value (2026-09-22 redesign -- see its docstring), not the
+        # diff angle: current_encoder (0 here) + 90 degrees in pulses.
+        expected_target_encoder = int(349525.3333333333 * 90.0)
+        self.assertEqual(self.ctrl._execute_positioning.call_args[0][0], expected_target_encoder)
 
     def test_goto_is_refused_with_502_when_the_position_cannot_be_read(self):
         self.ctrl.set_point_1 = 90.0

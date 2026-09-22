@@ -3,6 +3,7 @@ Pure request-payload validation, split out from app.py so it's unit-testable
 without importing app.py (which opens a real serial connection at module
 load time -- see hardware_lock.py's docstring for the same reasoning).
 """
+import math
 
 
 def validate_int_range(value, min_value, max_value, field_name):
@@ -16,3 +17,16 @@ def validate_int_range(value, min_value, max_value, field_name):
     if not (min_value <= int_value <= max_value):
         return None, f"'{field_name}' must be between {min_value} and {max_value}."
     return int_value, None
+
+
+def validate_float_range(value, min_value, max_value, field_name):
+    """Returns (float_value, None) on success, or (None, error_message) if
+    `value` isn't a finite number within [min_value, max_value]."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None, f"'{field_name}' must be a number."
+    float_value = float(value)
+    if not math.isfinite(float_value):
+        return None, f"'{field_name}' must be a finite number."
+    if not (min_value <= float_value <= max_value):
+        return None, f"'{field_name}' must be between {min_value} and {max_value}."
+    return float_value, None
