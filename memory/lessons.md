@@ -187,6 +187,28 @@ had genuinely stopped after leaving JOG mode, then confirmed the fixed
 (noise) instead of resuming rotation, and that an explicit CW afterward
 still worked normally.
 
+## [2026-09-22] "Released the arrow key but the motor kept turning" -- 5s decel ramp, not a stuck stop
+**Relates to:** `app.py`'s `enableSpeedCtrlMode` action
+**What happened:** User reported releasing a JOG arrow key didn't stop the
+motor. `enableSpeedCtrlMode` called `enable_speed_ctrl(speed_rpm)` with no
+`acc_time`, silently defaulting to `enable_speed_ctrl()`'s own 5000ms
+smooth-ramp default. MOTION PAUSE (0x0904=0) genuinely was sent immediately
+on keyup, but the drive then took up to 5s to decelerate -- easily mistaken
+for "didn't stop" in a press-and-hold interaction where release is supposed
+to feel immediate.
+**Lesson:** A method's own sensible default for one calling context (a
+smooth industrial ramp) can be actively wrong for a different calling
+context (snappy keyboard press/release) that never overrides it. Don't
+assume a shared default is fine everywhere it's used without checking what
+each caller actually needs.
+**Fix:** Added `JOG_ACC_DEC_MS = 200` (matching the precedent
+`DEFAULT_POS_TEST_STEP_ACC_DEC_MS` already used for POS TEST's own
+keyboard nudge) and pass it explicitly from `enableSpeedCtrlMode`. OSC's
+`/set_continous_motion` and Art-Net's Channel 1 both already take/configure
+their own acc_time explicitly, so neither needed a change.
+**Status:** verified live 2026-09-22 via `verify_jog_release_stops_fast.py`
+(kept in the repo): stop-to-settled time dropped from up to 5s to 0.344s.
+
 ## [2026-09-22] Live JOG speed change confirmed on real hardware
 **Relates to:** `servo_comm_shihlin_unified/servo_control.py`
 (`change_jog_speed_by()`), `app.py` (`jogSpeedAdjust` action), `osc_server.py`

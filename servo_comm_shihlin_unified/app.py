@@ -805,6 +805,11 @@ def clear_alarm_12_endpoint():
 DEFAULT_POS_TEST_STEP_DEGREES = 0.5
 DEFAULT_POS_TEST_STEP_ACC_DEC_MS = 200
 
+# ENABLE SPEED CONTROL MODE's accel/decel time -- deliberately short (see
+# the action below) so the web UI's press-and-hold arrow keys feel
+# immediate on release, not enable_speed_ctrl()'s 5000ms smooth-ramp default.
+JOG_ACC_DEC_MS = 200
+
 
 @app.route('/action', methods=['POST'])
 @json_response
@@ -952,7 +957,14 @@ def handle_action():
         speed_rpm, error = validate_int_range(data.get('speed_rpm', 100), 0, 3000, 'speed_rpm')
         if error:
             return jsonify({"status": "error", "action": action, "message": error}), 400
-        servo_ctrller.enable_speed_ctrl(speed_rpm)
+        # acc_time defaults to 5000ms in enable_speed_ctrl() -- fine for a
+        # smooth ramp, much too slow for the web UI's press-and-hold arrow
+        # keys: releasing the key sends MOTION PAUSE immediately, but the
+        # drive still takes up to 5s to decelerate, which looked like "the
+        # motor didn't stop" (2026-09-22 report). JOG_ACC_DEC_MS makes
+        # release feel immediate, matching POS TEST's own
+        # DEFAULT_POS_TEST_STEP_ACC_DEC_MS choice for the same reason.
+        servo_ctrller.enable_speed_ctrl(speed_rpm, acc_time=JOG_ACC_DEC_MS)
     elif action == "motionStart_CW":
         # Per docs/en_manual.txt:10380-10382 (JOG_OPERATION, 0x0904):
         # 1 = forward rotation (CCW), 2 = reverse rotation (CW).
