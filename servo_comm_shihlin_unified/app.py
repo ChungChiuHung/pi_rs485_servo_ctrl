@@ -606,8 +606,15 @@ def _parse_artnet_options(payload):
     if not isinstance(dangerous, bool):
         return None, "enable_dangerous_channels must be true or false."
 
+    feedback_ip = payload.get("feedback_ip")
+    if feedback_ip is not None:
+        try:
+            ipaddress.IPv4Address(feedback_ip)
+        except ValueError:
+            return None, "feedback_ip must be an IPv4 address."
+
     options = {"listen_ip": listen_ip, "allowed_sources": list(sources),
-               "enable_dangerous_channels": dangerous}
+               "enable_dangerous_channels": dangerous, "feedback_ip": feedback_ip}
     for key, default, lo, hi, kind in (
             ("listen_port", 6454, 1, 65535, int),
             ("universe", DEFAULT_UNIVERSE, 0, 32767, int),
@@ -618,6 +625,14 @@ def _parse_artnet_options(payload):
         if error:
             return None, error
         options[key] = value
+
+    if feedback_ip is not None:
+        feedback_universe, error = number("feedback_universe", options["universe"] + 1, 0, 32767, int)
+        if error:
+            return None, error
+        if feedback_universe == options["universe"]:
+            return None, "feedback_universe must differ from universe."
+        options["feedback_universe"] = feedback_universe
     return options, None
 
 
@@ -696,6 +711,8 @@ def start_input_server():
             "signal_timeout_s": options["signal_timeout_s"],
             "allowed_sources": sorted(options["allowed_sources"]),
             "enable_dangerous_channels": options["enable_dangerous_channels"],
+            "feedback_ip": options["feedback_ip"],
+            "feedback_universe": options.get("feedback_universe"),
         })
 
     else:

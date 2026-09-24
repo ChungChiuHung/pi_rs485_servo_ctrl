@@ -381,6 +381,22 @@ CLAUDE.md §4 硬體安全閘門限制。
 `servo_control.py` 一次到位、避免分兩次改動同一批檔案，建議等 4、7 項
 一起確認後再開始動工。（歷史記錄：合併已完成，現況與待辦見 §7。）
 
+> **2026-09-24 更新（雙軌過渡與 WebUI 整合規劃）：** 使用者確認了本專案
+> 目前「ASCII 用 `servo_comm_shihlin/`、RTU 用 `servo_comm_shihlin_unified/`」
+> 雙軌並行的定位邏輯——實際上要用哪一份程式碼，取決於**當下連接的驅動器
+> 被設定成哪種 Modbus 模式（PC22）**，不是單純「unified 是新的、shihlin 是
+> 舊的」二分法。本文件測試用的那台驅動器剛好是 RTU（見文件開頭的硬體確認
+> 區塊），這只是「那一台」的事實，不代表 ASCII 模式的驅動器不存在或不需要
+> 支援。**未來規劃：** 待 `servo_comm_shihlin_unified/` 的 RTU 通訊完全穩定
+> 後，會在該專案新增 WebUI 通訊模式設定，讓使用者能直接在網頁上切換
+> ASCII/RTU，屆時 `servo_comm_shihlin/` 的 ASCII 功能會完全整合進
+> `servo_comm_shihlin_unified/`，本文件原本設想的「合併成一份程式碼」目標
+> 才算真正完成，`servo_comm_shihlin/`（與 `servo_comm_shihlin_50W/`）屆時
+> 才會真的可以除役。**目前尚未實作**：`servo_comm_shihlin_unified/` 還沒有
+> 任何 ASCII/RTU 切換介面或程式碼，在切換功能做出來之前，`servo_comm_shihlin/`
+> 上的 ASCII 相關修正（見 CLAUDE.md §3 該資料夾列的 Hand-ported 項目）仍需要
+> 逐次手動搬移，不會自動同步。
+
 ## 7. 待實機確認清單（2026-09-19 盤點）
 
 本節列出**程式已寫好、但尚未（或因條件不足而無法）對真實驅動器驗證**的

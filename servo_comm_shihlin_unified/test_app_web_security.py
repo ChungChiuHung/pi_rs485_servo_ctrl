@@ -130,6 +130,41 @@ class ArtNetStartOptionsTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
         self.server_cls.assert_not_called()
 
+    def test_feedback_is_off_by_default(self):
+        body = self.start().get_json()
+        kwargs = self.server_cls.call_args.kwargs
+        self.assertIsNone(kwargs["feedback_ip"])
+        self.assertNotIn("feedback_universe", kwargs)
+        self.assertIsNone(body["feedback_ip"])
+        self.assertIsNone(body["feedback_universe"])
+
+    def test_feedback_ip_is_passed_through_with_default_universe(self):
+        response = self.start(feedback_ip="10.12.1.164")
+        self.assertEqual(response.status_code, 200)
+        kwargs = self.server_cls.call_args.kwargs
+        self.assertEqual(kwargs["feedback_ip"], "10.12.1.164")
+        self.assertEqual(kwargs["feedback_universe"], 2)  # universe (default 1) + 1
+        body = response.get_json()
+        self.assertEqual(body["feedback_ip"], "10.12.1.164")
+        self.assertEqual(body["feedback_universe"], 2)
+
+    def test_feedback_universe_can_be_given_explicitly(self):
+        self.start(feedback_ip="10.12.1.164", universe=1, feedback_universe=5)
+        kwargs = self.server_cls.call_args.kwargs
+        self.assertEqual(kwargs["feedback_universe"], 5)
+
+    def test_feedback_universe_equal_to_universe_is_rejected(self):
+        response = self.start(feedback_ip="10.12.1.164", universe=3, feedback_universe=3)
+        self.assertEqual(response.status_code, 400)
+        self.server_cls.assert_not_called()
+
+    def test_invalid_feedback_ip_is_rejected(self):
+        for bad_ip in ("not-an-ip", "10.0.0.999", "::1"):
+            with self.subTest(feedback_ip=bad_ip):
+                response = self.start(feedback_ip=bad_ip)
+                self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        self.server_cls.assert_not_called()
+
     def test_channel_monitor_endpoint_includes_receive_stats(self):
         instance = MagicMock()
         instance.get_channel_snapshot.return_value = None

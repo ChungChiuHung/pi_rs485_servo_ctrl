@@ -302,8 +302,26 @@ def start_input_server():
     if error:
         return jsonify({"status": "error", "message": error}), 400
 
+    # Feedback (status output to e.g. TouchDesigner) is optional and off by
+    # default -- both fields must be given together, from the request
+    # payload, not hardcoded, so different studios/machines don't need a
+    # code change.
+    feedback_ip = payload.get("feedback_ip")
+    feedback_port_raw = payload.get("feedback_port")
+    if (feedback_ip is None) != (feedback_port_raw is None):
+        return jsonify({"status": "error",
+                        "message": "'feedback_ip' and 'feedback_port' must be given together."}), 400
+    feedback_port = None
+    if feedback_ip is not None:
+        if not isinstance(feedback_ip, str) or not feedback_ip.strip():
+            return jsonify({"status": "error", "message": "'feedback_ip' must be a non-empty string."}), 400
+        feedback_port, error = validate_int_range(feedback_port_raw, 1, 65535, "feedback_port")
+        if error:
+            return jsonify({"status": "error", "message": error}), 400
+
     with _state_lock:
-        server = OSCInputServer(servo_ctrller, listen_ip=listen_ip, listen_port=listen_port)
+        server = OSCInputServer(servo_ctrller, listen_ip=listen_ip, listen_port=listen_port,
+                                feedback_ip=feedback_ip, feedback_port=feedback_port)
         try:
             server.start()
         except Exception as e:
@@ -313,7 +331,8 @@ def start_input_server():
         active_input_server = "osc"
 
     return jsonify({"status": "success", "active_input_server": "osc",
-                    "listen_ip": listen_ip, "listen_port": listen_port})
+                    "listen_ip": listen_ip, "listen_port": listen_port,
+                    "feedback_ip": feedback_ip, "feedback_port": feedback_port})
 
 
 @app.route('/server/stop', methods=['POST'])

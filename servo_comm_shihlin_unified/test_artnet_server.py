@@ -503,13 +503,31 @@ class TestSafetyDefaults(unittest.TestCase):
         ch10 = server.get_channel_snapshot()["channels"][9]
         self.assertIn("IGNORED", ch10["interpreted"])
 
-    def test_the_module_never_sends_anything(self):
-        """Pure receiver: no ArtPollReply, no echo, nothing that could
-        disturb other devices on the network."""
+    def test_no_feedback_configured_never_sends_anything(self):
+        """Pure receiver by default: with no feedback_ip configured, nothing
+        this module does results in an outbound packet -- verified
+        behaviorally (not by scanning source for "sendto", now that it's
+        used by the opt-in feedback feature -- see TestFeedback)."""
+        ctrl = MagicMock()
+        ctrl.reading_active = True
+        ctrl.current_angle = 12.3
+        ctrl.read_current_alarm_code.return_value = 0
+        server = ArtNetInputServer(ctrl, universe=0)  # feedback_ip=None (default)
+        server._feedback_sock = MagicMock()
+
+        server._on_moving_feedback(45.0)
+        server._on_motion_completed_feedback()
+        server._handle_dmx(0, bytes([0, 0, 0, 0, 0, 0, 0, 200, 255, 0, 0, 0]))  # servo on + clear
+
+        server._feedback_sock.sendto.assert_not_called()
+
+    def test_module_never_polls_or_broadcasts(self):
+        """No ArtPollReply, no SO_BROADCAST -- unaffected by the opt-in
+        feedback feature, still guaranteed statically."""
         import inspect
         import artnet_server
         source = inspect.getsource(artnet_server)
-        for forbidden in ("sendto", ".send(", "SO_BROADCAST"):
+        for forbidden in ("SO_BROADCAST", "ArtPollReply"):
             self.assertNotIn(forbidden, source)
 
     def test_socket_does_not_set_reuseaddr(self):
@@ -704,6 +722,199 @@ class TestSequenceNumbers(unittest.TestCase):
         server._last_sequence_time -= 2.0          # >1s of silence
         self._send(server, 1)                      # counter restarted
         self.assertEqual(server.get_stats()["frames_ok"], 2)
+
+
+class TestFeedback(unittest.TestCase):
+    """Optional outbound status feedback (feedback_ip/feedback_universe).
+    servo_ctrller is a MagicMock; _feedback_sock is stubbed with a MagicMock
+    too so nothing here touches a real socket. Channels: 1-2 angle, 3 servo
+    on/off, 4 alarm active, 5 moving/idle."""
+
+    def test_feedback_universe_defaults_to_universe_plus_one(self):
+        server, _ = make_server(universe=1, feedback_ip="10.0.0.5")
+        self.assertEqual(server.feedback_universe, 2)
+
+    def test_feedback_universe_equal_to_universe_is_rejected(self):
+        with self.assertRaises(ValueError):
+            make_server(universe=1, feedback_ip="10.0.0.5", feedback_universe=1)
+
+    def test_feedback_is_disabled_by_default(self):
+        server, _ = make_server()
+        self.assertFalse(server.feedback_enabled)
+        server._feedback_sock = MagicMock()
+        server._send_feedback(12.3)
+        server._feedback_sock.sendto.assert_not_called()
+
+    def test_send_feedback_encodes_angle_servo_alarm_and_moving(self):
+        server, ctrl = make_server(universe=1, feedback_ip="10.0.0.5", feedback_universe=2)
+        ctrl.reading_active = True
+        ctrl.read_current_alarm_code.return_value = 0x12  # a real alarm
+        server._last_servo_channel = 255
+        server._feedback_sock = MagicMock()
+
+        server._send_feedback(90.0)
+
+        server._feedback_sock.sendto.assert_called_once()
+        packet, dest = server._feedback_sock.sendto.call_args[0]
+        self.assertEqual(dest, ("10.0.0.5", artnet_server.ARTNET_PORT))
+        universe, data = ArtNetInputServer.parse_artdmx(packet)
+        self.assertEqual(universe, 2)
+        high, low, servo_on, alarm_active, moving = data
+        self.assertEqual(((high << 8) | low) - 32768, 9000)
+        self.assertEqual(servo_on, 255)
+        self.assertEqual(alarm_active, 255)
+        self.assertEqual(moving, 255)
+
+    def test_servo_off_no_alarm_and_idle_are_reported_as_zero(self):
+        server, ctrl = make_server(universe=1, feedback_ip="10.0.0.5", feedback_universe=2)
+        ctrl.reading_active = False
+        ctrl.read_current_alarm_code.return_value = 0  # no alarm
+        server._last_servo_channel = 0
+        server._feedback_sock = MagicMock()
+
+        server._send_feedback(0.0)
+
+        _universe, data = ArtNetInputServer.parse_artdmx(server._feedback_sock.sendto.call_args[0][0])
+        self.assertEqual(data[2], 0)  # servo_on
+        self.assertEqual(data[3], 0)  # alarm_active
+        self.assertEqual(data[4], 0)  # moving
+
+    def test_a_failed_alarm_read_is_reported_as_alarm_active(self):
+        """read_current_alarm_code() returning None means "unknown/unsafe",
+        not "no alarm" -- is_alarm_active(None) is True (see servo_control.py)."""
+        server, ctrl = make_server(universe=1, feedback_ip="10.0.0.5", feedback_universe=2)
+        ctrl.read_current_alarm_code.return_value = None
+        server._feedback_sock = MagicMock()
+
+        server._send_feedback(0.0)
+
+        _universe, data = ArtNetInputServer.parse_artdmx(server._feedback_sock.sendto.call_args[0][0])
+        self.assertEqual(data[3], 255)
+
+    def test_a_dropped_feedback_packet_does_not_raise(self):
+        server, ctrl = make_server(universe=1, feedback_ip="10.0.0.5", feedback_universe=2)
+        ctrl.read_current_alarm_code.return_value = 0
+        server._feedback_sock = MagicMock()
+        server._feedback_sock.sendto.side_effect = OSError("network down")
+        server._send_feedback(0.0)  # must not raise
+
+    def test_a_failing_alarm_read_does_not_raise(self):
+        """The whole _send_feedback body is one try/except -- a raising
+        read_current_alarm_code() (e.g. a serial error) must not propagate."""
+        server, ctrl = make_server(universe=1, feedback_ip="10.0.0.5", feedback_universe=2)
+        ctrl.read_current_alarm_code.side_effect = RuntimeError("serial down")
+        server._feedback_sock = MagicMock()
+        server._send_feedback(0.0)  # must not raise
+        server._feedback_sock.sendto.assert_not_called()
+
+    def test_servo_channel_change_sends_immediate_feedback(self):
+        server, ctrl = make_server(universe=0, feedback_ip="10.0.0.5", feedback_universe=1)
+        ctrl.current_angle = 12.34
+        ctrl.reading_active = False
+        ctrl.read_current_alarm_code.return_value = 0
+        server._feedback_sock = MagicMock()
+
+        server._handle_dmx(universe=0, data=frame12(servo=200))
+
+        server._feedback_sock.sendto.assert_called_once()
+
+    def test_clear_alarm_channel_sends_immediate_feedback(self):
+        server, ctrl = make_server(universe=0, feedback_ip="10.0.0.5", feedback_universe=1)
+        ctrl.current_angle = 0.0
+        ctrl.reading_active = False
+        ctrl.read_current_alarm_code.return_value = 0
+        server._last_servo_channel = 0  # prime servo state so only channel 9 fires below
+        server._feedback_sock = MagicMock()
+
+        server._handle_dmx(universe=0, data=frame12(clear=255))
+
+        server._feedback_sock.sendto.assert_called_once()
+
+    def test_back_home_channel_sends_immediate_feedback(self):
+        server, ctrl = make_server(universe=0, feedback_ip="10.0.0.5", feedback_universe=1)
+        ctrl.current_angle = 0.0
+        ctrl.reading_active = False
+        ctrl.read_current_alarm_code.return_value = 0
+        server._last_servo_channel = 0
+        server._feedback_sock = MagicMock()
+
+        server._handle_dmx(universe=0, data=frame12(back_home=255))
+
+        ctrl.initial_abs_home.assert_called_once()
+        server._feedback_sock.sendto.assert_called_once()
+
+    def test_set_home_channel_sends_immediate_feedback(self):
+        """set_home_position() resets current_angle with no motion and no
+        on_moving/on_motion_completed event, so without an explicit
+        _send_feedback() call here a feedback consumer would keep seeing
+        the pre-reset angle until the next real move."""
+        server, ctrl = make_server(universe=0, feedback_ip="10.0.0.5", feedback_universe=1)
+        ctrl.current_angle = 0.0
+        ctrl.reading_active = False
+        ctrl.read_current_alarm_code.return_value = 0
+        server._last_servo_channel = 0
+        server._feedback_sock = MagicMock()
+
+        server._handle_dmx(universe=0, data=frame12(set_home=255))
+
+        ctrl.set_home_position.assert_called_once()
+        server._feedback_sock.sendto.assert_called_once()
+
+    def test_reset_initial_abs_position_channel_sends_immediate_feedback(self):
+        server, ctrl = make_server(universe=0, feedback_ip="10.0.0.5", feedback_universe=1)
+        ctrl.current_angle = 0.0
+        ctrl.reading_active = False
+        ctrl.read_current_alarm_code.return_value = 0
+        server._last_servo_channel = 0
+        server._feedback_sock = MagicMock()
+
+        server._handle_dmx(universe=0, data=frame12(reset_abs=255))
+
+        ctrl.write_PA29_Initial_Abs_Pos.assert_called_once()
+        server._feedback_sock.sendto.assert_called_once()
+
+    def test_dangerous_channels_disabled_send_no_feedback(self):
+        """Channels 10-12 ignored (enable_dangerous_channels=False) must not
+        act, and therefore must not send feedback either."""
+        server, ctrl = make_server(universe=0, feedback_ip="10.0.0.5", feedback_universe=1,
+                                    enable_dangerous_channels=False)
+        server._feedback_sock = MagicMock()
+
+        server._handle_dmx(universe=0, data=frame12(back_home=255, set_home=255, reset_abs=255))
+
+        ctrl.initial_abs_home.assert_not_called()
+        ctrl.set_home_position.assert_not_called()
+        ctrl.write_PA29_Initial_Abs_Pos.assert_not_called()
+        server._feedback_sock.sendto.assert_not_called()
+
+    def test_start_creates_a_dedicated_feedback_socket(self):
+        server, ctrl = make_server(universe=1, feedback_ip="10.0.0.5", feedback_universe=2)
+        server.start()
+        try:
+            self.assertIsNotNone(server._feedback_sock)
+            self.assertIsNot(server._feedback_sock, server._sock)
+        finally:
+            server.stop()
+        self.assertIsNone(server._feedback_sock)
+
+    def test_start_wires_listeners_and_stop_unwires_them(self):
+        server, ctrl = make_server(universe=1, feedback_ip="10.0.0.5", feedback_universe=2)
+        server.start()
+        try:
+            registered = {c.args[0] for c in ctrl.register_event_listener.call_args_list}
+            self.assertEqual(registered, {"on_motion_completed", "on_moving"})
+        finally:
+            server.stop()
+        unregistered = {c.args[0] for c in ctrl.unregister_event_listener.call_args_list}
+        self.assertEqual(unregistered, {"on_motion_completed", "on_moving"})
+
+    def test_start_without_feedback_registers_nothing(self):
+        server, ctrl = make_server()
+        server.start()
+        try:
+            ctrl.register_event_listener.assert_not_called()
+        finally:
+            server.stop()
 
 
 class TestStartStopLifecycle(unittest.TestCase):
