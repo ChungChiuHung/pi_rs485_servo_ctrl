@@ -942,6 +942,57 @@ class TestAbsoluteModePositioning(unittest.TestCase):
         self.assertIsNone(ctrl.abs_home_pos_absolute)
         self.assertEqual(ctrl.current_angle, 42.0)
 
+    def test_start_continuous_reading_refreshes_absolute_offset_first(self):
+        """Regression test: start_continuous_reading() (reached directly by
+        JOG's enable_speed_ctrl() and the web UI's raw "enablePosMode"
+        action) used to spawn the polling thread without first establishing
+        self._absolute_offset in absolute mode -- _encoder_and_angle_for()
+        would then silently fall back to the stale incremental-scale
+        abs_home_pos until some OTHER call happened to set the offset,
+        reporting a wrong angle for the whole session (confirmed live
+        2026-09-24 via a JOG started as the first action after connect --
+        see memory/lessons.md)."""
+        ctrl = self._abs_ctrl(tracker_raw=1000, absolute_pulses=5000000, home=4000000)
+        ctrl.delay_ms = MagicMock()
+        self.assertIsNone(ctrl._absolute_offset)
+        with patch.object(ctrl, "_refresh_current_angle_from_hardware",
+                          wraps=ctrl._refresh_current_angle_from_hardware) as mock_refresh:
+            try:
+                ctrl.start_continuous_reading(interval=0.001)
+                mock_refresh.assert_called_once()
+            finally:
+                ctrl.stop_continuous_reading()
+        self.assertEqual(ctrl._absolute_offset, 5000000 - 1000)
+
+    def test_start_continuous_reading_skips_refresh_when_offset_already_known(self):
+        """Guards the fix above against regressing back to an unconditional
+        refresh -- that would consume the first item of any caller's mocked
+        read_motor_feedback_pulses() side_effect sequence, exactly the
+        2026-09-24 regression found (and fixed) while scoping this down to
+        only run when actually needed."""
+        ctrl = self._abs_ctrl()
+        ctrl._absolute_offset = 999
+        ctrl.delay_ms = MagicMock()
+        with patch.object(ctrl, "_refresh_current_angle_from_hardware") as mock_refresh:
+            try:
+                ctrl.start_continuous_reading(interval=0.001)
+                mock_refresh.assert_not_called()
+            finally:
+                ctrl.stop_continuous_reading()
+
+    def test_start_continuous_reading_does_not_refresh_in_incremental_mode(self):
+        """Incremental mode's fallback (abs_home_pos) IS the correct value,
+        not a bug -- this refresh must be a no-op there."""
+        ctrl = make_controller()  # absolute_mode defaults to False
+        ctrl.delay_ms = MagicMock()
+        ctrl.read_motor_feedback_pulses = MagicMock(return_value=1000)
+        with patch.object(ctrl, "_refresh_current_angle_from_hardware") as mock_refresh:
+            try:
+                ctrl.start_continuous_reading(interval=0.001)
+                mock_refresh.assert_not_called()
+            finally:
+                ctrl.stop_continuous_reading()
+
 
 class TestFeedbackReadersAndGearRatio(unittest.TestCase):
 
