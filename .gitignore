@@ -11,5 +11,6 @@ venv/
 # committed. Keep the local files; only untrack them from git.
 /servo_comm_shihlin_unified/motor_profiles.json
 /servo_comm_shihlin_unified/servo_config_*.json
+/servo_comm_shihlin_unified/input_server_autostart.json
 /servo_comm_shihlin/servo_config.json
 /servo_comm_shihlin_50W/servo_config.json
