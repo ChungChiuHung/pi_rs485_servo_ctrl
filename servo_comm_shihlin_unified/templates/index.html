@@ -10,6 +10,276 @@
         <script src="../static/js/jquery-3.5.1.min.js"></script>
         <script>
             $(document).ready(function(){
+                // --- Language switcher (en / zh-tw) ------------------------
+                // Covers the static UI chrome (labels, headings, button
+                // default text, help notes, placeholders) and a handful of
+                // client-built dynamic strings (below). Deliberately does
+                // NOT translate anything that comes from the server as-is
+                // (activity log entries, alarm names, /action error
+                // messages) -- that's a Python-side i18n effort, out of
+                // scope here; those stay in whatever language the backend
+                // produces them in (currently English).
+                const TRANSLATIONS = {
+                    en: {
+                        appTitle: 'Servo Control',
+                        motorProfile: 'Motor Profile', activeMotor: 'Active motor:',
+                        continuousMotionInput: 'Continuous Motion Input', protocol: 'Protocol:',
+                        oscListenPort: 'OSC listen port:',
+                        feedbackEnable: 'Send status feedback:', feedbackIp: 'Feedback to IP:',
+                        feedbackIpPlaceholder: 'e.g. 10.12.1.164', feedbackPort: 'Feedback port:',
+                        artnetListenPort: 'Art-Net listen port:', bindToIp: 'Bind to IP:',
+                        bindToIpPlaceholder: "this Pi's IP, e.g. 192.168.1.50",
+                        bindToIpNote: "A specific IP receives unicast only (set TouchDesigner's Art-Net Out to Unicast to this address); 0.0.0.0 also accepts broadcast.",
+                        artnetUniverse: 'Art-Net universe:',
+                        artnetUniverseNote: 'Keep this different from other DMX equipment on the network (usually universe 0).',
+                        onlyAcceptFrom: 'Only accept from:',
+                        onlyAcceptFromPlaceholder: 'sender IP(s), comma-separated; empty = any',
+                        signalTimeout: 'Stop rotation if no signal for (s):',
+                        signalTimeoutNote: '0 disables. Rotation does not restart by itself after a loss: set channel 1 to 0, then start again.',
+                        enableDangerousChannels: 'Enable channels 10-12:',
+                        dangerousChannelsNote: 'Back home (real move), set home (overwrites the saved home) and reset absolute position. Ignored unless ticked.',
+                        maxSpeedRpm: 'Max speed (rpm):',
+                        maxSpeedRpmNote: "Channels 1 and 7's 1-255 range scales to 1..this value.",
+                        accTime: 'Accel/decel time (ms):',
+                        artnetFeedbackNote: 'Angle, servo, alarm and moving state, sent on a separate universe -- off by default.',
+                        feedbackUniverse: 'Feedback universe:', feedbackUniversePlaceholder: 'universe + 1',
+                        autostart: 'Autostart on app launch:',
+                        autostartNote: 'Saves these settings and brings this protocol back up automatically the next time the app starts. Takes effect on the next successful Start.',
+                        start: 'Start', stop: 'Stop', active: 'Active:',
+                        starting: 'Starting {type}...', started: 'Started {type} on port {port}',
+                        errorPrefix: 'Error: ',
+                        autostartNone: 'No autostart configured.', autostartCurrent: 'Autostart is ON for {type}.',
+                        clear: 'Clear',
+                        servo: 'Servo', servoOnBtn: 'SERVO ON', servoOffBtn: 'SERVO OFF',
+                        getStateValueBtn: 'GET STATE VALUE', clearAlarm12Btn: 'CLEAR ALARM 12',
+                        clearAlarm12Confirm: 'CLICK AGAIN TO CONFIRM', setHomeBtn: 'SET HOME',
+                        clearAlarm12ArmedMsg: 'Only confirm after the physical E-Stop condition is actually resolved. Click again within 5s to proceed.',
+                        clearAlarm12TimeoutMsg: 'Confirmation timed out; not cleared.',
+                        clearAlarm12ClearingMsg: 'Clearing...',
+                        encoderMode: 'Encoder Mode (PA28)', notReadYet: 'Not read yet.',
+                        readEncoderModeBtn: 'READ ENCODER MODE', switchEncoderModeBtn: 'SWITCH ENCODER MODE',
+                        rereadModeBtn: 'I POWER-CYCLED - RE-READ MODE',
+                        modeIncremental: 'INCREMENTAL', modeAbsolute: 'ABSOLUTE',
+                        switchModeConfirm: 'CLICK AGAIN: SET PA28 -> {target}',
+                        switchModeTo: 'SWITCH TO {target} MODE',
+                        encoderModeNote: 'Absolute mode needs an absolute-encoder motor AND the encoder backup battery (SDH-BAT-SET); the change takes effect only after power-cycling the drive (AL.2A then AL.2C appear during first-time init). JOG keeps using the incremental counter.',
+                        positionMode: 'Position Mode', pulses: 'Pulses:', speedRpm: 'Speed (rpm):',
+                        enablePosModeBtn: 'ENABLE POS MODE', disablePosModeBtn: 'DISABLE POS MODE',
+                        posModeNote: 'While enabled -- Left/Right arrow keys = POS TEST START CW/CCW (one 0.5deg nudge per press); Up/Down arrow keys = adjust the Speed (rpm) above by +/-1 for the next nudge (no move by itself).',
+                        setPoint1Label: 'Set Point 1', setPoint2Label: 'Set Point 2',
+                        setPoint1NotRecorded: 'Set Point 1: Not recorded', setPoint2NotRecorded: 'Set Point 2: Not recorded',
+                        setPoint1Btn: 'SET POINT 1', moveToSetPoint1Btn: 'MOVE TO SET POINT 1',
+                        setPoint2Btn: 'SET POINT 2', moveToSetPoint2Btn: 'MOVE TO SET POINT 2', homeBtn: 'HOME',
+                        speedControlJog: 'Speed Control (JOG)',
+                        enableSpeedCtrlModeBtn: 'ENABLE SPEED CONTROL MODE', disableSpeedCtrlModeBtn: 'DISABLE SPEED CONTROL MODE',
+                        jogNote: "No click-to-spin buttons here on purpose: rotation only runs while a key is physically held down, so it can never be left spinning by a stray click. While enabled -- Left/Right arrow keys = rotate CW/CCW (release the key = stop immediately); Up/Down arrow keys = speed +/-1 rpm. Keys only act while this page has focus and the cursor isn't in a text/number field.",
+                        liveStatus: 'Live Status', port: 'Port', baud: 'Baud', alarmCode: 'Alarm Code',
+                        servoOnLabel: 'Servo ON', mode: 'Mode', homeSession: 'Home (this session)',
+                        electronicGear: 'Electronic Gear (PA06/07)', eepromProtect: 'EEPROM Protect (PA23)',
+                        encoderModeLabel: 'Encoder Mode', continuousReading: 'Continuous Reading',
+                        currentAngle: 'Current Angle', currentEncoder: 'Current Encoder',
+                        rs485Transaction: 'Last RS-485 Transaction', sent: 'Sent:', received: 'Received:',
+                        digitalOutputs: 'Digital Outputs (DO1 - DO6)', readDoStatusBtn: 'READ DO STATUS',
+                        autoRefresh2s: 'Auto-refresh every 2 s',
+                        doTableDo: 'DO', doTableCn1Pin: 'CN1 pin', doTableState: 'State', doTableFunction: 'Assigned function',
+                        doNotReadYet: 'Not read yet. Read-only: three serial reads per refresh.',
+                        doNote: 'State is the raw bit of register 0x0205; the DO contact polarity (PD27) is not applied.',
+                        artnetChannelMonitor: 'Art-Net Channel Monitor', noFrameReceived: 'No frame received yet.',
+                        chTableCh: 'Ch', chTableLabel: 'Label', chTableValue: 'Value', chTableInterpreted: 'Interpreted',
+                        driveStateValues: 'Drive State Values (GET STATE VALUE)',
+                        stateValuesNote: 'PA/PD parameter registers -- mostly fixed configuration, not live motion feedback.',
+                        svTableReg: 'Reg', svTableName: 'Name', svTableDescription: 'Description',
+                        svTableValue: 'Value', svTableInterpreted: 'Interpreted',
+                        activityLog: 'Activity Log',
+                        setHomeModalTitle: 'Set home position',
+                        setHomeNowBtn: 'SET HOME NOW', remindLaterBtn: 'Remind me later',
+                        homeModalIntroStartup: "The app has just started. The drive's incremental encoder counter restarts at every power-on, so the home position saved earlier may no longer match the shaft: angles and MOVE TO SET POINT are unreliable until home is set again.",
+                        homeModalIntroManual: 'The current shaft position will replace the saved home position.',
+                        noSerialConnection: 'No RS-485 serial port connection.',
+                        noSerialConnectionDesc: 'Motor control is unavailable; nothing is being sent to the drive.',
+                        reconnectBtn: 'Reconnect',
+                        homeModalBody: 'Move the motor to the mechanical home position first, then press '
+                            + '<strong>SET HOME NOW</strong>: the current shaft position becomes 0&deg; '
+                            + 'and is saved as home. Recorded Set Points are measured from home, so '
+                            + 'they refer to the new zero afterwards. Nothing moves.',
+                        yes: 'Yes', no: 'No', unknown: 'unknown', notConnected: 'not connected',
+                        idle: 'Idle', jogTest: 'JOG test', positioningTest: 'Positioning test',
+                        setPointDeg: '{label}: {value} deg', notRecorded: 'Not recorded',
+                        alarmNone: '{code} (none)', eepromOnFmt: 'On (PA23={n})', eepromOff: 'OFF - EEPROM wear!',
+                        homeNotSetPressSetHome: 'NOT SET - press SET HOME', homeSet: 'Set', homeSavedAbsolute: 'Saved (absolute)',
+                        gearMustBe1to1: 'CMX/CDV = {ratio} - must be 1:1!', gear1to1: '1:1',
+                        encoderAbsolute: 'Absolute', encoderAbsoluteHomeNotSet: 'Absolute (home not set)',
+                        encoderIncremental: 'Incremental',
+                        pa28Label: 'Drive PA28: ', unreadable: 'unreadable',
+                        runningAs: ' | Running as: ', absolute: 'absolute', incremental: 'incremental',
+                        pendingPowerCycle: ' | PENDING: power-cycle the drive, then press RE-READ.',
+                        absoluteNotTrusted: ' | Absolute position NOT trusted: ',
+                        couldNotRead: 'Could not read ({status}).',
+                        onState: 'ON', offState: 'off',
+                        none: 'None', running: ' (running)', starting_: ' (starting...)',
+                        stopping: 'Stopping...', stopped: 'Stopped {type}',
+                        connecting: 'Connecting...', failedPrefix: 'Failed: ',
+                        activeColon: 'Active: {name}', couldNotLoadProfiles: 'Could not load profile list.',
+                        switchingTo: 'Switching to {name}...', failedToSwitchProfile: 'Failed to switch profile',
+                        universeOn: 'Universe {universe} on {ip}', framesPerS: '{n} frames/s',
+                        lastFrame: 'last frame {age}', lastFrameNone: '-', agoSuffix: ' ago',
+                        dropped: 'dropped: {universe} other-universe, {source} unlisted-sender, {sequence} out-of-order',
+                        signalTimeout: 'signal timeout {n} s', signalTimeoutOff: 'signal timeout OFF',
+                        channelsEnabled: 'channels 10-12 ENABLED', channelsDisabled: 'channels 10-12 disabled',
+                        signalLostWarning: 'SIGNAL LOST - rotation stopped; set channel 1 to 0 to re-arm.',
+                        cancelledWarning: 'CANCELLED - motion is held off; set channel 1 to 0 to re-arm.',
+                        directionRefusedWarning: 'DIRECTION REFUSED by the drive (CW<->CCW); set channel 2 to 0 first.',
+                    },
+                    'zh-tw': {
+                        appTitle: '伺服馬達控制',
+                        motorProfile: '馬達設定檔', activeMotor: '目前使用馬達：',
+                        continuousMotionInput: '連續運動輸入', protocol: '協定：',
+                        oscListenPort: 'OSC 接收埠：',
+                        feedbackEnable: '傳送狀態回饋：', feedbackIp: '回饋目的地 IP：',
+                        feedbackIpPlaceholder: '例如 10.12.1.164', feedbackPort: '回饋埠：',
+                        artnetListenPort: 'Art-Net 接收埠：', bindToIp: '綁定 IP：',
+                        bindToIpPlaceholder: '本機（樹莓派）IP，例如 192.168.1.50',
+                        bindToIpNote: '綁定特定 IP 只會收到 unicast（請將 TouchDesigner 的 Art-Net Out 設為 Unicast 到這個位址）；0.0.0.0 也會接收 broadcast。',
+                        artnetUniverse: 'Art-Net universe：',
+                        artnetUniverseNote: '請與網路上其他 DMX 設備使用的 universe（通常是 0）錯開。',
+                        onlyAcceptFrom: '只接受來自：',
+                        onlyAcceptFromPlaceholder: '來源 IP，逗號分隔；留空 = 不限制',
+                        signalTimeout: '訊號中斷幾秒後停止轉動：',
+                        signalTimeoutNote: '0 = 關閉此保護。訊號恢復後不會自動重新啟動：需將 channel 1 設為 0 後再重新啟動。',
+                        enableDangerousChannels: '啟用 Channel 10-12：',
+                        dangerousChannelsNote: '回原點（真實移動）、設定原點（覆寫已儲存的原點）與重置絕對位置。未勾選時會被忽略。',
+                        maxSpeedRpm: '最大轉速（rpm）：',
+                        maxSpeedRpmNote: 'Channel 1 與 7 的 1-255 數值範圍會線性對應到 1..此數值。',
+                        accTime: '加減速時間（ms）：',
+                        artnetFeedbackNote: '角度、伺服狀態、告警與移動狀態，會用另一個 universe 送出——預設關閉。',
+                        feedbackUniverse: '回饋 universe：', feedbackUniversePlaceholder: 'universe + 1',
+                        autostart: '應用程式啟動時自動開啟：',
+                        autostartNote: '會儲存目前這組設定，下次應用程式啟動時自動以此設定啟動這個協定。下一次成功按下 Start 才會生效。',
+                        start: '啟動', stop: '停止', active: '目前運行：',
+                        starting: '正在啟動 {type}...', started: '{type} 已啟動，埠號 {port}',
+                        errorPrefix: '錯誤：',
+                        autostartNone: '尚未設定自動啟動。', autostartCurrent: '{type} 已設定為自動啟動。',
+                        clear: '清除',
+                        servo: '伺服馬達', servoOnBtn: '伺服開啟', servoOffBtn: '伺服關閉',
+                        getStateValueBtn: '讀取狀態暫存器', clearAlarm12Btn: '清除告警 12',
+                        clearAlarm12Confirm: '再按一次確認', setHomeBtn: '設定原點',
+                        clearAlarm12ArmedMsg: '請先確認實體 E-Stop 狀況已排除才按確認。請於 5 秒內再按一次以繼續。',
+                        clearAlarm12TimeoutMsg: '確認逾時，未清除告警。',
+                        clearAlarm12ClearingMsg: '清除中...',
+                        encoderMode: '編碼器模式（PA28）', notReadYet: '尚未讀取。',
+                        readEncoderModeBtn: '讀取編碼器模式', switchEncoderModeBtn: '切換編碼器模式',
+                        rereadModeBtn: '已重新開機——重新讀取模式',
+                        modeIncremental: '增量', modeAbsolute: '絕對',
+                        switchModeConfirm: '再按一次：將 PA28 設為 {target}',
+                        switchModeTo: '切換為{target}模式',
+                        encoderModeNote: '絕對模式需要絕對值編碼器馬達，且需安裝編碼器後備電池（SDH-BAT-SET）；切換只有在驅動器斷電重開後才會生效（首次生效過程中會依序出現 AL.2A、AL.2C）。JOG 模式仍使用增量計數器。',
+                        positionMode: '定位模式', pulses: '脈波數：', speedRpm: '轉速（rpm）：',
+                        enablePosModeBtn: '啟用定位模式', disablePosModeBtn: '停用定位模式',
+                        posModeNote: '啟用後——左右方向鍵 = 定位測試 CW/CCW（每按一次移動 0.5 度）；上下方向鍵 = 將上方轉速欄位 +/-1（只影響下一次移動，本身不會移動馬達）。',
+                        setPoint1Label: '設定點 1', setPoint2Label: '設定點 2',
+                        setPoint1NotRecorded: '設定點 1：尚未記錄', setPoint2NotRecorded: '設定點 2：尚未記錄',
+                        setPoint1Btn: '記錄 SET POINT 1', moveToSetPoint1Btn: '移動到 SET POINT 1',
+                        setPoint2Btn: '記錄 SET POINT 2', moveToSetPoint2Btn: '移動到 SET POINT 2', homeBtn: '回原點',
+                        speedControlJog: '轉速控制（JOG）',
+                        enableSpeedCtrlModeBtn: '啟用轉速控制模式', disableSpeedCtrlModeBtn: '停用轉速控制模式',
+                        jogNote: '這裡刻意不做「點一下就轉」的按鈕：轉動只會在方向鍵被實際按住時才進行，不會因為誤點而停不下來。啟用後——左右方向鍵 = 依 CW/CCW 轉動（放開按鍵 = 立即停止）；上下方向鍵 = 轉速 +/-1 rpm。只有在此頁面有焦點、且游標不在文字/數字欄位時方向鍵才會生效。',
+                        liveStatus: '即時狀態', port: '連接埠', baud: '鮑率', alarmCode: '告警代碼',
+                        servoOnLabel: '伺服開啟', mode: '模式', homeSession: '原點（本次連線）',
+                        electronicGear: '電子齒輪比（PA06/07）', eepromProtect: 'EEPROM 保護（PA23）',
+                        encoderModeLabel: '編碼器模式', continuousReading: '連續讀取中',
+                        currentAngle: '目前角度', currentEncoder: '目前編碼器值',
+                        rs485Transaction: '最近一次 RS-485 收發', sent: '送出：', received: '收到：',
+                        digitalOutputs: '數位輸出（DO1 - DO6）', readDoStatusBtn: '讀取 DO 狀態',
+                        autoRefresh2s: '每 2 秒自動更新',
+                        doTableDo: 'DO', doTableCn1Pin: 'CN1 腳位', doTableState: '狀態', doTableFunction: '指定功能',
+                        doNotReadYet: '尚未讀取。唯讀：每次更新會做三次序列讀取。',
+                        doNote: '狀態為暫存器 0x0205 的原始位元；未套用 DO 接點極性設定（PD27）。',
+                        artnetChannelMonitor: 'Art-Net 通道監控', noFrameReceived: '尚未收到任何封包。',
+                        chTableCh: '通道', chTableLabel: '名稱', chTableValue: '數值', chTableInterpreted: '解讀',
+                        driveStateValues: '驅動器狀態暫存器（GET STATE VALUE）',
+                        stateValuesNote: 'PA/PD 參數暫存器——多為固定設定值，不是即時移動回饋。',
+                        svTableReg: '暫存器', svTableName: '名稱', svTableDescription: '說明',
+                        svTableValue: '數值', svTableInterpreted: '解讀',
+                        activityLog: '活動紀錄',
+                        setHomeModalTitle: '設定原點',
+                        setHomeNowBtn: '立即設定原點', remindLaterBtn: '稍後提醒我',
+                        homeModalIntroStartup: '應用程式剛啟動。驅動器的增量編碼器計數器每次開機都會重新起算，先前儲存的原點可能已經跟實際軸位不符：在重新設定原點之前，角度與「移動到 SET POINT」都不可靠。',
+                        homeModalIntroManual: '目前的軸位置將取代已儲存的原點。',
+                        noSerialConnection: '沒有 RS-485 序列埠連線。',
+                        noSerialConnectionDesc: '目前無法控制馬達；不會送出任何指令到驅動器。',
+                        reconnectBtn: '重新連線',
+                        homeModalBody: '請先將馬達移動到機構原點位置，再按下 '
+                            + '<strong>立即設定原點</strong>：目前軸位置會變成 0 度並儲存為原點。'
+                            + '已記錄的 Set Point 是以原點為基準測量的，之後會依新的零點重新對應。此操作本身不會移動馬達。',
+                        yes: '是', no: '否', unknown: '未知', notConnected: '未連線',
+                        idle: '閒置', jogTest: 'JOG 測試中', positioningTest: '定位測試中',
+                        setPointDeg: '{label}：{value} 度', notRecorded: '尚未記錄',
+                        alarmNone: '{code}（無告警）', eepromOnFmt: '開啟（PA23={n}）', eepromOff: '關閉 - EEPROM 正在磨損！',
+                        homeNotSetPressSetHome: '尚未設定——請按設定原點', homeSet: '已設定', homeSavedAbsolute: '已儲存（絕對）',
+                        gearMustBe1to1: 'CMX/CDV = {ratio} - 必須是 1:1！', gear1to1: '1:1',
+                        encoderAbsolute: '絕對', encoderAbsoluteHomeNotSet: '絕對（尚未設定原點）',
+                        encoderIncremental: '增量',
+                        pa28Label: '驅動器 PA28：', unreadable: '無法讀取',
+                        runningAs: ' | 目前運行模式：', absolute: '絕對', incremental: '增量',
+                        pendingPowerCycle: ' | 待處理：請將驅動器斷電重開後按「重新讀取」。',
+                        absoluteNotTrusted: ' | 絕對位置不可信：',
+                        couldNotRead: '讀取失敗（{status}）。',
+                        onState: '開', offState: '關',
+                        none: '無', running: '（運行中）', starting_: '（啟動中...）',
+                        stopping: '停止中...', stopped: '已停止 {type}',
+                        connecting: '連線中...', failedPrefix: '失敗：',
+                        activeColon: '目前使用：{name}', couldNotLoadProfiles: '無法載入設定檔清單。',
+                        switchingTo: '切換為 {name} 中...', failedToSwitchProfile: '切換設定檔失敗',
+                        universeOn: 'Universe {universe}，綁定於 {ip}', framesPerS: '{n} frames/s',
+                        lastFrame: '上一個封包 {age}', lastFrameNone: '-', agoSuffix: '之前',
+                        dropped: '已丟棄：{universe} 個其他 universe、{source} 個非允許來源、{sequence} 個順序錯亂',
+                        signalTimeout: '訊號逾時 {n} 秒', signalTimeoutOff: '訊號逾時保護：關閉',
+                        channelsEnabled: 'Channel 10-12：已啟用', channelsDisabled: 'Channel 10-12：未啟用',
+                        signalLostWarning: '訊號中斷——已停止轉動；請將 channel 1 設為 0 以重新啟動。',
+                        cancelledWarning: '已取消——移動被保持關閉；請將 channel 1 設為 0 以重新啟動。',
+                        directionRefusedWarning: '驅動器拒絕了方向切換（CW<->CCW）；請先將 channel 2 設為 0。',
+                    },
+                };
+                let currentLang = 'en';
+                try { currentLang = localStorage.getItem('lang') || 'en'; } catch (e) {}
+                if (!TRANSLATIONS[currentLang]) { currentLang = 'en'; }
+
+                function t(key) {
+                    const dict = TRANSLATIONS[currentLang] || TRANSLATIONS.en;
+                    return (key in dict) ? dict[key] : (TRANSLATIONS.en[key] || key);
+                }
+
+                function applyTranslations() {
+                    $('[data-i18n]').each(function() { $(this).text(t($(this).attr('data-i18n'))); });
+                    $('[data-i18n-html]').each(function() { $(this).html(t($(this).attr('data-i18n-html'))); });
+                    $('[data-i18n-placeholder]').each(function() {
+                        $(this).attr('placeholder', t($(this).attr('data-i18n-placeholder')));
+                    });
+                    $('html').attr('lang', currentLang === 'zh-tw' ? 'zh-Hant' : 'en');
+                    $('#langSwitcher button').removeClass('active');
+                    $('#langSwitcher button[data-lang="' + currentLang + '"]').addClass('active');
+                    // Dynamic labels built in JS (not plain [data-i18n] text) --
+                    // each re-renders itself against the CURRENT (possibly
+                    // just-changed) language. Defined further down; guarded
+                    // since this first runs before they exist.
+                    if (typeof updatePosModeButton === 'function') { updatePosModeButton(); }
+                    if (typeof updateSpeedCtrlButton === 'function') { updateSpeedCtrlButton(); }
+                    if (typeof updateEncoderSwitchButton === 'function') { updateEncoderSwitchButton(); }
+                    if (typeof refreshAutostartStatus === 'function') { refreshAutostartStatus(); }
+                    if (typeof readEncoderMode === 'function') { readEncoderMode(); }
+                    if (typeof clearAlarm12Armed !== 'undefined' && !clearAlarm12Armed) {
+                        $('#clearAlarm12Btn').text(t('clearAlarm12Btn'));
+                    }
+                }
+
+                function setLanguage(lang) {
+                    currentLang = TRANSLATIONS[lang] ? lang : 'en';
+                    try { localStorage.setItem('lang', currentLang); } catch (e) {}
+                    applyTranslations();
+                }
+
+                $('#langSwitcher button').click(function() { setLanguage($(this).attr('data-lang')); });
+
                 function clearStatuses(excludeAction){
                     let actions = ['servoOn','servoOff','getMsg','enablePosMode','posTest','setPoint_1','setPoint_2','setHome','gotoSetPoint_1','gotoSetPoint_2','Home','enableSpeedCtrlMode','jogSpeedAdjust'];
                     actions.forEach(function(action){
@@ -127,9 +397,9 @@
                 function updatePosModeButton() {
                     const btn = $('#enablePosModeBtn');
                     if (posModeActive) {
-                        btn.text('DISABLE POS MODE').addClass('button-active');
+                        btn.text(t('disablePosModeBtn')).addClass('button-active');
                     } else {
-                        btn.text('ENABLE POS MODE').removeClass('button-active');
+                        btn.text(t('enablePosModeBtn')).removeClass('button-active');
                     }
                 }
 
@@ -202,9 +472,9 @@
                 function updateSpeedCtrlButton() {
                     const btn = $('#enableSpeedCtrlModeBtn');
                     if (jogModeActive) {
-                        btn.text('DISABLE SPEED CONTROL MODE').addClass('button-active');
+                        btn.text(t('disableSpeedCtrlModeBtn')).addClass('button-active');
                     } else {
-                        btn.text('ENABLE SPEED CONTROL MODE').removeClass('button-active');
+                        btn.text(t('enableSpeedCtrlModeBtn')).removeClass('button-active');
                     }
                 }
 
@@ -425,27 +695,23 @@
                         clearTimeout(clearAlarm12ArmTimer);
                         clearAlarm12ArmTimer = null;
                     }
-                    $('#clearAlarm12Btn').text('CLEAR ALARM 12').removeClass('button-armed');
+                    $('#clearAlarm12Btn').text(t('clearAlarm12Btn')).removeClass('button-armed');
                 }
 
                 $('#clearAlarm12Btn').click(function(){
                     if (!clearAlarm12Armed) {
                         clearAlarm12Armed = true;
-                        $('#clearAlarm12Btn').text('CLICK AGAIN TO CONFIRM').addClass('button-armed');
-                        setFeedback(
-                            'clearAlarm12',
-                            'Only confirm after the physical E-Stop condition is actually resolved. Click again within 5s to proceed.',
-                            true
-                        );
+                        $('#clearAlarm12Btn').text(t('clearAlarm12Confirm')).addClass('button-armed');
+                        setFeedback('clearAlarm12', t('clearAlarm12ArmedMsg'), true);
                         clearAlarm12ArmTimer = setTimeout(function(){
                             disarmClearAlarm12();
-                            setFeedback('clearAlarm12', 'Confirmation timed out; not cleared.', false);
+                            setFeedback('clearAlarm12', t('clearAlarm12TimeoutMsg'), false);
                         }, 5000);
                         return;
                     }
 
                     disarmClearAlarm12();
-                    setFeedback('clearAlarm12', 'Clearing...', true);
+                    setFeedback('clearAlarm12', t('clearAlarm12ClearingMsg'), true);
                     setButtonsEnabled(false);
                     $.ajax({
                         url: '/alarm/clear',
@@ -479,8 +745,8 @@
 
                 function openHomeModal(reason) {
                     $('#homeModalIntro').text(reason === 'startup'
-                        ? 'The app has just started. The drive\'s incremental encoder counter restarts at every power-on, so the home position saved earlier may no longer match the shaft: angles and MOVE TO SET POINT are unreliable until home is set again.'
-                        : 'The current shaft position will replace the saved home position.');
+                        ? t('homeModalIntroStartup')
+                        : t('homeModalIntroManual'));
                     $('#homeModal_status').text('');
                     $('#homeModalConfirmBtn, #homeModalLaterBtn').prop('disabled', false);
                     $('#homeModal').css('display', 'flex');
@@ -519,32 +785,32 @@
                 function updateEncoderSwitchButton() {
                     const btn = $('#encoderModeSwitchBtn');
                     btn.removeClass('button-armed');
-                    if (encoderModePa28 === null) { btn.text('SWITCH ENCODER MODE').prop('disabled', true); return; }
-                    const target = encoderModePa28 === 1 ? 'INCREMENTAL' : 'ABSOLUTE';
+                    if (encoderModePa28 === null) { btn.text(t('switchEncoderModeBtn')).prop('disabled', true); return; }
+                    const target = encoderModePa28 === 1 ? t('modeIncremental') : t('modeAbsolute');
                     btn.prop('disabled', false);
                     if (encoderSwitchArmed) {
-                        btn.text('CLICK AGAIN: SET PA28 -> ' + target).addClass('button-armed');
+                        btn.text(t('switchModeConfirm').replace('{target}', target)).addClass('button-armed');
                     } else {
-                        btn.text('SWITCH TO ' + target + ' MODE');
+                        btn.text(t('switchModeTo').replace('{target}', target));
                     }
                 }
 
                 function readEncoderMode() {
                     $.get('/encoder_mode', function(r) {
                         encoderModePa28 = r.pa28;
-                        let text = 'Drive PA28: ' + (r.pa28 === null ? 'unreadable'
-                            : (r.pa28 === 1 ? '1 (absolute)' : '0 (incremental)'))
-                            + ' | Running as: ' + (r.active_absolute_mode ? 'absolute' : 'incremental');
+                        let text = t('pa28Label') + (r.pa28 === null ? t('unreadable')
+                            : (r.pa28 === 1 ? '1 (' + t('absolute') + ')' : '0 (' + t('incremental') + ')'))
+                            + t('runningAs') + (r.active_absolute_mode ? t('absolute') : t('incremental'));
                         if (r.pending_power_cycle !== null) {
-                            text += ' | PENDING: power-cycle the drive, then press RE-READ.';
+                            text += t('pendingPowerCycle');
                         }
                         if (r.absolute_status && r.absolute_status.length) {
-                            text += ' | Absolute position NOT trusted: ' + r.absolute_status.join('; ');
+                            text += t('absoluteNotTrusted') + r.absolute_status.join('; ');
                         }
                         $('#encoderModeStatus').text(text);
                         updateEncoderSwitchButton();
                     }).fail(function(xhr) {
-                        $('#encoderModeStatus').text('Could not read (' + xhr.status + ').');
+                        $('#encoderModeStatus').text(t('couldNotRead').replace('{status}', xhr.status));
                     });
                 }
                 $('#encoderModeRefreshBtn').click(readEncoderMode);
@@ -597,26 +863,26 @@
                             );
                         });
                         $('#profile_select').val(response.active_profile);
-                        $('#profile_status').text('Active: ' + response.active_profile);
+                        $('#profile_status').text(t('activeColon').replace('{name}', response.active_profile));
                     }).fail(function() {
-                        $('#profile_status').text('Could not load profile list.');
+                        $('#profile_status').text(t('couldNotLoadProfiles'));
                     });
                 }
 
                 $('#profile_select').change(function() {
                     const selected = $(this).val();
-                    $('#profile_status').text('Switching to ' + selected + '...');
+                    $('#profile_status').text(t('switchingTo').replace('{name}', selected));
                     $.ajax({
                         url: '/profile',
                         type: 'POST',
                         contentType: 'application/json',
                         data: JSON.stringify({profile: selected}),
                         success: function(response) {
-                            $('#profile_status').text('Active: ' + response.active_profile);
+                            $('#profile_status').text(t('activeColon').replace('{name}', response.active_profile));
                         },
                         error: function(xhr) {
-                            const msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Failed to switch profile';
-                            $('#profile_status').text('Error: ' + msg);
+                            const msg = (xhr.responseJSON && xhr.responseJSON.message) || t('failedToSwitchProfile');
+                            $('#profile_status').text(t('errorPrefix') + msg);
                             loadProfile(); // revert dropdown to the actual active profile
                         }
                     });
@@ -633,16 +899,39 @@
                     const type = $('#input_server_type').val();
                     $('.osc-only').toggle(type === 'osc');
                     $('.artnet-only').toggle(type === 'artnet');
+                    $('.osc-feedback-only').toggle(type === 'osc' && $('#osc_feedback_enable').is(':checked'));
+                    $('.artnet-feedback-only').toggle(type === 'artnet' && $('#artnet_feedback_enable').is(':checked'));
                 }
 
                 $('#input_server_type').change(updateInputServerFieldsVisibility);
+                $('#osc_feedback_enable, #artnet_feedback_enable').change(updateInputServerFieldsVisibility);
                 updateInputServerFieldsVisibility();
+
+                // Autostart config (see app.py's INPUT_SERVER_AUTOSTART_FILE):
+                // read-only display + a way to clear it. Saving happens as
+                // part of the Start click below, when the checkbox is ticked.
+                function renderAutostartStatus(config) {
+                    if (!config) {
+                        $('#autostartStatus').text(t('autostartNone'));
+                        return;
+                    }
+                    $('#autostartStatus').empty()
+                        .append($('<span>').text(t('autostartCurrent').replace('{type}', config.type.toUpperCase()) + ' '))
+                        .append($('<a href="#" class="clear-autostart">').text(t('clear')));
+                }
+
+                function refreshAutostartStatus() {
+                    $.get('/server/autostart', function(response) {
+                        renderAutostartStatus(response.config);
+                    });
+                }
+                refreshAutostartStatus();
 
                 function pollInputServerStatus() {
                     $.get('/server/status', function(response) {
                         const label = response.active_input_server
-                            ? response.active_input_server.toUpperCase() + (response.is_running ? ' (running)' : ' (starting...)')
-                            : 'None';
+                            ? response.active_input_server.toUpperCase() + (response.is_running ? t('running') : t('starting_'))
+                            : t('none');
                         $('#input_server_status_label').text(label);
                         $('#startInputServerBtn').prop('disabled', !!response.active_input_server);
                         $('#stopInputServerBtn').prop('disabled', !response.active_input_server);
@@ -657,6 +946,13 @@
                     const payload = {type: type};
                     if (type === 'osc') {
                         payload.listen_port = parseInt($('#osc_listen_port').val(), 10) || 5005;
+                        if ($('#osc_feedback_enable').is(':checked')) {
+                            const ip = $('#osc_feedback_ip').val().trim();
+                            if (ip) {
+                                payload.feedback_ip = ip;
+                                payload.feedback_port = parseInt($('#osc_feedback_port').val(), 10) || 5008;
+                            }
+                        }
                     } else {
                         payload.listen_port = parseInt($('#artnet_listen_port').val(), 10) || 6454;
                         const universe = parseInt($('#artnet_universe').val(), 10);
@@ -666,8 +962,22 @@
                         const timeout = parseFloat($('#artnet_signal_timeout').val());
                         payload.signal_timeout_s = isNaN(timeout) ? 2 : timeout;
                         payload.enable_dangerous_channels = $('#artnet_dangerous_channels').is(':checked');
+                        const maxSpeed = parseInt($('#artnet_max_speed_rpm').val(), 10);
+                        payload.max_speed_rpm = isNaN(maxSpeed) ? 100 : maxSpeed;
+                        const accTime = parseInt($('#artnet_acc_time').val(), 10);
+                        payload.acc_time = isNaN(accTime) ? 5000 : accTime;
+                        if ($('#artnet_feedback_enable').is(':checked')) {
+                            const ip = $('#artnet_feedback_ip').val().trim();
+                            if (ip) {
+                                payload.feedback_ip = ip;
+                                const feedbackUniverse = parseInt($('#artnet_feedback_universe').val(), 10);
+                                if (!isNaN(feedbackUniverse)) { payload.feedback_universe = feedbackUniverse; }
+                                payload.feedback_port = parseInt($('#artnet_feedback_port').val(), 10) || 6454;
+                            }
+                        }
                     }
-                    $('#input_server_action_status').text('Starting ' + type + '...');
+                    if ($('#input_server_autostart').is(':checked')) { payload.autostart = true; }
+                    $('#input_server_action_status').text(t('starting').replace('{type}', type));
                     $.ajax({
                         url: '/server/start',
                         type: 'POST',
@@ -675,29 +985,35 @@
                         data: JSON.stringify(payload),
                         success: function(response) {
                             $('#input_server_action_status').text(
-                                'Started ' + response.active_input_server + ' on port ' + response.listen_port
+                                t('started').replace('{type}', response.active_input_server).replace('{port}', response.listen_port)
                             );
                             pollInputServerStatus();
+                            refreshAutostartStatus();
                         },
                         error: function(xhr) {
                             const msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Failed to start server';
-                            $('#input_server_action_status').text('Error: ' + msg);
+                            $('#input_server_action_status').text(t('errorPrefix') + msg);
                         }
                     });
                 });
 
+                $('#autostartStatus').on('click', 'a.clear-autostart', function(e){
+                    e.preventDefault();
+                    $.ajax({url: '/server/autostart', type: 'DELETE', success: refreshAutostartStatus});
+                });
+
                 $('#stopInputServerBtn').click(function(){
-                    $('#input_server_action_status').text('Stopping...');
+                    $('#input_server_action_status').text(t('stopping'));
                     $.ajax({
                         url: '/server/stop',
                         type: 'POST',
                         success: function(response) {
-                            $('#input_server_action_status').text('Stopped ' + response.stopped);
+                            $('#input_server_action_status').text(t('stopped').replace('{type}', response.stopped));
                             pollInputServerStatus();
                         },
                         error: function(xhr) {
                             const msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Failed to stop server';
-                            $('#input_server_action_status').text('Error: ' + msg);
+                            $('#input_server_action_status').text(t('errorPrefix') + msg);
                         }
                     });
                 });
@@ -714,7 +1030,7 @@
                             // and stop here (every other field needs the drive).
                             $('#serialBanner').show();
                             $('#serialBannerReason').text(response.connection_error || '');
-                            $('#status_connected_port').text('not connected');
+                            $('#status_connected_port').text(t('notConnected'));
                             $('#status_baud_rate').text('-');
                             $('.status-tile').addClass('disconnected');
                             return;
@@ -722,12 +1038,12 @@
                         $('#serialBanner').hide();
                         $('#status_connected_port').text(response.connected_port);
                         $('#status_baud_rate').text(response.baud_rate);
-                        $('#status_reading_active').text(response.reading_active ? 'Yes' : 'No');
+                        $('#status_reading_active').text(response.reading_active ? t('yes') : t('no'));
                         $('#status_current_angle').text(response.current_angle.toFixed(4) + ' deg');
                         $('#status_current_encoder').text(response.current_encoder);
                         $('#status_ctrl_mode_sel').text(
-                            {0: 'Idle', 3: 'JOG test', 4: 'Positioning test'}[response.ctrl_mode_sel]
-                            || (response.ctrl_mode_sel === null ? 'unknown' : response.ctrl_mode_sel)
+                            {0: t('idle'), 3: t('jogTest'), 4: t('positioningTest')}[response.ctrl_mode_sel]
+                            || (response.ctrl_mode_sel === null ? t('unknown') : response.ctrl_mode_sel)
                         );
 
                         // ENABLE POS MODE's toggle state reflects reality
@@ -752,10 +1068,12 @@
                         // page's own arrow keys.
                         updateSpeedRpmField(response.jog_speed_rpm);
 
-                        $('#setPoint_1_display').text('Set Point 1: ' +
-                            (response.set_point_1 === null ? 'Not recorded' : response.set_point_1.toFixed(4) + ' deg'));
-                        $('#setPoint_2_display').text('Set Point 2: ' +
-                            (response.set_point_2 === null ? 'Not recorded' : response.set_point_2.toFixed(4) + ' deg'));
+                        $('#setPoint_1_display').text(response.set_point_1 === null
+                            ? t('setPoint1NotRecorded')
+                            : t('setPointDeg').replace('{label}', t('setPoint1Label')).replace('{value}', response.set_point_1.toFixed(4)));
+                        $('#setPoint_2_display').text(response.set_point_2 === null
+                            ? t('setPoint2NotRecorded')
+                            : t('setPointDeg').replace('{label}', t('setPoint2Label')).replace('{value}', response.set_point_2.toFixed(4)));
                         setPoint1Value = response.set_point_1;
                         setPoint2Value = response.set_point_2;
                         updateGotoSetPointButtons();
@@ -765,13 +1083,13 @@
                         // failure, unknown", never treated as "off".
                         const servoOnTile = $('#status_servo_on_tile');
                         if (response.servo_on === null) {
-                            $('#status_servo_on').text('unknown');
+                            $('#status_servo_on').text(t('unknown'));
                             servoOnTile.addClass('alarm-active');
                         } else if (response.servo_on) {
-                            $('#status_servo_on').text('Yes');
+                            $('#status_servo_on').text(t('yes'));
                             servoOnTile.removeClass('alarm-active');
                         } else {
-                            $('#status_servo_on').text('No');
+                            $('#status_servo_on').text(t('no'));
                             servoOnTile.removeClass('alarm-active');
                         }
 
@@ -782,10 +1100,10 @@
                         // value). See servo_control.NO_ALARM_CODES.
                         const alarmTile = $('#status_alarm_tile');
                         if (response.alarm_code === null) {
-                            $('#status_alarm_code').text('unknown');
+                            $('#status_alarm_code').text(t('unknown'));
                             alarmTile.addClass('alarm-active');
                         } else if (!response.alarm_active) {
-                            $('#status_alarm_code').text(response.alarm_code + ' (none)');
+                            $('#status_alarm_code').text(t('alarmNone').replace('{code}', response.alarm_code));
                             alarmTile.removeClass('alarm-active');
                         } else {
                             $('#status_alarm_code').text(
@@ -796,32 +1114,32 @@
                         // PD16/PD25 write wears the EEPROM (~100,000 write life).
                         const eepromTile = $('#status_eeprom_tile');
                         if (response.eeprom_protection === 1 || response.eeprom_protection === 2) {
-                            $('#status_eeprom_protection').text('On (PA23=' + response.eeprom_protection + ')');
+                            $('#status_eeprom_protection').text(t('eepromOnFmt').replace('{n}', response.eeprom_protection));
                             eepromTile.removeClass('alarm-active');
                         } else if (response.eeprom_protection === 0) {
-                            $('#status_eeprom_protection').text('OFF - EEPROM wear!');
+                            $('#status_eeprom_protection').text(t('eepromOff'));
                             eepromTile.addClass('alarm-active');
                         } else {
-                            $('#status_eeprom_protection').text('unknown');
+                            $('#status_eeprom_protection').text(t('unknown'));
                             eepromTile.removeClass('alarm-active');
                         }
                         const homeTile = $('#status_home_tile');
                         if (response.home_reminder_needed) {
-                            $('#status_home').text('NOT SET - press SET HOME');
+                            $('#status_home').text(t('homeNotSetPressSetHome'));
                             homeTile.addClass('alarm-active');
                         } else {
-                            $('#status_home').text(response.home_set_since_start ? 'Set' : 'Saved (absolute)');
+                            $('#status_home').text(response.home_set_since_start ? t('homeSet') : t('homeSavedAbsolute'));
                             homeTile.removeClass('alarm-active');
                         }
                         const gearTile = $('#status_gear_tile');
                         if (response.electronic_gear_ok === false) {
-                            $('#status_gear').text('CMX/CDV = ' + response.electronic_gear.join('/') + ' - must be 1:1!');
+                            $('#status_gear').text(t('gearMustBe1to1').replace('{ratio}', response.electronic_gear.join('/')));
                             gearTile.addClass('alarm-active');
                         } else if (response.electronic_gear_ok === true) {
-                            $('#status_gear').text('1:1');
+                            $('#status_gear').text(t('gear1to1'));
                             gearTile.removeClass('alarm-active');
                         } else {
-                            $('#status_gear').text('unknown');
+                            $('#status_gear').text(t('unknown'));
                             gearTile.removeClass('alarm-active');
                         }
                         // Remind the operator to SET HOME once per page load
@@ -832,8 +1150,8 @@
                             if (response.home_reminder_needed) { openHomeModal('startup'); }
                         }
                         $('#status_encoder_mode').text(response.absolute_mode
-                            ? 'Absolute' + (response.absolute_home_set ? '' : ' (home not set)')
-                            : 'Incremental');
+                            ? (response.absolute_home_set ? t('encoderAbsolute') : t('encoderAbsoluteHomeNotSet'))
+                            : t('encoderIncremental'));
                         $('.status-tile').removeClass('disconnected');
                     }).fail(function() {
                         $('.status-tile').addClass('disconnected');
@@ -845,7 +1163,7 @@
 
                 // Retry opening the serial port (never moves the motor).
                 $('#reconnectBtn').click(function() {
-                    $('#reconnectStatus').text('Connecting...');
+                    $('#reconnectStatus').text(t('connecting'));
                     $.ajax({
                         url: '/reconnect',
                         type: 'POST',
@@ -855,7 +1173,7 @@
                             pollStatus();
                         },
                         error: function(xhr) {
-                            $('#reconnectStatus').text('Failed: ' +
+                            $('#reconnectStatus').text(t('failedPrefix') +
                                 ((xhr.responseJSON && xhr.responseJSON.message) || 'error'));
                         }
                     });
@@ -874,7 +1192,7 @@
                         $('<tr>').append(
                             $('<td>').text(name),
                             $('<td>').text(pin.pin),
-                            $('<td>').text(pin.on ? 'ON' : 'off').css('font-weight', pin.on ? 'bold' : 'normal'),
+                            $('<td>').text(pin.on ? t('onState') : t('offState')).css('font-weight', pin.on ? 'bold' : 'normal'),
                             $('<td>').text(pin.function + ' (0x' + pin.function_code.toString(16).toUpperCase().padStart(2, '0') + ')')
                         ).appendTo(tbody);
                     });
@@ -952,28 +1270,22 @@
                 function renderArtnetStats(stats) {
                     const el = $('#artnetStats');
                     if (!stats) { el.text(''); return; }
+                    const frameAge = stats.frame_age_s === null ? t('lastFrameNone') : stats.frame_age_s.toFixed(1) + ' s' + t('agoSuffix');
                     const parts = [
-                        'Universe ' + stats.universe + ' on ' + stats.listen_ip,
-                        (stats.frames_per_s ? stats.frames_per_s.toFixed(1) : '-') + ' frames/s',
-                        'last frame ' + (stats.frame_age_s === null ? '-' : stats.frame_age_s.toFixed(1) + ' s ago'),
-                        'dropped: ' + stats.dropped_universe + ' other-universe, '
-                            + stats.dropped_source + ' unlisted-sender, '
-                            + stats.dropped_sequence + ' out-of-order',
-                        stats.signal_timeout_s ? ('signal timeout ' + stats.signal_timeout_s + ' s') : 'signal timeout OFF',
-                        stats.dangerous_channels_enabled ? 'channels 10-12 ENABLED' : 'channels 10-12 disabled'
+                        t('universeOn').replace('{universe}', stats.universe).replace('{ip}', stats.listen_ip),
+                        t('framesPerS').replace('{n}', stats.frames_per_s ? stats.frames_per_s.toFixed(1) : '-'),
+                        t('lastFrame').replace('{age}', frameAge),
+                        t('dropped').replace('{universe}', stats.dropped_universe)
+                            .replace('{source}', stats.dropped_source).replace('{sequence}', stats.dropped_sequence),
+                        stats.signal_timeout_s ? t('signalTimeout').replace('{n}', stats.signal_timeout_s) : t('signalTimeoutOff'),
+                        stats.dangerous_channels_enabled ? t('channelsEnabled') : t('channelsDisabled')
                     ];
                     let text = parts.join(' | ');
                     // Conditions the sender has to react to, most important first.
                     const warnings = [];
-                    if (stats.watchdog_tripped) {
-                        warnings.push('SIGNAL LOST - rotation stopped; set channel 1 to 0 to re-arm.');
-                    }
-                    if (stats.cancel_latched) {
-                        warnings.push('CANCELLED - motion is held off; set channel 1 to 0 to re-arm.');
-                    }
-                    if (stats.direction_refused) {
-                        warnings.push('DIRECTION REFUSED by the drive (CW<->CCW); set channel 2 to 0 first.');
-                    }
+                    if (stats.watchdog_tripped) { warnings.push(t('signalLostWarning')); }
+                    if (stats.cancel_latched) { warnings.push(t('cancelledWarning')); }
+                    if (stats.direction_refused) { warnings.push(t('directionRefusedWarning')); }
                     if (warnings.length) { text = warnings.join(' ') + ' | ' + text; }
                     el.text(text).css('color', warnings.length ? '#e74c3c' : '');
                 }
@@ -1024,163 +1336,213 @@
                             $('<td>').text(entry.address),
                             $('<td>').text(entry.name),
                             $('<td>').text(entry.description),
-                            $('<td>').text(entry.value === null ? 'unknown' : entry.value),
+                            $('<td>').text(entry.value === null ? t('unknown') : entry.value),
                             $('<td>').text(entry.interpreted || '-')
                         ).appendTo(tbody);
                     });
                 }
+
+                applyTranslations();
             });
         </script>
     </head>
     <body>
         <div class="modal-overlay" id="homeModal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="homeModalTitle">
             <div class="modal">
-                <h2 id="homeModalTitle">Set home position</h2>
+                <h2 id="homeModalTitle" data-i18n="setHomeModalTitle">Set home position</h2>
                 <p id="homeModalIntro"></p>
-                <p>Move the motor to the mechanical home position first, then press
+                <p data-i18n-html="homeModalBody">Move the motor to the mechanical home position first, then press
                    <strong>SET HOME NOW</strong>: the current shaft position becomes 0&deg;
                    and is saved as home. Recorded Set Points are measured from home, so
                    they refer to the new zero afterwards. Nothing moves.</p>
                 <div class="modal-actions">
-                    <button class="button" id="homeModalConfirmBtn">SET HOME NOW</button>
-                    <button class="button" id="homeModalLaterBtn">Remind me later</button>
+                    <button class="button" id="homeModalConfirmBtn" data-i18n="setHomeNowBtn">SET HOME NOW</button>
+                    <button class="button" id="homeModalLaterBtn" data-i18n="remindLaterBtn">Remind me later</button>
                 </div>
                 <span class="section-note" id="homeModal_status"></span>
             </div>
         </div>
         <div class="connection-banner" id="serialBanner" style="display:none;" role="alert">
-            <span><strong>No RS-485 serial port connection.</strong>
-                  Motor control is unavailable; nothing is being sent to the drive.
+            <span><strong data-i18n="noSerialConnection">No RS-485 serial port connection.</strong>
+                  <span data-i18n="noSerialConnectionDesc">Motor control is unavailable; nothing is being sent to the drive.</span>
                   <span id="serialBannerReason"></span></span>
-            <button class="banner-button" id="reconnectBtn">Reconnect</button>
+            <button class="banner-button" id="reconnectBtn" data-i18n="reconnectBtn">Reconnect</button>
             <span id="reconnectStatus"></span>
         </div>
         <div class="app-shell">
             <aside class="sidebar">
                 <div class="sidebar-header">
-                    <h1>Servo Control</h1>
+                    <h1 data-i18n="appTitle">Servo Control</h1>
+                    <div class="lang-switcher" id="langSwitcher">
+                        <button type="button" data-lang="en">EN</button>
+                        <button type="button" data-lang="zh-tw">中文</button>
+                    </div>
                 </div>
 
                 <section class="sidebar-section">
-                    <h2>Motor Profile</h2>
+                    <h2 data-i18n="motorProfile">Motor Profile</h2>
                     <div class="form-group">
-                        <label for="profile_select">Active motor:</label>
+                        <label for="profile_select" data-i18n="activeMotor">Active motor:</label>
                         <select id="profile_select"></select>
                     </div>
                     <span id="profile_status" class="section-note"></span>
                 </section>
 
                 <section class="sidebar-section">
-                    <h2>Continuous Motion Input</h2>
+                    <h2 data-i18n="continuousMotionInput">Continuous Motion Input</h2>
                     <div class="form-group">
-                        <label for="input_server_type">Protocol:</label>
+                        <label for="input_server_type" data-i18n="protocol">Protocol:</label>
                         <select id="input_server_type">
                             <option value="osc">OSC</option>
                             <option value="artnet">Art-Net</option>
                         </select>
                     </div>
                     <div class="form-group osc-only">
-                        <label for="osc_listen_port">OSC listen port:</label>
+                        <label for="osc_listen_port" data-i18n="oscListenPort">OSC listen port:</label>
                         <input type="number" id="osc_listen_port" value="5005">
                     </div>
+                    <div class="form-group osc-only">
+                        <label for="osc_feedback_enable" data-i18n="feedbackEnable">Send status feedback:</label>
+                        <input type="checkbox" id="osc_feedback_enable">
+                    </div>
+                    <div class="form-group osc-only osc-feedback-only">
+                        <label for="osc_feedback_ip" data-i18n="feedbackIp">Feedback to IP:</label>
+                        <input type="text" id="osc_feedback_ip" value="" placeholder="e.g. 10.12.1.164" data-i18n-placeholder="feedbackIpPlaceholder">
+                    </div>
+                    <div class="form-group osc-only osc-feedback-only">
+                        <label for="osc_feedback_port" data-i18n="feedbackPort">Feedback port:</label>
+                        <input type="number" id="osc_feedback_port" value="5008" min="1" max="65535">
+                    </div>
                     <div class="form-group artnet-only">
-                        <label for="artnet_listen_port">Art-Net listen port:</label>
+                        <label for="artnet_listen_port" data-i18n="artnetListenPort">Art-Net listen port:</label>
                         <input type="number" id="artnet_listen_port" value="6454">
                     </div>
                     <div class="form-group artnet-only">
-                        <label for="artnet_listen_ip">Bind to IP:</label>
-                        <input type="text" id="artnet_listen_ip" value="0.0.0.0" placeholder="this Pi's IP, e.g. 192.168.1.50">
+                        <label for="artnet_listen_ip" data-i18n="bindToIp">Bind to IP:</label>
+                        <input type="text" id="artnet_listen_ip" value="0.0.0.0" placeholder="this Pi's IP, e.g. 192.168.1.50" data-i18n-placeholder="bindToIpPlaceholder">
                     </div>
-                    <span class="section-note artnet-only">A specific IP receives unicast only (set TouchDesigner's Art-Net Out to Unicast to this address); 0.0.0.0 also accepts broadcast.</span>
+                    <span class="section-note artnet-only" data-i18n="bindToIpNote">A specific IP receives unicast only (set TouchDesigner's Art-Net Out to Unicast to this address); 0.0.0.0 also accepts broadcast.</span>
                     <div class="form-group artnet-only">
-                        <label for="artnet_universe">Art-Net universe:</label>
+                        <label for="artnet_universe" data-i18n="artnetUniverse">Art-Net universe:</label>
                         <input type="number" id="artnet_universe" value="1" min="0" max="32767">
                     </div>
-                    <span class="section-note artnet-only">Keep this different from other DMX equipment on the network (usually universe 0).</span>
+                    <span class="section-note artnet-only" data-i18n="artnetUniverseNote">Keep this different from other DMX equipment on the network (usually universe 0).</span>
                     <div class="form-group artnet-only">
-                        <label for="artnet_allowed_sources">Only accept from:</label>
-                        <input type="text" id="artnet_allowed_sources" value="" placeholder="sender IP(s), comma-separated; empty = any">
+                        <label for="artnet_allowed_sources" data-i18n="onlyAcceptFrom">Only accept from:</label>
+                        <input type="text" id="artnet_allowed_sources" value="" placeholder="sender IP(s), comma-separated; empty = any" data-i18n-placeholder="onlyAcceptFromPlaceholder">
                     </div>
                     <div class="form-group artnet-only">
-                        <label for="artnet_signal_timeout">Stop rotation if no signal for (s):</label>
+                        <label for="artnet_signal_timeout" data-i18n="signalTimeout">Stop rotation if no signal for (s):</label>
                         <input type="number" id="artnet_signal_timeout" value="2" min="0" max="60" step="0.5">
                     </div>
-                    <span class="section-note artnet-only">0 disables. Rotation does not restart by itself after a loss: set channel 1 to 0, then start again.</span>
+                    <span class="section-note artnet-only" data-i18n="signalTimeoutNote">0 disables. Rotation does not restart by itself after a loss: set channel 1 to 0, then start again.</span>
                     <div class="form-group artnet-only">
-                        <label for="artnet_dangerous_channels">Enable channels 10-12:</label>
+                        <label for="artnet_dangerous_channels" data-i18n="enableDangerousChannels">Enable channels 10-12:</label>
                         <input type="checkbox" id="artnet_dangerous_channels">
                     </div>
-                    <span class="section-note artnet-only">Back home (real move), set home (overwrites the saved home) and reset absolute position. Ignored unless ticked.</span>
-                    <div class="button-container">
-                        <button class="button" id="startInputServerBtn">Start</button>
-                        <button class="button" id="stopInputServerBtn">Stop</button>
+                    <span class="section-note artnet-only" data-i18n="dangerousChannelsNote">Back home (real move), set home (overwrites the saved home) and reset absolute position. Ignored unless ticked.</span>
+                    <div class="form-group artnet-only">
+                        <label for="artnet_max_speed_rpm" data-i18n="maxSpeedRpm">Max speed (rpm):</label>
+                        <input type="number" id="artnet_max_speed_rpm" value="100" min="1" max="3000">
                     </div>
-                    <p class="section-note">Active: <span id="input_server_status_label">-</span></p>
+                    <span class="section-note artnet-only" data-i18n="maxSpeedRpmNote">Channels 1 and 7's 1-255 range scales to 1..this value.</span>
+                    <div class="form-group artnet-only">
+                        <label for="artnet_acc_time" data-i18n="accTime">Accel/decel time (ms):</label>
+                        <input type="number" id="artnet_acc_time" value="5000" min="0" max="60000">
+                    </div>
+                    <div class="form-group artnet-only">
+                        <label for="artnet_feedback_enable" data-i18n="feedbackEnable">Send status feedback:</label>
+                        <input type="checkbox" id="artnet_feedback_enable">
+                    </div>
+                    <span class="section-note artnet-only" data-i18n="artnetFeedbackNote">Angle, servo, alarm and moving state, sent on a separate universe -- off by default.</span>
+                    <div class="form-group artnet-only artnet-feedback-only">
+                        <label for="artnet_feedback_ip" data-i18n="feedbackIp">Feedback to IP:</label>
+                        <input type="text" id="artnet_feedback_ip" value="" placeholder="e.g. 10.12.1.164" data-i18n-placeholder="feedbackIpPlaceholder">
+                    </div>
+                    <div class="form-group artnet-only artnet-feedback-only">
+                        <label for="artnet_feedback_universe" data-i18n="feedbackUniverse">Feedback universe:</label>
+                        <input type="number" id="artnet_feedback_universe" value="" min="0" max="32767" placeholder="universe + 1" data-i18n-placeholder="feedbackUniversePlaceholder">
+                    </div>
+                    <div class="form-group artnet-only artnet-feedback-only">
+                        <label for="artnet_feedback_port" data-i18n="feedbackPort">Feedback port:</label>
+                        <input type="number" id="artnet_feedback_port" value="6454" min="1" max="65535">
+                    </div>
+                    <div class="form-group">
+                        <label for="input_server_autostart" data-i18n="autostart">Autostart on app launch:</label>
+                        <input type="checkbox" id="input_server_autostart">
+                    </div>
+                    <span class="section-note" data-i18n="autostartNote">Saves these settings and brings this protocol back up automatically the next time the app starts. Takes effect on the next successful Start.</span>
+                    <div class="button-container">
+                        <button class="button" id="startInputServerBtn" data-i18n="start">Start</button>
+                        <button class="button" id="stopInputServerBtn" data-i18n="stop">Stop</button>
+                    </div>
+                    <p class="section-note"><span data-i18n="active">Active:</span> <span id="input_server_status_label">-</span></p>
                     <span id="input_server_action_status" class="section-note"></span>
+                    <p class="section-note" id="autostartStatus"></p>
                 </section>
 
                 <nav class="sidebar-section commands">
-                    <h2>Servo</h2>
-                    <div class="button-container"><button class="button" data-action="servoOn">SERVO ON</button><span id="servoOn_status"></span></div>
-                    <div class="button-container"><button class="button" data-action="servoOff">SERVO OFF</button><span id="servoOff_status"></span></div>
-                    <div class="button-container"><button class="button" data-action="getMsg">GET STATE VALUE</button><span id="getMsg_status"></span></div>
-                    <div class="button-container"><button class="button" id="clearAlarm12Btn">CLEAR ALARM 12</button><span id="clearAlarm12_status"></span></div>
-                    <div class="button-container"><button class="button" id="setHomeBtn">SET HOME</button><span id="setHome_status"></span></div>
+                    <h2 data-i18n="servo">Servo</h2>
+                    <div class="button-container"><button class="button" data-action="servoOn" data-i18n="servoOnBtn">SERVO ON</button><span id="servoOn_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="servoOff" data-i18n="servoOffBtn">SERVO OFF</button><span id="servoOff_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="getMsg" data-i18n="getStateValueBtn">GET STATE VALUE</button><span id="getMsg_status"></span></div>
+                    <div class="button-container"><button class="button" id="clearAlarm12Btn" data-i18n="clearAlarm12Btn">CLEAR ALARM 12</button><span id="clearAlarm12_status"></span></div>
+                    <div class="button-container"><button class="button" id="setHomeBtn" data-i18n="setHomeBtn">SET HOME</button><span id="setHome_status"></span></div>
                 </nav>
 
                 <nav class="sidebar-section commands">
-                    <h2>Encoder Mode (PA28)</h2>
-                    <span class="section-note" id="encoderModeStatus">Not read yet.</span>
-                    <div class="button-container"><button class="button" id="encoderModeRefreshBtn">READ ENCODER MODE</button></div>
-                    <div class="button-container"><button class="button" id="encoderModeSwitchBtn" disabled>SWITCH ENCODER MODE</button><span id="encoderModeSwitch_status"></span></div>
-                    <div class="button-container"><button class="button" id="encoderModeAdoptBtn">I POWER-CYCLED - RE-READ MODE</button><span id="encoderModeAdopt_status"></span></div>
-                    <span class="section-note">Absolute mode needs an absolute-encoder motor AND the encoder backup battery (SDH-BAT-SET); the change takes effect only after power-cycling the drive (AL.2A then AL.2C appear during first-time init). JOG keeps using the incremental counter.</span>
+                    <h2 data-i18n="encoderMode">Encoder Mode (PA28)</h2>
+                    <span class="section-note" id="encoderModeStatus" data-i18n="notReadYet">Not read yet.</span>
+                    <div class="button-container"><button class="button" id="encoderModeRefreshBtn" data-i18n="readEncoderModeBtn">READ ENCODER MODE</button></div>
+                    <div class="button-container"><button class="button" id="encoderModeSwitchBtn" disabled data-i18n="switchEncoderModeBtn">SWITCH ENCODER MODE</button><span id="encoderModeSwitch_status"></span></div>
+                    <div class="button-container"><button class="button" id="encoderModeAdoptBtn" data-i18n="rereadModeBtn">I POWER-CYCLED - RE-READ MODE</button><span id="encoderModeAdopt_status"></span></div>
+                    <span class="section-note" data-i18n="encoderModeNote">Absolute mode needs an absolute-encoder motor AND the encoder backup battery (SDH-BAT-SET); the change takes effect only after power-cycling the drive (AL.2A then AL.2C appear during first-time init). JOG keeps using the incremental counter.</span>
                 </nav>
 
                 <nav class="sidebar-section commands">
-                    <h2>Position Mode</h2>
+                    <h2 data-i18n="positionMode">Position Mode</h2>
                     <div class="form-group">
-                        <label for="posMode_pulses">Pulses:</label>
+                        <label for="posMode_pulses" data-i18n="pulses">Pulses:</label>
                         <input type="number" id="posMode_pulses" min="0" max="2147483647" value="1920">
                     </div>
                     <div class="form-group">
-                        <label for="posMode_speed_rpm">Speed (rpm):</label>
+                        <label for="posMode_speed_rpm" data-i18n="speedRpm">Speed (rpm):</label>
                         <input type="number" id="posMode_speed_rpm" min="0" max="3000" value="10">
                     </div>
-                    <div class="button-container"><button class="button" id="enablePosModeBtn">ENABLE POS MODE</button><span id="enablePosMode_status"></span></div>
+                    <div class="button-container"><button class="button" id="enablePosModeBtn" data-i18n="enablePosModeBtn">ENABLE POS MODE</button><span id="enablePosMode_status"></span></div>
                     <div class="arrow-key-pad" id="posArrowKeyPad">
                         <span class="key-indicator key-up" id="posKeyIndicator_Up">&uarr;</span>
                         <span class="key-indicator key-left" id="posKeyIndicator_Left">&larr;</span>
                         <span class="key-indicator key-down" id="posKeyIndicator_Down">&darr;</span>
                         <span class="key-indicator key-right" id="posKeyIndicator_Right">&rarr;</span>
                     </div>
-                    <span class="section-note">While enabled -- Left/Right arrow keys = POS TEST START CW/CCW (one
+                    <span class="section-note" data-i18n="posModeNote">While enabled -- Left/Right arrow keys = POS TEST START CW/CCW (one
                         0.5deg nudge per press); Up/Down arrow keys = adjust the Speed (rpm) above by +/-1 for the
                         next nudge (no move by itself).</span>
                     <span class="section-note" id="posTest_status"></span>
-                    <span class="section-note" id="setPoint_1_display">Set Point 1: Not recorded</span>
-                    <div class="button-container"><button class="button" data-action="setPoint_1">SET POINT 1</button><span id="setPoint_1_status"></span></div>
-                    <div class="button-container"><button class="button" data-action="gotoSetPoint_1" id="gotoSetPoint_1Btn" disabled>MOVE TO SET POINT 1</button><span id="gotoSetPoint_1_status"></span></div>
-                    <span class="section-note" id="setPoint_2_display">Set Point 2: Not recorded</span>
-                    <div class="button-container"><button class="button" data-action="setPoint_2">SET POINT 2</button><span id="setPoint_2_status"></span></div>
-                    <div class="button-container"><button class="button" data-action="gotoSetPoint_2" id="gotoSetPoint_2Btn" disabled>MOVE TO SET POINT 2</button><span id="gotoSetPoint_2_status"></span></div>
-                    <div class="button-container"><button class="button" data-action="Home">HOME</button><span id="Home_status"></span></div>
+                    <span class="section-note" id="setPoint_1_display" data-i18n="setPoint1NotRecorded">Set Point 1: Not recorded</span>
+                    <div class="button-container"><button class="button" data-action="setPoint_1" data-i18n="setPoint1Btn">SET POINT 1</button><span id="setPoint_1_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="gotoSetPoint_1" id="gotoSetPoint_1Btn" disabled data-i18n="moveToSetPoint1Btn">MOVE TO SET POINT 1</button><span id="gotoSetPoint_1_status"></span></div>
+                    <span class="section-note" id="setPoint_2_display" data-i18n="setPoint2NotRecorded">Set Point 2: Not recorded</span>
+                    <div class="button-container"><button class="button" data-action="setPoint_2" data-i18n="setPoint2Btn">SET POINT 2</button><span id="setPoint_2_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="gotoSetPoint_2" id="gotoSetPoint_2Btn" disabled data-i18n="moveToSetPoint2Btn">MOVE TO SET POINT 2</button><span id="gotoSetPoint_2_status"></span></div>
+                    <div class="button-container"><button class="button" data-action="Home" data-i18n="homeBtn">HOME</button><span id="Home_status"></span></div>
                 </nav>
 
                 <nav class="sidebar-section commands">
-                    <h2>Speed Control (JOG)</h2>
+                    <h2 data-i18n="speedControlJog">Speed Control (JOG)</h2>
                     <div class="form-group">
-                        <label for="speedCtrl_rpm">Speed (rpm):</label>
+                        <label for="speedCtrl_rpm" data-i18n="speedRpm">Speed (rpm):</label>
                         <input type="number" id="speedCtrl_rpm" min="0" max="3000" value="100">
                     </div>
-                    <div class="button-container"><button class="button" id="enableSpeedCtrlModeBtn">ENABLE SPEED CONTROL MODE</button><span id="enableSpeedCtrlMode_status"></span></div>
+                    <div class="button-container"><button class="button" id="enableSpeedCtrlModeBtn" data-i18n="enableSpeedCtrlModeBtn">ENABLE SPEED CONTROL MODE</button><span id="enableSpeedCtrlMode_status"></span></div>
                     <div class="arrow-key-pad" id="arrowKeyPad">
                         <span class="key-indicator key-up" id="keyIndicator_Up">&uarr;</span>
                         <span class="key-indicator key-left" id="keyIndicator_Left">&larr;</span>
                         <span class="key-indicator key-down" id="keyIndicator_Down">&darr;</span>
                         <span class="key-indicator key-right" id="keyIndicator_Right">&rarr;</span>
                     </div>
-                    <span class="section-note">No click-to-spin buttons here on purpose: rotation only runs while a
+                    <span class="section-note" data-i18n="jogNote">No click-to-spin buttons here on purpose: rotation only runs while a
                         key is physically held down, so it can never be left spinning by a stray click. While enabled --
                         Left/Right arrow keys = rotate CW/CCW (release the key = stop immediately); Up/Down arrow keys =
                         speed +/-1 rpm. Keys only act while this page has focus and the cursor isn't in a text/number field.</span>
@@ -1190,114 +1552,114 @@
 
             <main class="main-content">
                 <section class="live-status">
-                    <h2>Live Status</h2>
+                    <h2 data-i18n="liveStatus">Live Status</h2>
                     <div class="status-grid">
                         <div class="status-tile">
-                            <span class="label">Port</span>
+                            <span class="label" data-i18n="port">Port</span>
                             <span class="value" id="status_connected_port">-</span>
                         </div>
                         <div class="status-tile">
-                            <span class="label">Baud</span>
+                            <span class="label" data-i18n="baud">Baud</span>
                             <span class="value" id="status_baud_rate">-</span>
                         </div>
                         <div class="status-tile" id="status_alarm_tile">
-                            <span class="label">Alarm Code</span>
+                            <span class="label" data-i18n="alarmCode">Alarm Code</span>
                             <span class="value" id="status_alarm_code">-</span>
                         </div>
                         <div class="status-tile" id="status_servo_on_tile">
-                            <span class="label">Servo ON</span>
+                            <span class="label" data-i18n="servoOnLabel">Servo ON</span>
                             <span class="value" id="status_servo_on">-</span>
                         </div>
                         <div class="status-tile">
-                            <span class="label">Mode</span>
+                            <span class="label" data-i18n="mode">Mode</span>
                             <span class="value" id="status_ctrl_mode_sel">-</span>
                         </div>
                         <div class="status-tile" id="status_home_tile">
-                            <span class="label">Home (this session)</span>
+                            <span class="label" data-i18n="homeSession">Home (this session)</span>
                             <span class="value" id="status_home">-</span>
                         </div>
                         <div class="status-tile" id="status_gear_tile">
-                            <span class="label">Electronic Gear (PA06/07)</span>
+                            <span class="label" data-i18n="electronicGear">Electronic Gear (PA06/07)</span>
                             <span class="value" id="status_gear">-</span>
                         </div>
                         <div class="status-tile" id="status_eeprom_tile">
-                            <span class="label">EEPROM Protect (PA23)</span>
+                            <span class="label" data-i18n="eepromProtect">EEPROM Protect (PA23)</span>
                             <span class="value" id="status_eeprom_protection">-</span>
                         </div>
                         <div class="status-tile">
-                            <span class="label">Encoder Mode</span>
+                            <span class="label" data-i18n="encoderModeLabel">Encoder Mode</span>
                             <span class="value" id="status_encoder_mode">-</span>
                         </div>
                         <div class="status-tile">
-                            <span class="label">Continuous Reading</span>
+                            <span class="label" data-i18n="continuousReading">Continuous Reading</span>
                             <span class="value" id="status_reading_active">-</span>
                         </div>
                         <div class="status-tile">
-                            <span class="label">Current Angle</span>
+                            <span class="label" data-i18n="currentAngle">Current Angle</span>
                             <span class="value" id="status_current_angle">-</span>
                         </div>
                         <div class="status-tile">
-                            <span class="label">Current Encoder</span>
+                            <span class="label" data-i18n="currentEncoder">Current Encoder</span>
                             <span class="value" id="status_current_encoder">-</span>
                         </div>
                     </div>
                 </section>
 
                 <section class="rs485-status">
-                    <h2>Last RS-485 Transaction</h2>
+                    <h2 data-i18n="rs485Transaction">Last RS-485 Transaction</h2>
                     <div class="form-group">
-                        <label for="rs485_send">Sent:</label>
+                        <label for="rs485_send" data-i18n="sent">Sent:</label>
                         <input type="text" id="rs485_send" value="{{ RS485_send }}" readonly>
                     </div>
                     <div class="form-group">
-                        <label for="rs485_receive">Received:</label>
+                        <label for="rs485_receive" data-i18n="received">Received:</label>
                         <input type="text" id="rs485_receive" value="{{ RS485_read }}" readonly>
                     </div>
                 </section>
 
                 <section class="do-status" id="doStatusSection">
-                    <h2>Digital Outputs (DO1 - DO6)</h2>
+                    <h2 data-i18n="digitalOutputs">Digital Outputs (DO1 - DO6)</h2>
                     <div class="button-container">
-                        <button class="button" id="readDoBtn">READ DO STATUS</button>
-                        <label class="section-note"><input type="checkbox" id="doAutoRefresh"> Auto-refresh every 2 s</label>
+                        <button class="button" id="readDoBtn" data-i18n="readDoStatusBtn">READ DO STATUS</button>
+                        <label class="section-note"><input type="checkbox" id="doAutoRefresh"> <span data-i18n="autoRefresh2s">Auto-refresh every 2 s</span></label>
                         <span id="doStatusFeedback" class="section-note"></span>
                     </div>
                     <table class="channel-table">
                         <thead>
-                            <tr><th>DO</th><th>CN1 pin</th><th>State</th><th>Assigned function</th></tr>
+                            <tr><th data-i18n="doTableDo">DO</th><th data-i18n="doTableCn1Pin">CN1 pin</th><th data-i18n="doTableState">State</th><th data-i18n="doTableFunction">Assigned function</th></tr>
                         </thead>
                         <tbody id="doStatusTableBody">
-                            <tr><td colspan="4" class="section-note">Not read yet. Read-only: three serial reads per refresh.</td></tr>
+                            <tr><td colspan="4" class="section-note" data-i18n="doNotReadYet">Not read yet. Read-only: three serial reads per refresh.</td></tr>
                         </tbody>
                     </table>
-                    <p class="section-note" id="doStatusNote">State is the raw bit of register 0x0205; the DO contact polarity (PD27) is not applied.</p>
+                    <p class="section-note" id="doStatusNote" data-i18n="doNote">State is the raw bit of register 0x0205; the DO contact polarity (PD27) is not applied.</p>
                 </section>
 
                 <section class="artnet-monitor" id="artnetMonitorSection" style="display:none;">
-                    <h2>Art-Net Channel Monitor</h2>
-                    <p class="section-note" id="artnetLastReceived">No frame received yet.</p>
+                    <h2 data-i18n="artnetChannelMonitor">Art-Net Channel Monitor</h2>
+                    <p class="section-note" id="artnetLastReceived" data-i18n="noFrameReceived">No frame received yet.</p>
                     <p class="section-note" id="artnetStats"></p>
                     <table class="channel-table">
                         <thead>
-                            <tr><th>Ch</th><th>Label</th><th>Value</th><th>Interpreted</th></tr>
+                            <tr><th data-i18n="chTableCh">Ch</th><th data-i18n="chTableLabel">Label</th><th data-i18n="chTableValue">Value</th><th data-i18n="chTableInterpreted">Interpreted</th></tr>
                         </thead>
                         <tbody id="artnetChannelTableBody"></tbody>
                     </table>
                 </section>
 
                 <section class="state-values-monitor" id="stateValuesSection" style="display:none;">
-                    <h2>Drive State Values (GET STATE VALUE)</h2>
-                    <p class="section-note">PA/PD parameter registers -- mostly fixed configuration, not live motion feedback.</p>
+                    <h2 data-i18n="driveStateValues">Drive State Values (GET STATE VALUE)</h2>
+                    <p class="section-note" data-i18n="stateValuesNote">PA/PD parameter registers -- mostly fixed configuration, not live motion feedback.</p>
                     <table class="channel-table">
                         <thead>
-                            <tr><th>Reg</th><th>Name</th><th>Description</th><th>Value</th><th>Interpreted</th></tr>
+                            <tr><th data-i18n="svTableReg">Reg</th><th data-i18n="svTableName">Name</th><th data-i18n="svTableDescription">Description</th><th data-i18n="svTableValue">Value</th><th data-i18n="svTableInterpreted">Interpreted</th></tr>
                         </thead>
                         <tbody id="stateValuesTableBody"></tbody>
                     </table>
                 </section>
 
                 <section class="activity-log">
-                    <h2>Activity Log</h2>
+                    <h2 data-i18n="activityLog">Activity Log</h2>
                     <div class="log-feed" id="activityLogFeed"></div>
                 </section>
             </main>
