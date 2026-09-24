@@ -745,6 +745,22 @@ class TestFeedback(unittest.TestCase):
         server._send_feedback(12.3)
         server._feedback_sock.sendto.assert_not_called()
 
+    def test_feedback_port_defaults_to_the_artnet_standard_port(self):
+        server, _ = make_server(universe=1, feedback_ip="10.0.0.5")
+        self.assertEqual(server.feedback_port, artnet_server.ARTNET_PORT)
+
+    def test_feedback_port_can_be_overridden(self):
+        server, ctrl = make_server(universe=1, feedback_ip="10.0.0.5", feedback_universe=2,
+                                    feedback_port=7777)
+        self.assertEqual(server.feedback_port, 7777)
+        ctrl.read_current_alarm_code.return_value = 0
+        server._feedback_sock = MagicMock()
+
+        server._send_feedback(0.0)
+
+        _packet, dest = server._feedback_sock.sendto.call_args[0]
+        self.assertEqual(dest, ("10.0.0.5", 7777))
+
     def test_send_feedback_encodes_angle_servo_alarm_and_moving(self):
         server, ctrl = make_server(universe=1, feedback_ip="10.0.0.5", feedback_universe=2)
         ctrl.reading_active = True

@@ -161,9 +161,11 @@ curl -X POST http://<HOST>:5000/server/start \
   server refuses to start otherwise: a node both reading and writing the
   same universe risks reacting to its own broadcast as if it were a new
   command, and confuses any console reading that universe back.
-- Sent to UDP port 6454 (the Art-Net standard), same as the command-input
-  side, just a different universe — from its own dedicated outbound socket,
-  separate from the command-input listening socket.
+- Sent to UDP port 6454 by default (the Art-Net standard, same as the
+  command-input side, just a different universe) — override with
+  `feedback_port` in the `/server/start` body if your receiver listens on a
+  non-standard port. From its own dedicated outbound socket, separate from
+  the command-input listening socket.
 - Channel layout re-uses the existing input encoding so nothing new has to
   be learned:
   - Channels 1-2: current angle — identical 16-bit, 0.01°/step, `32768` = 0°

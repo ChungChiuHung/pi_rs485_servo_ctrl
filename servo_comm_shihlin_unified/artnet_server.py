@@ -205,7 +205,7 @@ class ArtNetInputServer:
                  signal_timeout_s=DEFAULT_SIGNAL_TIMEOUT_S,
                  allowed_sources=None, enable_dangerous_channels=False,
                  trigger_cooldown_s=DEFAULT_TRIGGER_COOLDOWN_S,
-                 feedback_ip=None, feedback_universe=None):
+                 feedback_ip=None, feedback_universe=None, feedback_port=ARTNET_PORT):
         """listen_ip: bind to the NIC address the sender unicasts to (a
         specific address only receives unicast; Linux does not deliver
         broadcast to a socket bound to a unicast address). universe: default
@@ -221,7 +221,10 @@ class ArtNetInputServer:
         feedback_ip: destination for optional outbound status (angle/servo/
         moving), off by default -- see the module docstring. feedback_universe:
         the SEPARATE universe the feedback packet is sent on (default
-        `universe + 1`); must not equal `universe`."""
+        `universe + 1`); must not equal `universe`. feedback_port: the UDP
+        port feedback is sent to (default ARTNET_PORT/6454, the Art-Net
+        standard -- any Art-Net-compliant receiver listens there already;
+        override only if your receiver is bound to a non-standard port)."""
         self.servo_ctrller = servo_ctrller
         self.listen_ip = listen_ip
         self.listen_port = listen_port
@@ -234,6 +237,7 @@ class ArtNetInputServer:
         self.trigger_cooldown_s = max(0.0, float(trigger_cooldown_s or 0))
         self.feedback_ip = feedback_ip
         self.feedback_universe = universe + 1 if feedback_universe is None else feedback_universe
+        self.feedback_port = feedback_port
         if feedback_ip is not None and self.feedback_universe == universe:
             raise ValueError(
                 "feedback_universe must differ from universe -- sending feedback on the same "
@@ -323,7 +327,7 @@ class ArtNetInputServer:
             alarm_active = is_alarm_active(self.servo_ctrller.read_current_alarm_code())
             moving = bool(self.servo_ctrller.reading_active)
             data = [high, low, 255 if servo_on else 0, 255 if alarm_active else 0, 255 if moving else 0]
-            self._feedback_sock.sendto(self._build_artdmx(data), (self.feedback_ip, ARTNET_PORT))
+            self._feedback_sock.sendto(self._build_artdmx(data), (self.feedback_ip, self.feedback_port))
         except Exception as e:
             logger.error(f"Art-Net: error sending feedback: {e}")
 
@@ -906,7 +910,7 @@ class ArtNetInputServer:
             self.servo_ctrller.register_event_listener("on_motion_completed", self._on_motion_completed_feedback)
             self.servo_ctrller.register_event_listener("on_moving", self._on_moving_feedback)
             self._feedback_wired = True
-            logger.info(f"Art-Net feedback enabled -> {self.feedback_ip} universe {self.feedback_universe}")
+            logger.info(f"Art-Net feedback enabled -> {self.feedback_ip}:{self.feedback_port} universe {self.feedback_universe}")
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
         logger.info(
