@@ -77,7 +77,7 @@ receiving application before relying on it.
 
 | Address | Arguments | Action | Feedback sent |
 |---|---|---|---|
-| `/servo` | `data` (float): `1.0` = on, `0.0` = off | `servo_on()` / `servo_off()` | `/servo_on "on"` / `/servo_off "off"` |
+| `/servo` | `data` (float): `1.0` = on, `0.0` = off | `servo_on()` / `servo_off()`. A repeated value is ignored while the drive already matches it (see Gotcha 9) | `/servo_on "on"` / `/servo_off "off"` |
 | `/clear` | — | `clear_alarm_12()` | `/clear "cleared"` |
 | `/set_point` | `angle` (deg, absolute), `acc_time` (ms), `rpm` | `post_step_motion_by()` — a real move | `/set_point angle acc_time rpm` |
 | `/back_home` | — | `initial_abs_home()` — a real move back to the saved home position | `/back_home "back_home"` |
@@ -86,7 +86,7 @@ receiving application before relying on it.
 | `/set_continous_motion` | `speed_rpm`, `acc_time` (ms), `enable` (bool) | Arms/disarms continuous JOG mode (does **not** move by itself) | `/continuous_mode_start speed_rpm acc_time` |
 | `/ctrl_continuous_motion` | `action` (`"start"`/`"stop"`), `CW_CCW` (`"CW"`/`"CCW"`) | Starts/stops continuous rotation (requires `/set_continous_motion` with `enable=true` first) | `/continuous_mode_start CW_CCW` / `/continuous_mode_stop "stop"` |
 | `/jog_speed_adjust` | `delta_rpm` (int, e.g. `1`/`-1`) | `change_jog_speed_by()` — **nudges** the running JOG speed by this amount (requires JOG mode already armed via `/set_continous_motion`); raises/logs an error instead of moving if it isn't | `/jog_speed_adjust <new speed_rpm>` |
-| `/cancel_loop` | — | Stops continuous reading **and** explicitly exits whatever test mode is active | `/cancel_loop <current_angle>` |
+| `/cancel_loop` | — | Stops continuous reading **and** explicitly exits whatever test mode is active. **Side effect: the drive drops Servo ON when it leaves JOG mode** (see Gotcha 9) | `/cancel_loop <current_angle>` |
 
 Two more feedback-only messages fire automatically while a move is in
 progress, regardless of which address triggered it:
@@ -420,6 +420,19 @@ forms (`"true"`/`"false"`/`"1"`/`"0"`/`"on"`/`"off"`/`"yes"`/`"no"`,
 case-insensitive) as a safety net, but native OSC `True`/`False` (or
 plain ints `1`/`0`) is the reliable choice if your OSC library gives you
 a choice.
+
+**9. `/cancel_loop` turns Servo OFF as a hardware side effect.** Leaving JOG
+mode (`0x0901` -> 0) makes the drive drop Servo ON by itself; confirmed live
+2026-09-25 (`servo_on` went True -> False right after `/cancel_loop`, with no
+`/servo` message involved). Any UI/TouchDesigner sequence that cancels JOG and
+then expects to keep moving must send `/servo 1.0` again first. That works:
+`/servo` compares a *repeated* value with the drive's real servo state (a
+`read_servo_state()` at most once per second, and `/cancel_loop` also forgets
+the last value), so `/servo 1.0` after `/cancel_loop` is applied instead of
+being dropped as a duplicate. Before that fix it was dropped and the servo
+stayed off. A resend of the same `/servo` value at frame rate is still
+suppressed while the drive matches it, and costs at most one serial read per
+second. If the drive's state can't be read, the repeat is ignored.
 
 ---
 

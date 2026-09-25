@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, call
 
 from pythonosc import udp_client
 
+import osc_server
 from osc_server import OSCInputServer
 
 
@@ -49,6 +50,77 @@ class TestServoHandler(unittest.TestCase):
         server._servo_handler(None, [], 0.0)
         ctrl.servo_on.assert_called_once()
         ctrl.servo_off.assert_called_once()
+
+
+class TestServoDuplicateFilterFollowsHardware(unittest.TestCase):
+    """A repeated /servo value is re-checked against the drive's real servo
+    state (at most once per SERVO_STATE_RECHECK_S) instead of trusting the
+    last OSC argument -- /cancel_loop, the web UI or an alarm can change the
+    servo state behind the handler's back (found live 2026-09-25: /servo 1.0
+    after /cancel_loop was dropped as a "duplicate" and the servo stayed off)."""
+
+    def _aged(self, server):
+        """Pretend the last verification was long ago so the next repeat re-checks."""
+        server._last_servo_verify -= osc_server.SERVO_STATE_RECHECK_S + 1
+
+    def test_repeat_within_the_interval_does_not_read_the_drive(self):
+        server, ctrl = make_server()
+        server._servo_handler(None, [], 1.0)
+        server._servo_handler(None, [], 1.0)
+        ctrl.read_servo_state.assert_not_called()
+        ctrl.servo_on.assert_called_once()
+
+    def test_repeat_on_while_the_drive_is_off_is_applied(self):
+        server, ctrl = make_server()
+        ctrl.read_servo_state.return_value = False
+        server._servo_handler(None, [], 1.0)
+        self._aged(server)
+        server._servo_handler(None, [], 1.0)
+        self.assertEqual(ctrl.servo_on.call_count, 2)
+
+    def test_repeat_off_while_the_drive_is_on_is_applied(self):
+        server, ctrl = make_server()
+        ctrl.read_servo_state.return_value = True
+        server._servo_handler(None, [], 0.0)
+        self._aged(server)
+        server._servo_handler(None, [], 0.0)
+        self.assertEqual(ctrl.servo_off.call_count, 2)
+
+    def test_repeat_matching_the_drive_is_still_suppressed(self):
+        server, ctrl = make_server()
+        ctrl.read_servo_state.return_value = True
+        server._servo_handler(None, [], 1.0)
+        self._aged(server)
+        server._servo_handler(None, [], 1.0)
+        ctrl.read_servo_state.assert_called_once()
+        ctrl.servo_on.assert_called_once()
+
+    def test_unreadable_drive_state_stays_suppressed(self):
+        server, ctrl = make_server()
+        ctrl.read_servo_state.return_value = None
+        server._servo_handler(None, [], 1.0)
+        self._aged(server)
+        server._servo_handler(None, [], 1.0)
+        ctrl.servo_on.assert_called_once()
+
+    def test_the_drive_is_not_read_on_every_frame(self):
+        """30-44 fps resends must not turn into 30-44 serial reads/s."""
+        server, ctrl = make_server()
+        ctrl.read_servo_state.return_value = True
+        server._servo_handler(None, [], 1.0)
+        self._aged(server)
+        for _ in range(50):
+            server._servo_handler(None, [], 1.0)
+        ctrl.read_servo_state.assert_called_once()
+
+    def test_cancel_loop_forgets_the_last_value(self):
+        """/cancel_loop drops Servo ON, so /servo 1.0 right after it (well
+        inside the re-check interval) must still be applied."""
+        server, ctrl = make_server()
+        server._servo_handler(None, [], 1.0)
+        server._cancel_loop_handler(None)
+        server._servo_handler(None, [], 1.0)
+        self.assertEqual(ctrl.servo_on.call_count, 2)
 
 
 class TestClearHandler(unittest.TestCase):
