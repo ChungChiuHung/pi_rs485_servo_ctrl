@@ -270,7 +270,13 @@ class ServoController:
         return self._load_config_value("abs_home_pos", self.profile["abs_home_pos_default"])
 
     def save_abs_home_pos(self, abs_home_pos: int):
+        """Persists the incremental-mode home AND makes it the home in use now.
+        It used to write the file only, so the polling loop kept computing angles
+        from the old home until the app was restarted (real drive 2026-09-21:
+        after SET HOME the display still said 102.49 deg, and HOME / MOVE TO SET
+        POINT would have driven the motor back to the old zero)."""
         self._save_config_value("abs_home_pos", abs_home_pos)
+        self.abs_home_pos = abs_home_pos
 
     def record_set_point(self, n: int) -> float:
         """Persists the CURRENTLY TRACKED angle as Set Point 1 or 2 --

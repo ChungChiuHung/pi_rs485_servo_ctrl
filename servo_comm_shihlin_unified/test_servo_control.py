@@ -432,11 +432,40 @@ class TestSetHomePosition(unittest.TestCase):
 
             self.assertEqual(ctrl.current_encoder, 777)
             self.assertEqual(ctrl._encoder_tracker.cumulative, 777)
-            self.assertEqual(ctrl.abs_home_pos, 62369153)  # unchanged until reload
+            # The IN-MEMORY home follows at once (it used to change only after a
+            # restart, so the polling loop kept computing angles from the OLD
+            # home: real drive 2026-09-21, SET HOME then the display still said
+            # 102.49 deg until the app was restarted).
+            self.assertEqual(ctrl.abs_home_pos, 777)
             with open(ctrl.config_file) as f:
                 import json
                 saved = json.load(f)
             self.assertEqual(saved["abs_home_pos"], 777)
+
+    def test_angle_is_zero_at_the_new_home_and_continues_from_it(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ctrl = make_controller(tmp_dir=tmp_dir)
+            ctrl.read_motor_feedback_pulses = MagicMock(return_value=5_000_000)
+
+            ctrl.set_home_position()
+
+            encoder, angle = ctrl._encoder_and_angle_for(ctrl._encoder_tracker.update(5_000_000))
+            self.assertEqual(angle, 0.0)
+            one_degree = round(ctrl.base_pulse_per_degree)
+            encoder, angle = ctrl._encoder_and_angle_for(ctrl._encoder_tracker.update(5_000_000 + 90 * one_degree))
+            self.assertAlmostEqual(angle, 90.0, places=3)
+            encoder, angle = ctrl._encoder_and_angle_for(ctrl._encoder_tracker.update(5_000_000 - 30 * one_degree))
+            self.assertAlmostEqual(angle, -30.0, places=3)
+
+    def test_a_home_that_could_not_be_read_leaves_the_old_home(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ctrl = make_controller(tmp_dir=tmp_dir)
+            ctrl.read_motor_feedback_pulses = MagicMock(return_value=None)
+
+            ctrl.set_home_position()
+
+            self.assertEqual(ctrl.abs_home_pos, 62369153)
+            self.assertFalse(ctrl.home_set_since_start)
 
     def test_resets_float_error_and_accumulate_pulse(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
