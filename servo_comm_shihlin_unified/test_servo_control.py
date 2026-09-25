@@ -920,6 +920,21 @@ class TestAbsoluteModePositioning(unittest.TestCase):
         self.assertFalse(ctrl.initial_abs_home())
         ctrl.pos_step_motion_by.assert_not_called()
 
+    def test_initial_abs_home_timeout_estimate_is_positive_for_a_negative_move(self):
+        """angle_rotated is signed; a negative move used to log a negative
+        "Estimate Timeout" (seen live 2026-09-25, /back_home from +80deg)."""
+        for angle in (-79.84, 79.84):
+            with self.subTest(angle=angle):
+                ctrl = self._abs_ctrl()
+                ctrl.pos_step_motion_by = MagicMock(return_value=angle)
+                ctrl.delay_ms = MagicMock()
+                with self.assertLogs(level="INFO") as logs:
+                    ctrl.initial_abs_home()
+                line = next(m for m in logs.output if "Estimate Timeout" in m)
+                seconds = float(line.split("Estimate Timeout: ")[1].split(" seconds")[0])
+                self.assertGreater(seconds, 0)
+                self.assertAlmostEqual(seconds, 1.2 * (79.84 / 360) * (60 / 12), places=6)
+
     def test_set_home_captures_absolute_position_and_persists_it(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             ctrl = self._abs_ctrl(absolute_pulses=7777777, home=None)

@@ -518,3 +518,59 @@ verification JOG, not re-homed since it's well within normal range).
 Gotcha #9 (documenting the bug as a workaround-required limitation) was
 added to `OSC_ARTNET_GUIDE.md` earlier the same day and has been removed
 now that it's fixed; `CLAUDE.md` §3/§6 updated to match.
+
+## [2026-09-25] Live test of every OSC address: two bugs, and /cancel_loop drops Servo ON
+**Relates to:** `servo_comm_shihlin_unified/osc_server.py` (`/servo` dedupe,
+`/cancel_loop`), `servo_control.py` (`initial_abs_home()`),
+`OSC_ARTNET_GUIDE.md` Gotcha 9
+**What happened:** User asked for every OSC address to be exercised against the
+running server (real UDP to :5005, effects read back through `/status` and
+`/log`; user on-site). All 10 addresses worked (set_point landed within
+0.001deg, back_home within 0.001deg, JOG start/stop/reversal-refusal/live
+speed nudge all correct, bad args logged without crashing). Two defects:
+1. **`/servo` dedupe went stale.** `_check_duplicated()` only compared the new
+   value with the last OSC argument. `/cancel_loop` (leaving JOG) makes the
+   *drive* drop Servo ON, so `/servo 1.0` afterwards was ignored as a
+   duplicate and the servo stayed off. Fix: a repeat is re-checked against
+   `read_servo_state()` (throttled to once per `SERVO_STATE_RECHECK_S` = 1 s so
+   a frame-rate resend never becomes a serial read per frame; an unreadable
+   state stays suppressed), and `/cancel_loop` clears the cached value. 7
+   regression tests (`TestServoDuplicateFilterFollowsHardware`).
+2. **`/back_home` logged a negative "Estimate Timeout"** for moves in the
+   negative direction (`angle_rotated` is signed). Fix: `abs()`. Regression
+   test in `TestAbsoluteModePositioning`. **Not fixed, deliberately:** the
+   estimate ignores the gear ratio (~30x short at 30:1), so "Operation timed
+   out" still logs for every real move. Making it accurate would make the
+   caller block for the whole move (web UI busy lock, Art-Net receive thread,
+   OSC handler thread) -- a behavior change that needs its own decision.
+**Also learned:** `/cancel_loop` turns Servo OFF as a hardware side effect;
+documented for frontend authors (Gotcha 9).
+**Test-harness lesson:** my first `settle()` helper returned as soon as
+`reading_active` was False, which is also true *before* the move thread
+starts, so early "landed" readings were mid-move and the next command
+interrupted them. Wait for the start edge, then for the idle edge.
+**Side effect of the test:** `/set_home` was run for real and moved the saved
+home by 3,992 pulses (0.011deg). The config file was restored byte-for-byte
+from a pre-test backup (`abs_home_pos_absolute` = -42289741); the running app
+kept the shifted value in memory until it is restarted.
+**Status:** fixed; suite green (see commit). Feedback packets to TouchDesigner
+(192.168.0.101:5008) were not observable from the Pi side -- the user is
+verifying those.
+
+## [2026-09-25] Known behavior: `/back_home` always logs a premature "Operation timed out"
+**Relates to:** `servo_control.py` `initial_abs_home()`, the entry above
+**What:** the wait timeout is `1.2 * (abs(angle)/360) * (60/12)` -- it treats the
+*output* angle as motor-shaft degrees, so it is roughly `gear_ratio` (30x for
+`shihlin_400W`) too short. Every real `/back_home` (also web HOME and Art-Net
+channel 10) therefore logs "Timeout reached while waiting for stop process" /
+"Operation timed out" almost immediately and returns False, even though the
+move runs to completion on the drive and the background reader reports
+`/motion_complete` normally (seen live: 80deg move, ~22 s, landed within
+0.001deg). Also clears `on_initial_home` early, so a second `/back_home`
+during the move is not rejected.
+**Decision (user, 2026-09-25):** leave it. A correct timeout would make the
+caller block for the whole move (web UI busy lock, Art-Net receive thread, OSC
+handler thread), which is worse than a spurious warning. Treat the warning as
+noise; rely on `/motion_complete` (or `reading_active` in `/status`) to know
+when the move finished.
+**Status:** accepted limitation, not a bug to chase.

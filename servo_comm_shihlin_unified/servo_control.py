@@ -1908,7 +1908,9 @@ class ServoController:
             angle_rotated = self.pos_step_motion_by(home_pos, 5000, speed_rpm)
 
             time_per_revolution = 60 / speed_rpm
-            timeout = 1.2 * (angle_rotated / 360) * time_per_revolution
+            # abs(): angle_rotated is signed (negative = the CW direction),
+            # and a negative timeout logged a nonsense estimate.
+            timeout = 1.2 * (abs(angle_rotated) / 360) * time_per_revolution
 
             logging.info(f"Estimate Timeout: {timeout} seconds for angle")
 
