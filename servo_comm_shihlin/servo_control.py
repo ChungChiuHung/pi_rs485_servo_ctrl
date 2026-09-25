@@ -169,7 +169,13 @@ class ServoController:
         return self._load_config_value("abs_home_pos", 1184347)
 
     def save_abs_home_pos(self, abs_home_pos: int):
+        """Persists the home AND makes it the home in use now. It used to write
+        the file only, so the polling loop (and back-home) kept using the old home
+        until the app was restarted: on the real drive (2026-09-21, servo_comm_
+        shihlin_unified) the display still said 102.49 deg after SET HOME.
+        Ported from servo_comm_shihlin_unified."""
         self._save_config_value("abs_home_pos", abs_home_pos)
+        self.abs_home_pos = abs_home_pos
 
     def record_set_point(self, n: int) -> float:
         """Persists the drive's CURRENT angle as Set Point 1 or 2 -- does not

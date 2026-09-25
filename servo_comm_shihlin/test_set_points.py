@@ -91,6 +91,40 @@ class ConfigTests(unittest.TestCase):
         ctrl.set_home_position()
         self.assertEqual(self.saved(), {"abs_home_pos": 777, "set_point_1": 33.0})
 
+    def test_saving_the_home_also_makes_it_the_home_in_use(self):
+        """SET HOME used to write the file only, so the polling loop kept computing
+        every angle from the OLD home until the app was restarted (seen on the real
+        drive, 2026-09-21: the display still said 102.49 deg after SET HOME)."""
+        ctrl = self.make({"abs_home_pos": 1000})
+        ctrl.save_abs_home_pos(2000)
+        self.assertEqual(ctrl.abs_home_pos, 2000)
+
+    def test_after_set_home_the_angle_is_relative_to_the_new_home(self):
+        ctrl = self.make({"abs_home_pos": 1000})
+        ctrl.delay_ms = MagicMock()
+        one_degree = round(349525.3333333333)
+        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=5_000_000)
+        ctrl.set_home_position()
+        self.assertEqual(ctrl.abs_home_pos, 5_000_000)
+
+        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=5_000_000 + 90 * one_degree)
+        self.assertTrue(ctrl._refresh_current_angle_from_hardware())
+        self.assertAlmostEqual(ctrl.current_angle, 90.0, places=3)
+
+    def test_back_home_target_is_the_new_home_after_set_home(self):
+        ctrl = self.make({"abs_home_pos": 1000})
+        ctrl.delay_ms = MagicMock()
+        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=777)
+        ctrl.set_home_position()
+        self.assertEqual(ctrl.abs_home_pos, 777)   # initial_abs_home() drives back to abs_home_pos
+
+    def test_an_unreadable_home_leaves_the_old_home_in_use(self):
+        ctrl = self.make({"abs_home_pos": 1000})
+        ctrl.read_encoder_before_gear_ratio = MagicMock(return_value=None)
+        ctrl.set_home_position()
+        self.assertEqual(ctrl.abs_home_pos, 1000)
+        self.assertEqual(self.saved(), {"abs_home_pos": 1000})
+
 
 if __name__ == "__main__":
     unittest.main()
