@@ -1267,7 +1267,9 @@ class TestConfigAndModeMethods(unittest.TestCase):
     def test_pos_motion_start_writes_value_to_0x0907(self):
         ctrl = make_controller()
         ctrl.modbus_client = MagicMock()
-        ctrl.pos_motion_start_0x0907(2)
+        ctrl.modbus_client.send_and_receive.return_value = b'not-empty'
+        with patch("servo_control.ModbusRTUResponse"):
+            ctrl.pos_motion_start_0x0907(2)
         ctrl.modbus_client.build_write_message.assert_called_once_with(0x0907, 2)
 
 
@@ -1476,27 +1478,20 @@ class TestPosStepMotionTestAndExecutePositioning(unittest.TestCase):
         ctrl = make_controller()
         call_order = []
         ctrl.clear_alarm_12 = MagicMock(side_effect=lambda: call_order.append("clear_alarm_12"))
-        ctrl.Enable_Position_Mode = MagicMock(side_effect=lambda v: call_order.append("position_mode"))
-        ctrl.config_acc_dec_0x0902 = MagicMock()
-        ctrl.config_speed_0x0903 = MagicMock()
-        ctrl.config_pulses_0x0905_low_byte = MagicMock()
-        ctrl.config_pulses_0x0906_high_byte = MagicMock()
+        ctrl._write_register_verified = MagicMock(
+            side_effect=lambda addr, value, *a, **k: call_order.append(("write", hex(addr), value)))
         ctrl.pos_step_motion_test = MagicMock()
         ctrl.delay_ms = MagicMock()
 
         ctrl._execute_positioning(angle=10, low_byte=1, high_byte=0, acc_dec_time=100, speed_rpm=5)
 
         ctrl.clear_alarm_12.assert_called_once()
-        self.assertEqual(call_order, ["clear_alarm_12", "position_mode"])
+        self.assertEqual(call_order[:2], ["clear_alarm_12", ("write", "0x901", 4)])
 
     def test_execute_positioning_positive_angle_runs_cw(self):
         ctrl = make_controller()
         ctrl.clear_alarm_12 = MagicMock()
-        ctrl.Enable_Position_Mode = MagicMock()
-        ctrl.config_acc_dec_0x0902 = MagicMock()
-        ctrl.config_speed_0x0903 = MagicMock()
-        ctrl.config_pulses_0x0905_low_byte = MagicMock()
-        ctrl.config_pulses_0x0906_high_byte = MagicMock()
+        ctrl._write_register_verified = MagicMock()
         ctrl.pos_step_motion_test = MagicMock()
         ctrl.delay_ms = MagicMock()
 
@@ -1507,11 +1502,7 @@ class TestPosStepMotionTestAndExecutePositioning(unittest.TestCase):
     def test_execute_positioning_negative_angle_runs_ccw(self):
         ctrl = make_controller()
         ctrl.clear_alarm_12 = MagicMock()
-        ctrl.Enable_Position_Mode = MagicMock()
-        ctrl.config_acc_dec_0x0902 = MagicMock()
-        ctrl.config_speed_0x0903 = MagicMock()
-        ctrl.config_pulses_0x0905_low_byte = MagicMock()
-        ctrl.config_pulses_0x0906_high_byte = MagicMock()
+        ctrl._write_register_verified = MagicMock()
         ctrl.pos_step_motion_test = MagicMock()
         ctrl.delay_ms = MagicMock()
 

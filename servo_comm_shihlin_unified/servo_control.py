@@ -96,6 +96,14 @@ class PositionUnavailableError(ValueError):
 MAX_POSITIONING_PULSES = 2**31 - 1
 
 
+class DriveCommunicationError(RuntimeError):
+    """A write the drive did not acknowledge, or a setting that did not read
+    back as written, while setting up a move. Raised BEFORE the move is
+    started, so nothing moves (found on the real drive 2026-09-21: a move that
+    was "commanded" but never happened, with only a log warning). Not a
+    ValueError: the request was fine, the line was not."""
+
+
 class MoveOutOfRangeError(ValueError):
     """The requested move cannot be expressed in the drive's command-pulse
     register (0..2^31-1), or the angle is not a finite number. Nothing was
@@ -1349,6 +1357,60 @@ class ServoController:
             logger.error(f"Error during Modbus communication: {e}")
             return False
 
+    def _read_register_word(self, address):
+        """One 16-bit register (function 0x03) as an int, or None on no reply /
+        an unusable frame -- never a guess."""
+        try:
+            response = self.modbus_client.send_and_receive(
+                self.modbus_client.build_read_message(address, 1))
+            if response is None:
+                return None
+            return ModbusRTUResponse(response).get_value()
+        except Exception as e:
+            logger.error(f"Failed to read {hex(address)}: {e}")
+            return None
+
+    def _write_register_checked(self, address, value, what):
+        """Function-0x06 write that must be ACKNOWLEDGED (an echo with a valid
+        CRC), retried once. Raises DriveCommunicationError if it never is.
+        Only for idempotent settings -- never for a trigger (see
+        pos_motion_start_0x0907())."""
+        message = self.modbus_client.build_write_message(address, value)
+        detail = "no reply"
+        for attempt in (1, 2):
+            response = self.modbus_client.send_and_receive(message)
+            if response is None:
+                detail = "no reply"
+            else:
+                try:
+                    ModbusRTUResponse(response)  # validates CRC / exception frames
+                    return
+                except Exception as e:
+                    detail = str(e)
+            if attempt == 1:
+                self.delay_ms(50)
+        raise DriveCommunicationError(
+            f"Writing {what} ({hex(address)}) was not acknowledged by the drive ({detail}). "
+            "Nothing was started.")
+
+    def _write_register_verified(self, address, value, what, settle_ms=0):
+        """Checked write, then read the register back and confirm it holds
+        `value`; rewrites once if it does not. A lost or ignored write here would
+        otherwise run the PREVIOUS distance/speed (or, for the mode register,
+        never enter positioning mode at all)."""
+        got = None
+        for attempt in (1, 2):
+            self._write_register_checked(address, value, what)
+            if settle_ms:
+                self.delay_ms(settle_ms)
+            got = self._read_register_word(address)
+            if got == value:
+                return
+            if attempt == 1:
+                logger.warning(f"{what} ({hex(address)}) read back {got}, expected {value}; writing it again.")
+        raise DriveCommunicationError(
+            f"{what} ({hex(address)}) reads back {got} after being written {value}. Nothing was started.")
+
     def Enable_Position_Mode(self, enable=True):
         address = ServoControlRegistry.CTRL_MODE_SEL.value
         config_value = 0x0000
@@ -1405,9 +1467,17 @@ class ServoController:
         return response
 
     def pos_motion_start_0x0907(self, value):
+        """Starts the positioning move. A trigger, not a setting: it is sent
+        exactly once -- resending after a lost REPLY could start the move twice
+        -- and an unanswered one raises so the caller knows."""
         config_value = value
         message = self.modbus_client.build_write_message(0x0907, config_value)
-        self.modbus_client.send_and_receive(message)
+        response = self.modbus_client.send_and_receive(message)
+        if response is None:
+            raise DriveCommunicationError(
+                "The positioning start (0x0907) was not acknowledged by the drive; the move "
+                "may or may not have started.")
+        ModbusRTUResponse(response)
 
     def read_motor_feedback_pulses(self):
         """0x0000, 2 words, unsigned 32-bit that wraps every 2**32 pulses
@@ -1505,10 +1575,42 @@ class ServoController:
         # mode mid-move.
         self.start_continuous_reading()
         self.delay_ms(100)
-        if CW == True:
-            self.pos_motion_start_0x0907(1)
-        else:
-            self.pos_motion_start_0x0907(2)
+        try:
+            self._trigger_positioning_confirmed(1 if CW == True else 2)
+        except DriveCommunicationError:
+            # Do not leave the keep-alive running for a move that may never have
+            # started: without it the drive itself drops out of test mode within
+            # about a second, which also ends a move that DID start.
+            if self.reading_active:
+                self.stop_continuous_reading()
+            raise
+
+    # How long the encoder is watched after an unanswered 0x0907 to tell "the
+    # move started anyway" from "the drive never took the trigger".
+    TRIGGER_CONFIRM_WATCH_MS = 400
+
+    def _trigger_positioning_confirmed(self, value):
+        """Sends the 0x0907 start. If it goes unanswered, looks at the encoder
+        (the polling thread is running): moving means the move DID start and is
+        never resent; standing still means the drive did not take it, so it is
+        sent once more. Raises DriveCommunicationError if that one is unanswered
+        too. Measured on the real drive 2026-09-25 (COM4): 1 trigger in 20 got no
+        reply and the motor did not move -- without this the move was simply lost."""
+        with self.lock:
+            encoder_before = self.current_encoder
+        try:
+            self.pos_motion_start_0x0907(value)
+            return
+        except DriveCommunicationError as first_failure:
+            logger.warning(f"{first_failure} Checking whether the motor is moving.")
+        self.delay_ms(self.TRIGGER_CONFIRM_WATCH_MS)
+        with self.lock:
+            moved = abs(self.current_encoder - encoder_before)
+        if moved > STILL_THRESHOLD_PULSES:
+            logger.warning(f"The unanswered start did take effect (encoder moved {moved} pulses); not resending.")
+            return
+        logger.warning("The motor is not moving: the drive did not take the start. Sending it once more.")
+        self.pos_motion_start_0x0907(value)
 
     def pos_step_motion_by(self, target_pos: int = 0, acc_dec_time=5000, speed_rpm=10):
         # Route the live read through the same EncoderPulseTracker instance
@@ -1604,6 +1706,7 @@ class ServoController:
             # fix -- the original's equivalent block was dead code, wrapped
             # in a triple-quoted no-op). Keeps sub-pulse rounding error from
             # silently drifting in one direction over many small moves.
+            float_error_before = self.float_error
             if diff_angle > 0:
                 self.float_error += fractional_pulse
             else:
@@ -1621,7 +1724,14 @@ class ServoController:
 
             logger.info(f"Motion Pulses: {integer_pulse}, float_error: {self.float_error}")
 
-            self._execute_positioning(diff_angle, low_byte, high_byte, acc_dec_time, speed_rpm)
+            try:
+                self._execute_positioning(diff_angle, low_byte, high_byte, acc_dec_time, speed_rpm)
+            except DriveCommunicationError:
+                # Nothing was started: this move must not count in the pulse
+                # bookkeeping, or every failed attempt would skew the next one.
+                self.accumulate_pulse -= integer_pulse
+                self.float_error = float_error_before
+                raise
 
     def _execute_positioning(self, angle, low_byte, high_byte, acc_dec_time, speed_rpm):
         # Manual Step 1 for Positioning test (docs/en_manual.txt:10390),
@@ -1634,18 +1744,19 @@ class ServoController:
         # write would be accepted at the wire level but never take effect,
         # so the pulse/speed/trigger writes that follow would have no
         # effect either.
+        #
+        # Every setup write below is acknowledged (retried once) and READ BACK
+        # before the move is triggered; any that fails raises
+        # DriveCommunicationError with nothing started (found 2026-09-21: an
+        # unanswered write used to be ignored, and the move silently never
+        # happened -- or ran the previous distance/speed).
         self.clear_alarm_12()
         self.delay_ms(100)
-        self.Enable_Position_Mode(True)
-        self.delay_ms(100)
-        self.config_acc_dec_0x0902(acc_dec_time)
-        self.delay_ms(50)
-        self.config_speed_0x0903(speed_rpm)
-        self.delay_ms(50)
-        self.config_pulses_0x0905_low_byte(low_byte)
-        self.delay_ms(50)
-        self.config_pulses_0x0906_high_byte(high_byte)
-        self.delay_ms(50)
+        self._write_register_verified(0x0901, 4, "positioning-test mode", settle_ms=100)
+        self._write_register_verified(0x0902, acc_dec_time, "acceleration/deceleration time")
+        self._write_register_verified(0x0903, speed_rpm, "positioning speed")
+        self._write_register_verified(0x0905, low_byte, "command pulses (low word)")
+        self._write_register_verified(0x0906, high_byte, "command pulses (high word)")
 
         if angle > 0:
             logger.info("Running Servo CW")

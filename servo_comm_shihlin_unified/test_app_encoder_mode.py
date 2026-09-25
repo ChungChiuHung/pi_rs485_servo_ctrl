@@ -244,6 +244,13 @@ class HomeReminderAndSetHomeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("too far", response.get_json()["message"])
 
+    def test_home_reports_502_when_the_drive_does_not_acknowledge_a_setup_write(self):
+        self.ctrl.post_step_motion_by.side_effect = app_module.DriveCommunicationError(
+            "Writing positioning speed (0x903) was not acknowledged by the drive (no reply). Nothing was started.")
+        response = self.client.post("/action", json={"action": "Home"})
+        self.assertEqual(response.status_code, 502)
+        self.assertIn("Nothing was started", response.get_json()["message"])
+
     def test_home_moves_when_the_position_is_readable(self):
         response = self.client.post("/action", json={"action": "Home"})
         self.assertEqual(response.status_code, 200)

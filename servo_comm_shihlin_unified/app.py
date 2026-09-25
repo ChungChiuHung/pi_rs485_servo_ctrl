@@ -12,7 +12,7 @@ from flask import Flask, render_template, request, jsonify, Response, redirect
 
 from serial_port_manager import SerialPortManager
 from servo_control import (ServoController, PositionUnavailableError, MoveOutOfRangeError,
-                           is_alarm_active, alarm_name)
+                           DriveCommunicationError, is_alarm_active, alarm_name)
 from motor_profile import load_profiles, resolve_profile
 from hardware_lock import hardware_serialized, run_when_idle
 from input_validation import validate_int_range, validate_float_range
@@ -261,6 +261,10 @@ def json_response(f):
             if isinstance(result, (Response, tuple)):
                 return result
             return jsonify(result)
+        except DriveCommunicationError as e:
+            # A setup write the drive did not acknowledge: nothing was started.
+            logging.error(f"{request.path}: {e}")
+            return jsonify({"status": "error", "message": str(e)}), 502
         except Exception as e:
             traceback.print_exc()
             return jsonify({"error": "An error occurred", "details": str(e)}), 500
