@@ -1,5 +1,6 @@
 import hmac
 import ipaddress
+import json
 import os
 import time
 import logging
@@ -194,6 +195,7 @@ with _state_lock:
 _ENDPOINTS_WITHOUT_SERIAL = frozenset({
     'static', 'home', 'index', 'get_profile', 'set_profile', 'reconnect_serial',
     'get_status', 'get_activity_log', 'get_input_server_status', 'get_artnet_channels',
+    'get_autostart_config', 'clear_autostart_config',
 })
 
 
@@ -610,8 +612,15 @@ def _parse_artnet_options(payload):
     if not isinstance(dangerous, bool):
         return None, "enable_dangerous_channels must be true or false."
 
+    feedback_ip = payload.get("feedback_ip")
+    if feedback_ip is not None:
+        try:
+            ipaddress.IPv4Address(feedback_ip)
+        except ValueError:
+            return None, "feedback_ip must be an IPv4 address."
+
     options = {"listen_ip": listen_ip, "allowed_sources": list(sources),
-               "enable_dangerous_channels": dangerous}
+               "enable_dangerous_channels": dangerous, "feedback_ip": feedback_ip}
     for key, default, lo, hi, kind in (
             ("listen_port", 6454, 1, 65535, int),
             ("universe", DEFAULT_UNIVERSE, 0, 32767, int),
@@ -622,28 +631,79 @@ def _parse_artnet_options(payload):
         if error:
             return None, error
         options[key] = value
+
+    if feedback_ip is not None:
+        feedback_universe, error = number("feedback_universe", options["universe"] + 1, 0, 32767, int)
+        if error:
+            return None, error
+        if feedback_universe == options["universe"]:
+            return None, "feedback_universe must differ from universe."
+        options["feedback_universe"] = feedback_universe
+        feedback_port, error = number("feedback_port", 6454, 1, 65535, int)
+        if error:
+            return None, error
+        options["feedback_port"] = feedback_port
     return options, None
 
 
-@app.route('/server/start', methods=['POST'])
-def start_input_server():
-    """Starts OSC or Art-Net as the live continuous-motion input source.
-    Only one may run at a time -- both would otherwise be able to issue
-    conflicting motion commands to the same ServoController concurrently.
-    Does not itself send anything to the driver; it only registers event
-    listeners and starts a UDP listener thread. Real hardware I/O only
-    happens later, if and when a message actually arrives and a handler
-    calls a ServoController method -- same as any /action button click.
-    """
+# Persisted "last successful /server/start" request, so OSC/Art-Net can be
+# brought back up automatically at process start instead of requiring a
+# manual click/curl every boot (see _autostart_input_server() below). Same
+# category as motor_profiles.json/servo_config_*.json -- site-specific,
+# gitignored, not meant to be committed; the file simply may not exist.
+INPUT_SERVER_AUTOSTART_FILE = "input_server_autostart.json"
+
+
+def _load_autostart_config():
+    """The saved /server/start payload, or None if there isn't one / it's
+    unreadable. Never raises -- a corrupt or missing file just means no
+    autostart, not a startup failure."""
+    try:
+        with open(INPUT_SERVER_AUTOSTART_FILE) as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as e:
+        logging.warning(f"Could not read {INPUT_SERVER_AUTOSTART_FILE} ({e}); ignoring.")
+        return None
+    if not isinstance(config, dict) or config.get("type") not in ("osc", "artnet"):
+        logging.warning(f"{INPUT_SERVER_AUTOSTART_FILE} has an unexpected shape; ignoring.")
+        return None
+    return config
+
+
+def _save_autostart_config(payload: dict) -> None:
+    with open(INPUT_SERVER_AUTOSTART_FILE, "w") as f:
+        json.dump(payload, f, indent=2)
+    logging.info(f"Saved autostart config ({payload.get('type')}) to {INPUT_SERVER_AUTOSTART_FILE}.")
+
+
+def _clear_autostart_config() -> bool:
+    """True if a file was actually removed."""
+    try:
+        os.remove(INPUT_SERVER_AUTOSTART_FILE)
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def _do_start_input_server(payload: dict):
+    """Shared body of POST /server/start, factored out so the same logic
+    can also run at process startup (_autostart_input_server(), which has
+    no Flask request to hand this a payload from). Returns (body_dict,
+    status_code) -- never raises. Does not itself send anything to the
+    driver; it only registers event listeners and starts a UDP listener
+    thread. Real hardware I/O only happens later, if and when a message
+    actually arrives and a handler calls a ServoController method -- same
+    as any /action button click."""
     global active_input_server, _input_server_instance
 
     if active_input_server is not None:
-        return jsonify({
+        return {
             "status": "error",
             "message": f"'{active_input_server}' server is already running. Stop it first.",
-        }), 409
+        }, 409
 
-    payload = request.get_json(silent=True) or {}
     server_type = payload.get("type")
 
     if server_type == "osc":
@@ -662,21 +722,21 @@ def start_input_server():
                 server.start()
             except Exception as e:
                 logging.error(f"Failed to start OSC server: {e}")
-                return jsonify({"status": "error", "message": str(e)}), 503
+                return {"status": "error", "message": str(e)}, 503
             _input_server_instance = server
             active_input_server = "osc"
 
-        return jsonify({
+        return {
             "status": "success",
             "active_input_server": "osc",
             "listen_ip": listen_ip,
             "listen_port": listen_port,
-        })
+        }, 200
 
     elif server_type == "artnet":
         options, error = _parse_artnet_options(payload)
         if error:
-            return jsonify({"status": "error", "message": error}), 400
+            return {"status": "error", "message": error}, 400
         listen_ip = options["listen_ip"]
         listen_port = options["listen_port"]
         universe = options["universe"]
@@ -687,11 +747,11 @@ def start_input_server():
                 server.start()
             except Exception as e:
                 logging.error(f"Failed to start Art-Net server: {e}")
-                return jsonify({"status": "error", "message": str(e)}), 503
+                return {"status": "error", "message": str(e)}, 503
             _input_server_instance = server
             active_input_server = "artnet"
 
-        return jsonify({
+        return {
             "status": "success",
             "active_input_server": "artnet",
             "listen_ip": listen_ip,
@@ -700,13 +760,70 @@ def start_input_server():
             "signal_timeout_s": options["signal_timeout_s"],
             "allowed_sources": sorted(options["allowed_sources"]),
             "enable_dangerous_channels": options["enable_dangerous_channels"],
-        })
+            "feedback_ip": options["feedback_ip"],
+            "feedback_universe": options.get("feedback_universe"),
+            "feedback_port": options.get("feedback_port"),
+        }, 200
 
     else:
-        return jsonify({
+        return {
             "status": "error",
             "message": f"Unknown server type: {server_type!r}. Expected 'osc' or 'artnet'.",
-        }), 400
+        }, 400
+
+
+def _autostart_input_server() -> None:
+    """Called once at process start (see the __main__ block) -- brings back
+    up whichever OSC/Art-Net config was last saved via /server/start's
+    autostart flag, if any. Requires a live serial connection (same
+    precondition as a manual /server/start click); silently does nothing
+    if there's no saved config, no connection, or the start itself fails
+    (logged, not raised -- a bad saved config must not stop the app from
+    booting)."""
+    if servo_ctrller is None:
+        return
+    config = _load_autostart_config()
+    if config is None:
+        return
+    with _state_lock:
+        body, status = _do_start_input_server(config)
+    if status == 200:
+        logging.info(f"Autostarted {config.get('type')} input server from {INPUT_SERVER_AUTOSTART_FILE}.")
+    else:
+        logging.warning(f"Autostart of {config.get('type')} input server failed: {body.get('message')}")
+
+
+@app.route('/server/start', methods=['POST'])
+def start_input_server():
+    """Starts OSC or Art-Net as the live continuous-motion input source.
+    Only one may run at a time -- both would otherwise be able to issue
+    conflicting motion commands to the same ServoController concurrently.
+    See _do_start_input_server() for what actually happens. Pass
+    `"autostart": true` in the body to also save this exact request (on
+    success only) so _autostart_input_server() brings it back up
+    automatically the next time the app starts -- see GET/POST
+    /server/autostart to inspect or clear what's saved."""
+    payload = request.get_json(silent=True) or {}
+    body, status = _do_start_input_server(payload)
+    if status == 200 and payload.get("autostart"):
+        try:
+            _save_autostart_config(payload)
+        except OSError as e:
+            logging.warning(f"Could not save autostart config: {e}")
+    return jsonify(body), status
+
+
+@app.route('/server/autostart', methods=['GET'])
+def get_autostart_config():
+    """Read-only: the currently saved autostart config (or null), for the
+    web UI to show/prefill. Never touches the driver."""
+    return jsonify({"config": _load_autostart_config()})
+
+
+@app.route('/server/autostart', methods=['DELETE'])
+def clear_autostart_config():
+    removed = _clear_autostart_config()
+    return jsonify({"status": "success", "removed": removed})
 
 
 @app.route('/server/stop', methods=['POST'])
@@ -1036,6 +1153,9 @@ def handle_action():
 
 if __name__ == "__main__":
     threading.Thread(target=_eeprom_guard_loop, name="eeprom-guard", daemon=True).start()
+    # Same caveat as the EEPROM guard thread above: only runs when this file
+    # is executed directly (`python app.py`), not under gunicorn/`flask run`.
+    _autostart_input_server()
     web_host = os.getenv('SERVO_WEB_HOST', '0.0.0.0')
     web_port = int(os.getenv('SERVO_WEB_PORT', '5000'))
     # Flask's debug mode exposes an interactive debugger (arbitrary code

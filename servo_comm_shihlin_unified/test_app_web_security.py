@@ -5,6 +5,9 @@ SerialPortManager is stubbed first (same approach as test_app_encoder_mode.py);
 nothing here touches hardware or opens a UDP socket.
 """
 import base64
+import json
+import os
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -130,6 +133,64 @@ class ArtNetStartOptionsTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
         self.server_cls.assert_not_called()
 
+    def test_feedback_is_off_by_default(self):
+        body = self.start().get_json()
+        kwargs = self.server_cls.call_args.kwargs
+        self.assertIsNone(kwargs["feedback_ip"])
+        self.assertNotIn("feedback_universe", kwargs)
+        self.assertIsNone(body["feedback_ip"])
+        self.assertIsNone(body["feedback_universe"])
+
+    def test_feedback_ip_is_passed_through_with_default_universe(self):
+        response = self.start(feedback_ip="10.12.1.164")
+        self.assertEqual(response.status_code, 200)
+        kwargs = self.server_cls.call_args.kwargs
+        self.assertEqual(kwargs["feedback_ip"], "10.12.1.164")
+        self.assertEqual(kwargs["feedback_universe"], 2)  # universe (default 1) + 1
+        body = response.get_json()
+        self.assertEqual(body["feedback_ip"], "10.12.1.164")
+        self.assertEqual(body["feedback_universe"], 2)
+
+    def test_feedback_universe_can_be_given_explicitly(self):
+        self.start(feedback_ip="10.12.1.164", universe=1, feedback_universe=5)
+        kwargs = self.server_cls.call_args.kwargs
+        self.assertEqual(kwargs["feedback_universe"], 5)
+
+    def test_feedback_universe_equal_to_universe_is_rejected(self):
+        response = self.start(feedback_ip="10.12.1.164", universe=3, feedback_universe=3)
+        self.assertEqual(response.status_code, 400)
+        self.server_cls.assert_not_called()
+
+    def test_invalid_feedback_ip_is_rejected(self):
+        for bad_ip in ("not-an-ip", "10.0.0.999", "::1"):
+            with self.subTest(feedback_ip=bad_ip):
+                response = self.start(feedback_ip=bad_ip)
+                self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        self.server_cls.assert_not_called()
+
+    def test_feedback_port_defaults_to_6454(self):
+        response = self.start(feedback_ip="10.12.1.164")
+        kwargs = self.server_cls.call_args.kwargs
+        self.assertEqual(kwargs["feedback_port"], 6454)
+        self.assertEqual(response.get_json()["feedback_port"], 6454)
+
+    def test_feedback_port_can_be_overridden(self):
+        self.start(feedback_ip="10.12.1.164", feedback_port=7777)
+        kwargs = self.server_cls.call_args.kwargs
+        self.assertEqual(kwargs["feedback_port"], 7777)
+
+    def test_feedback_port_out_of_range_is_rejected(self):
+        for bad_port in (0, 70000):
+            with self.subTest(feedback_port=bad_port):
+                response = self.start(feedback_ip="10.12.1.164", feedback_port=bad_port)
+                self.assertEqual(response.status_code, 400)
+        self.server_cls.assert_not_called()
+
+    def test_feedback_port_is_absent_when_feedback_is_off(self):
+        self.start()
+        kwargs = self.server_cls.call_args.kwargs
+        self.assertNotIn("feedback_port", kwargs)
+
     def test_channel_monitor_endpoint_includes_receive_stats(self):
         instance = MagicMock()
         instance.get_channel_snapshot.return_value = None
@@ -153,6 +214,104 @@ class ArtNetStartOptionsTests(unittest.TestCase):
         self.assertIn('id="artnet_universe" value="1"', html)
         # channels 10-12 must not be pre-ticked
         self.assertNotIn('id="artnet_dangerous_channels" checked', html)
+
+
+class AutostartTests(unittest.TestCase):
+    """POST /server/start's `autostart` flag, GET/DELETE /server/autostart,
+    and _autostart_input_server() (called once at process start -- see
+    __main__). Each test gets its own throwaway file path so nothing here
+    touches the real input_server_autostart.json."""
+
+    def setUp(self):
+        self.client = app_module.app.test_client()
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp_dir.cleanup)
+        self.autostart_file = os.path.join(self.tmp_dir.name, "input_server_autostart.json")
+        self.server_cls = MagicMock()
+        self.server_cls.return_value.is_running = True
+        patches = [
+            patch.object(app_module, "ArtNetInputServer", self.server_cls),
+            patch.object(app_module, "OSCInputServer", self.server_cls),
+            patch.object(app_module, "INPUT_SERVER_AUTOSTART_FILE", self.autostart_file),
+            patch.object(app_module, "active_input_server", None),
+            patch.object(app_module, "_input_server_instance", None),
+            patch.object(app_module, "servo_ctrller", MagicMock()),
+            patch.object(app_module, "WEB_PASSWORD", ""),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_autostart_false_by_default_saves_nothing(self):
+        response = self.client.post("/server/start", json={"type": "artnet"})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(os.path.exists(self.autostart_file))
+
+    def test_autostart_true_on_success_saves_the_exact_payload(self):
+        payload = {"type": "artnet", "universe": 3, "autostart": True}
+        response = self.client.post("/server/start", json=payload)
+        self.assertEqual(response.status_code, 200)
+        with open(self.autostart_file) as f:
+            saved = json.load(f)
+        self.assertEqual(saved, payload)
+
+    def test_autostart_true_on_failure_saves_nothing(self):
+        response = self.client.post("/server/start", json={"type": "artnet", "universe": -1, "autostart": True})
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(os.path.exists(self.autostart_file))
+
+    def test_get_autostart_config_reports_null_when_none_saved(self):
+        body = self.client.get("/server/autostart").get_json()
+        self.assertIsNone(body["config"])
+
+    def test_get_autostart_config_reports_the_saved_payload(self):
+        self.client.post("/server/start", json={"type": "artnet", "autostart": True})
+        body = self.client.get("/server/autostart").get_json()
+        self.assertEqual(body["config"]["type"], "artnet")
+
+    def test_delete_autostart_config_removes_it(self):
+        self.client.post("/server/start", json={"type": "artnet", "autostart": True})
+        self.assertTrue(os.path.exists(self.autostart_file))
+        response = self.client.delete("/server/autostart")
+        self.assertEqual(response.get_json()["removed"], True)
+        self.assertFalse(os.path.exists(self.autostart_file))
+
+    def test_delete_autostart_config_when_nothing_saved_reports_false(self):
+        response = self.client.delete("/server/autostart")
+        self.assertEqual(response.get_json()["removed"], False)
+
+    def test_autostart_config_endpoints_work_without_a_serial_connection(self):
+        with patch.object(app_module, "servo_ctrller", None):
+            self.assertEqual(self.client.get("/server/autostart").status_code, 200)
+            self.assertEqual(self.client.delete("/server/autostart").status_code, 200)
+
+    def test_autostart_input_server_starts_the_saved_config(self):
+        self.client.post("/server/start", json={"type": "artnet", "universe": 5, "autostart": True})
+        self.client.post("/server/stop")  # undo the start above -- test the bootstrap path itself next
+        self.server_cls.reset_mock()
+
+        app_module._autostart_input_server()
+
+        self.assertEqual(self.server_cls.call_args.kwargs["universe"], 5)
+        self.assertEqual(app_module.active_input_server, "artnet")
+
+    def test_autostart_input_server_does_nothing_without_a_saved_config(self):
+        app_module._autostart_input_server()
+        self.server_cls.assert_not_called()
+        self.assertIsNone(app_module.active_input_server)
+
+    def test_autostart_input_server_does_nothing_without_a_connection(self):
+        with open(self.autostart_file, "w") as f:
+            json.dump({"type": "artnet"}, f)
+        with patch.object(app_module, "servo_ctrller", None):
+            app_module._autostart_input_server()
+        self.server_cls.assert_not_called()
+
+    def test_autostart_input_server_logs_and_survives_a_bad_saved_config(self):
+        with open(self.autostart_file, "w") as f:
+            f.write("not valid json")
+        app_module._autostart_input_server()  # must not raise
+        self.server_cls.assert_not_called()
 
 
 if __name__ == "__main__":

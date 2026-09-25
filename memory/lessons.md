@@ -384,3 +384,193 @@ a power cycle. C2-C4, C6-C10 in `docs/servo_comm_shihlin_merge_design.md`
 degraded behavior, moving the shaft while powered off, JOG coexistence,
 switching back to PA28=0) are still unverified on real hardware — only
 unit-tested.
+
+## [2026-09-24] OSC/Art-Net status-feedback verified live; found a real bug in continuous-JOG-start angle reporting (absolute mode)
+**Relates to:** `servo_comm_shihlin_unified/artnet_server.py`/`osc_server.py`
+(the 2026-09-24 status-feedback feature), `servo_control.py`
+(`start_continuous_reading()`/`_read_continuously()`/`_encoder_and_angle_for()`),
+design doc §7.E1 (the related, already-fixed bug)
+**What happened:** User approved real-hardware Phase 3 verification (on-site,
+watching) of the newly-added OSC/Art-Net status-feedback feature, specifically
+Art-Net channels 10-12's immediate-`_send_feedback()` fix, plus Modbus-traffic
+timing during a feedback-enabled continuous move. Ran three new `verify_*.py`
+scripts (kept in the repo) against the real drive (`/dev/ttyUSB0`, RTU,
+absolute mode, PA28=1):
+- **OSC feedback**: servo on/off, a real ~5deg move and back, set_home, and
+  clear-alarm all produced the documented feedback messages
+  (`/servo_on`, `/set_point`, `/moving`, `/motion_complete`,
+  `/set_home_position`, `/servo_off`, `/clear`) at a local UDP listener.
+  `/pr_step_path` and `/reset_initial_abs_position` were deliberately NOT
+  triggered for real (PR mode unvalidated per design doc §8; PA29 rewrites
+  the drive's absolute calibration reference) -- their feedback-echo logic
+  was already covered by mocked unit tests, so only delivery needed proving,
+  which the other handlers already did. All checks passed.
+- **Art-Net channels 10-12**: back home (real ~2.7deg move), set home
+  (persisted), and reset-initial-abs-position (handler call verified,
+  `write_PA29_Initial_Abs_Pos()` itself mocked -- same reasoning as above)
+  all produced immediate feedback packets, confirming the 2026-09-24 fix
+  (adding `_send_feedback()` calls after these three handlers) works live.
+  All checks passed.
+- **Modbus traffic/timing**: a 10rpm continuous JOG with feedback enabled
+  produced feedback packets at 127-143ms intervals (vs. the loop's nominal
+  100ms), consistent with the documented "roughly doubles Modbus traffic"
+  effect from channel 4's fresh `read_current_alarm_code()` call on every
+  poll -- well under the drive's 1s test-mode keep-alive ceiling, no
+  CRC/timeout failures during that window. One unrelated transient
+  "No response received" / retry happened ~600ms after the back-home
+  positioning command was issued while the continuous-reading loop's own
+  poll was in flight -- self-recovered in ~120ms via the loop's existing
+  retry logic; looks like an ordinary read/write collision at a command
+  handoff, not something caused by the feedback feature.
+
+**Bug found (pre-existing, not part of the 2026-09-24 feedback change):**
+starting continuous JOG (`start_continuous_reading()`, e.g. via
+`enable_speed_ctrl()`/Art-Net channel 1/OSC `/set_continous_motion`) as the
+*first* action in a process, in absolute mode, before any discrete move or
+explicit `_refresh_current_angle_from_hardware()` call, reports a WRONG
+`current_angle` for the duration of that JOG run. Root cause:
+`_encoder_and_angle_for()` (used by `_read_continuously()`'s poll loop) only
+uses the correct absolute home reference (`abs_home_pos_absolute`) when
+`self._absolute_offset` is already set -- and that field is only populated
+by `_refresh_current_angle_from_hardware()` or `pos_step_motion_by()`
+(part of the §7.E1 fix), neither of which `start_continuous_reading()`
+calls. Until something else sets it, `_encoder_and_angle_for()` silently
+falls back to the *incremental*-scale `self.abs_home_pos` (a stale/unused
+value from before the PA28=1 switch -- currently `4247289155` in
+`servo_config_shihlin_400W.json`, left over and never cleaned up), producing
+a plausible-looking but wrong angle. Confirmed live: after servo-on with no
+prior move, the real position was ~-2.7deg but the continuous loop's first
+several polls reported ~19.5deg, decaying toward the true value only because
+the motor was physically rotating during the JOG -- not because the offset
+ever got corrected. `app.py` doesn't call `_refresh_current_angle_from_hardware()`
+at connect time either (only `refresh_encoder_mode()`, which reads PA28 but
+not position), so this is a real field-facing gap, not just a test-script
+artifact: any user whose first action after an app restart is to start JOG
+(rather than a discrete move) would see/broadcast a wrong angle. The new
+Art-Net/OSC feedback feature makes this externally visible (channels 1-2)
+where before it was only an internal display quirk.
+**Lesson:** A fix scoped to "the discrete-move path" (§7.E1's
+`post_step_motion_by()`/`pos_step_motion_by()` refresh) doesn't
+automatically cover every other path that reads position in the same mode --
+the continuous-reading loop reads `current_angle` through a completely
+different function (`_encoder_and_angle_for()`) with its own fallback
+behavior. When a bug's root cause is "a piece of state defaults to None/stale
+until some specific call sets it," audit *every* caller that depends on that
+state, not just the one the original bug report came through.
+**Status:** fixed and verified live same day (2026-09-24), after explicit
+user confirmation to proceed while the rig was still connected. Fix: gated
+inside `start_continuous_reading()` (right after the "already active"
+early-return, before the thread is spawned) --
+`if self.absolute_mode and self._absolute_offset is None:
+self._refresh_current_angle_from_hardware()` (logs a warning and still
+proceeds to start on a failed refresh; JOG is speed-based, not
+position-based, so a stale angle for one extra session isn't unsafe).
+Placed inside `start_continuous_reading()` itself rather than only in
+`enable_speed_ctrl()`, because a second, separate caller
+(`app.py`'s raw `"enablePosMode"` action) also starts continuous reading
+directly without a prior refresh -- putting the fix at the one shared
+choke point covers both instead of requiring the same patch twice.
+**First attempt regressed the test suite** (`start_servo_control.py`
+discover hung indefinitely, confirmed via bisection down to
+`TestSoftwareMotionCompleteDetection`): the first version called
+`_refresh_current_angle_from_hardware()` **unconditionally** on every fresh
+start, which silently consumes one value from
+`read_motor_feedback_pulses()` -- tests that feed it a fixed
+`side_effect` sequence (`[0, settled_value, settled_value, ...]`, simulating
+"moved once then held still") starting right before
+`start_continuous_reading()` had that leading value eaten before the
+background thread's own loop ever saw it, breaking the encoder-moved
+detection those tests depend on and leaving `auto_stop_on_stillness=False`
+sessions (and, transitively, `auto_stop_on_stillness=True` sessions whose
+completion never got detected either) running forever with no natural
+throttling (`delay_ms` mocked to a no-op in those tests) -- one leaked
+background thread from one failed/never-completing test then starved the
+rest of the entire suite via CPU/lock contention. Scoping the guard to
+`absolute_mode and _absolute_offset is None` fixed it: it's a no-op for
+every incremental-mode test (the overwhelming majority, since absolute mode
+is newer) and a no-op whenever the offset is already known, so it only ever
+fires in the one scenario that actually needs it. **Lesson (compounding the
+one above):** a fix's *placement* matters as much as its logic -- putting a
+new synchronous side-effecting call at a shared entry point silently widens
+its blast radius to every caller, including test harnesses that assumed
+that entry point was side-effect-free beyond what they explicitly mocked.
+Guard defensively (only run when actually needed) rather than
+unconditionally "to be safe," especially at a choke point with many
+callers. 3 new regression tests added
+(`TestAbsoluteModePositioning.test_start_continuous_reading_refreshes_absolute_offset_first`
+/ `..._skips_refresh_when_offset_already_known` /
+`..._does_not_refresh_in_incremental_mode`) covering: the fix fires and
+correctly sets `_absolute_offset` in absolute mode; it's skipped when the
+offset is already known; it's skipped entirely in incremental mode. Full
+suite 558/558 passing (555 + 3 new).
+**Live re-verification** (`verify_phase3_jog_start_angle_fix.py`, kept in
+the repo): reproduced the exact failure scenario -- a fresh
+`ServoController`, `refresh_encoder_mode()` only (mirrors `app.py`'s
+connect sequence), then continuous JOG as the literal first action, via
+the real Art-Net feedback path. `_absolute_offset` was confirmed `None`
+right after connect (the bug's precondition still exists on its own); the
+**first** feedback packet reported `0.01deg` against an independently-read
+true baseline of `0.0061deg` (0.0039deg difference, noise-level) --
+compare to the original ~22deg error (19.5deg reported vs. ~-2.7deg real).
+Rig left in a safe resting state afterward: alarm clear (0xFF), PA31=0,
+servo off, current_angle -1.3836deg (a small residual from the brief
+verification JOG, not re-homed since it's well within normal range).
+Gotcha #9 (documenting the bug as a workaround-required limitation) was
+added to `OSC_ARTNET_GUIDE.md` earlier the same day and has been removed
+now that it's fixed; `CLAUDE.md` §3/§6 updated to match.
+
+## [2026-09-25] Live test of every OSC address: two bugs, and /cancel_loop drops Servo ON
+**Relates to:** `servo_comm_shihlin_unified/osc_server.py` (`/servo` dedupe,
+`/cancel_loop`), `servo_control.py` (`initial_abs_home()`),
+`OSC_ARTNET_GUIDE.md` Gotcha 9
+**What happened:** User asked for every OSC address to be exercised against the
+running server (real UDP to :5005, effects read back through `/status` and
+`/log`; user on-site). All 10 addresses worked (set_point landed within
+0.001deg, back_home within 0.001deg, JOG start/stop/reversal-refusal/live
+speed nudge all correct, bad args logged without crashing). Two defects:
+1. **`/servo` dedupe went stale.** `_check_duplicated()` only compared the new
+   value with the last OSC argument. `/cancel_loop` (leaving JOG) makes the
+   *drive* drop Servo ON, so `/servo 1.0` afterwards was ignored as a
+   duplicate and the servo stayed off. Fix: a repeat is re-checked against
+   `read_servo_state()` (throttled to once per `SERVO_STATE_RECHECK_S` = 1 s so
+   a frame-rate resend never becomes a serial read per frame; an unreadable
+   state stays suppressed), and `/cancel_loop` clears the cached value. 7
+   regression tests (`TestServoDuplicateFilterFollowsHardware`).
+2. **`/back_home` logged a negative "Estimate Timeout"** for moves in the
+   negative direction (`angle_rotated` is signed). Fix: `abs()`. Regression
+   test in `TestAbsoluteModePositioning`. **Not fixed, deliberately:** the
+   estimate ignores the gear ratio (~30x short at 30:1), so "Operation timed
+   out" still logs for every real move. Making it accurate would make the
+   caller block for the whole move (web UI busy lock, Art-Net receive thread,
+   OSC handler thread) -- a behavior change that needs its own decision.
+**Also learned:** `/cancel_loop` turns Servo OFF as a hardware side effect;
+documented for frontend authors (Gotcha 9).
+**Test-harness lesson:** my first `settle()` helper returned as soon as
+`reading_active` was False, which is also true *before* the move thread
+starts, so early "landed" readings were mid-move and the next command
+interrupted them. Wait for the start edge, then for the idle edge.
+**Side effect of the test:** `/set_home` was run for real and moved the saved
+home by 3,992 pulses (0.011deg). The config file was restored byte-for-byte
+from a pre-test backup (`abs_home_pos_absolute` = -42289741); the running app
+kept the shifted value in memory until it is restarted.
+**Status:** fixed; suite green (see commit). Feedback packets to TouchDesigner
+(192.168.0.101:5008) were not observable from the Pi side -- the user is
+verifying those.
+
+## [2026-09-25] Known behavior: `/back_home` always logs a premature "Operation timed out"
+**Relates to:** `servo_control.py` `initial_abs_home()`, the entry above
+**What:** the wait timeout is `1.2 * (abs(angle)/360) * (60/12)` -- it treats the
+*output* angle as motor-shaft degrees, so it is roughly `gear_ratio` (30x for
+`shihlin_400W`) too short. Every real `/back_home` (also web HOME and Art-Net
+channel 10) therefore logs "Timeout reached while waiting for stop process" /
+"Operation timed out" almost immediately and returns False, even though the
+move runs to completion on the drive and the background reader reports
+`/motion_complete` normally (seen live: 80deg move, ~22 s, landed within
+0.001deg). Also clears `on_initial_home` early, so a second `/back_home`
+during the move is not rejected.
+**Decision (user, 2026-09-25):** leave it. A correct timeout would make the
+caller block for the whole move (web UI busy lock, Art-Net receive thread, OSC
+handler thread), which is worse than a spurious warning. Treat the warning as
+noise; rely on `/motion_complete` (or `reading_active` in `/status`) to know
+when the move finished.
+**Status:** accepted limitation, not a bug to chase.

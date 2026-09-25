@@ -369,6 +369,38 @@ class ServoController:
                 logging.info("Continuous reading already active; refreshed session state.")
                 return
 
+            # In absolute mode, self._absolute_offset must be set before the
+            # polling loop starts -- otherwise _encoder_and_angle_for()
+            # silently falls back to the stale incremental-scale
+            # abs_home_pos until some OTHER call happens to set it,
+            # reporting a wrong angle for the whole session (confirmed live
+            # 2026-09-24 via a JOG started as the first action after
+            # connect -- see memory/lessons.md). The discrete-move path
+            # (pos_step_motion_by()) already does an equivalent fresh read
+            # of its own before ever reaching this method; this covers
+            # every other caller that starts continuous reading directly
+            # (JOG's enable_speed_ctrl(), the web UI's raw "enablePosMode"
+            # action). Gated on absolute_mode and _absolute_offset is None
+            # so this is a no-op in incremental mode (where the fallback IS
+            # the correct value, not a bug) and does not consume an extra
+            # read when the offset is already known -- both matter for
+            # tests that feed read_motor_feedback_pulses() a fixed
+            # side_effect sequence starting right before this call; an
+            # unconditional extra read here would silently eat the first
+            # item and desync the sequence the polling loop actually sees.
+            # A failed refresh doesn't block starting -- JOG is speed-based,
+            # not position-based, so there's nothing unsafe about
+            # proceeding; the loop's own next successful poll can still
+            # self-correct once _absolute_offset does get set some other
+            # way, same as before this fix.
+            if self.absolute_mode and self._absolute_offset is None:
+                if not self._refresh_current_angle_from_hardware():
+                    logging.warning(
+                        "start_continuous_reading: could not refresh position first; "
+                        "continuing anyway -- reported angles may be wrong (absolute "
+                        "mode) until something else sets self._absolute_offset."
+                    )
+
             self.read_thread_stop_event.clear()
             # Fresh motion-complete detection state per reading session --
             # see _read_continuously()'s comment.
@@ -1993,7 +2025,9 @@ class ServoController:
             angle_rotated = self.pos_step_motion_by(home_pos, 5000, speed_rpm)
 
             time_per_revolution = 60 / speed_rpm
-            timeout = 1.2 * (angle_rotated / 360) * time_per_revolution
+            # abs(): angle_rotated is signed (negative = the CW direction),
+            # and a negative timeout logged a nonsense estimate.
+            timeout = 1.2 * (abs(angle_rotated) / 360) * time_per_revolution
 
             logging.info(f"Estimate Timeout: {timeout} seconds for angle")
 

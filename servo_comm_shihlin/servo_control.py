@@ -124,7 +124,11 @@ class ServoController:
         # incremental encoder counter restarts at every drive power-on, so a
         # home saved by an earlier run may not match the shaft.
         self.home_set_since_start = False
-        self._event_listeners = {"on_motion_completed": [], "on_moving": []}
+        # on_alarm is notified only from existing on-demand alarm reads (see
+        # read_current_alarm_code()) -- deliberately not backed by a new
+        # polling thread; this board (Pi 3 B) has no CPU headroom to spare
+        # for an always-on alarm poll (see CLAUDE.md §2).
+        self._event_listeners = {"on_motion_completed": [], "on_moving": [], "on_alarm": []}
         # None/0 = not currently running in either direction (reversal guard
         # in speed_ctrl_action() allows the next action freely); 1/2 =
         # currently commanded (whichever this drive's speed_ctrl_action()
@@ -232,7 +236,7 @@ class ServoController:
             try:
                 callback(*args, **kwargs)
             except Exception as e:
-                logger.error(f"Error in event listener '{event}': {e}")
+                logger.error(f"Error in event listener '{event_name}': {e}")
 
     def delay_ms(self, milliseconds: int) -> None:
         time.sleep(milliseconds / 1000.0)
@@ -570,10 +574,15 @@ class ServoController:
             logger.error("No response reading current alarm code (0x0100).")
             return None
         try:
-            return ModbusResponse(response).get_value()
+            code = ModbusResponse(response).get_value()
         except Exception as e:
             logger.error(f"Failed to parse current-alarm response: {e}")
             return None
+        # Piggyback on this existing on-demand read rather than a new poll --
+        # every caller (clear-alarm endpoint, JOG/positioning preconditions,
+        # etc.) already does this round trip.
+        self._notify_event_listeners("on_alarm", code)
+        return code
 
     def clear_alarm_via_register(self):
         """Official 'Alarm clearance' register (0x0130): writing 0x1EA5

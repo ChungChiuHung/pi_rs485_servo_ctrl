@@ -51,9 +51,33 @@ need it.
 Default listen port: **5005** (UDP). Every address below is handled by
 `OSCInputServer` in `osc_server.py`.
 
+### Configuring feedback (status output)
+
+Feedback is off by default and uses a **separate UDP socket from the
+command-listen socket above** — `listen_port` (default 5005) is where this
+server *receives* commands; `feedback_port` is where it *sends* status
+messages, and the two are unrelated. **There is no default feedback port**:
+both `feedback_ip` and `feedback_port` must be given together in the
+`/server/start` body, or feedback stays disabled (command-only, silent).
+`feedback_port` should be set to whatever port your receiver (e.g.
+TouchDesigner's OSC In DAT/CHOP) is actually listening on — it does not need
+to match this server's own `listen_port`.
+
+```bash
+curl -X POST http://<HOST>:5000/server/start \
+     -H "Content-Type: application/json" \
+     -d '{"type": "osc", "listen_port": 5005, "feedback_ip": "10.12.1.164", "feedback_port": 5008}'
+```
+
+Since this is plain UDP, sending starts as soon as feedback is enabled
+regardless of whether anything is actually listening at `feedback_ip:feedback_port`
+— an unreachable or wrong destination fails silently (no error surfaced back
+to the command sender), so double-check the address/port against your
+receiving application before relying on it.
+
 | Address | Arguments | Action | Feedback sent |
 |---|---|---|---|
-| `/servo` | `data` (float): `1.0` = on, `0.0` = off | `servo_on()` / `servo_off()` | `/servo_on "on"` / `/servo_off "off"` |
+| `/servo` | `data` (float): `1.0` = on, `0.0` = off | `servo_on()` / `servo_off()`. A repeated value is ignored while the drive already matches it (see Gotcha 9) | `/servo_on "on"` / `/servo_off "off"` |
 | `/clear` | — | `clear_alarm_12()` | `/clear "cleared"` |
 | `/set_point` | `angle` (deg, absolute), `acc_time` (ms), `rpm` | `post_step_motion_by()` — a real move | `/set_point angle acc_time rpm` |
 | `/back_home` | — | `initial_abs_home()` — a real move back to the saved home position | `/back_home "back_home"` |
@@ -62,7 +86,7 @@ Default listen port: **5005** (UDP). Every address below is handled by
 | `/set_continous_motion` | `speed_rpm`, `acc_time` (ms), `enable` (bool) | Arms/disarms continuous JOG mode (does **not** move by itself) | `/continuous_mode_start speed_rpm acc_time` |
 | `/ctrl_continuous_motion` | `action` (`"start"`/`"stop"`), `CW_CCW` (`"CW"`/`"CCW"`) | Starts/stops continuous rotation (requires `/set_continous_motion` with `enable=true` first) | `/continuous_mode_start CW_CCW` / `/continuous_mode_stop "stop"` |
 | `/jog_speed_adjust` | `delta_rpm` (int, e.g. `1`/`-1`) | `change_jog_speed_by()` — **nudges** the running JOG speed by this amount (requires JOG mode already armed via `/set_continous_motion`); raises/logs an error instead of moving if it isn't | `/jog_speed_adjust <new speed_rpm>` |
-| `/cancel_loop` | — | Stops continuous reading **and** explicitly exits whatever test mode is active | `/cancel_loop <current_angle>` |
+| `/cancel_loop` | — | Stops continuous reading **and** explicitly exits whatever test mode is active. **Side effect: the drive drops Servo ON when it leaves JOG mode** (see Gotcha 9) | `/cancel_loop <current_angle>` |
 
 Two more feedback-only messages fire automatically while a move is in
 progress, regardless of which address triggered it:
@@ -118,6 +142,63 @@ layout is a project-specific convention, not an Art-Net/DMX standard** —
 adjust the constructor args (`max_speed_rpm`, `acc_time`) to fit your
 actual console, or repurpose the
 channel numbers if they conflict with something else in your universe.
+
+### Status feedback (optional, off by default)
+
+`ArtNetInputServer` can send its own outbound ArtDMX packet reporting
+angle/servo/motion state, separate from the command-input universe above.
+Enable it with `feedback_ip` (+ optionally `feedback_universe`) in the
+`/server/start` body:
+
+```bash
+curl -X POST http://<HOST>:5000/server/start \
+     -H "Content-Type: application/json" \
+     -d '{"type": "artnet", "universe": 1, "feedback_ip": "10.12.1.164", "feedback_universe": 2}'
+```
+
+- **Off by default.** `feedback_universe` defaults to `universe + 1` if
+  `feedback_ip` is given without it. It must differ from `universe` — the
+  server refuses to start otherwise: a node both reading and writing the
+  same universe risks reacting to its own broadcast as if it were a new
+  command, and confuses any console reading that universe back.
+- Sent to UDP port 6454 by default (the Art-Net standard, same as the
+  command-input side, just a different universe) — override with
+  `feedback_port` in the `/server/start` body if your receiver listens on a
+  non-standard port. From its own dedicated outbound socket, separate from
+  the command-input listening socket.
+- Channel layout re-uses the existing input encoding so nothing new has to
+  be learned:
+  - Channels 1-2: current angle — identical 16-bit, 0.01°/step, `32768` = 0°
+    encoding as input channels 5-6/13-14.
+  - Channel 3: servo on/off (`0`/`255`), tracked from channel 8 — no extra
+    serial read.
+  - Channel 4: alarm active (`0`/`255`) — `is_alarm_active()` on a fresh
+    `read_current_alarm_code()` call. Unlike channels 3/5, this **is** a new
+    serial round trip, and it happens on every send — including every
+    on-`/moving` encoder poll while continuous reading is active, so it
+    roughly doubles Modbus traffic on the shared UART for the duration of a
+    move. Watch for timing regressions on the Pi's mini-UART (CLAUDE.md §2)
+    if that matters for your setup; a read failure is reported as alarm
+    active (`255`), never silently as "no alarm".
+  - Channel 5: moving/idle (`0` = idle, `255` = continuous reading active) —
+    the same signal as OSC's `/moving` vs `/motion_complete`.
+- Sent once per encoder poll while continuous reading is active (matches
+  OSC's `/moving` cadence), plus immediately on a servo on/off change
+  (channel 8), a clear-alarm trigger (channel 9), or a channel 10-12 rising
+  edge (back home / set home / reset initial absolute position) that was
+  actually acted on (i.e. not while those channels are ignored per "Enable
+  channels 10-12" below). This matters most for channel 11 (set home):
+  `set_home_position()` resets the current angle to 0 synchronously with no
+  motion, so without this immediate send a feedback consumer would keep
+  showing the pre-reset angle until the next real move.
+- Same fire-and-forget UDP semantics as OSC feedback: an unreachable
+  destination fails silently, no error surfaced to the command sender. The
+  whole send (including the alarm read above) is one try/except — a failure
+  anywhere in it is logged and swallowed, never raised into the command path
+  or the background reading thread.
+- This makes the device an Art-Net **sender** for the feedback universe
+  specifically; "pure receiver" (below) continues to describe only the
+  command-input universe, not this one.
 
 | Channel | Meaning | Values |
 |---|---|---|
@@ -339,6 +420,19 @@ forms (`"true"`/`"false"`/`"1"`/`"0"`/`"on"`/`"off"`/`"yes"`/`"no"`,
 case-insensitive) as a safety net, but native OSC `True`/`False` (or
 plain ints `1`/`0`) is the reliable choice if your OSC library gives you
 a choice.
+
+**9. `/cancel_loop` turns Servo OFF as a hardware side effect.** Leaving JOG
+mode (`0x0901` -> 0) makes the drive drop Servo ON by itself; confirmed live
+2026-09-25 (`servo_on` went True -> False right after `/cancel_loop`, with no
+`/servo` message involved). Any UI/TouchDesigner sequence that cancels JOG and
+then expects to keep moving must send `/servo 1.0` again first. That works:
+`/servo` compares a *repeated* value with the drive's real servo state (a
+`read_servo_state()` at most once per second, and `/cancel_loop` also forgets
+the last value), so `/servo 1.0` after `/cancel_loop` is applied instead of
+being dropped as a duplicate. Before that fix it was dropped and the servo
+stayed off. A resend of the same `/servo` value at frame rate is still
+suppressed while the drive matches it, and costs at most one serial read per
+second. If the drive's state can't be read, the repeat is ignored.
 
 ---
 

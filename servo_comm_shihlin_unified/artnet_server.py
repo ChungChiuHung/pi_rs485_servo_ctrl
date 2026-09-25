@@ -90,13 +90,32 @@ full frame 30-44 times/second even when nothing changed) -- otherwise e.g.
 enable_speed_ctrl() or post_step_motion_by() would fire on every single
 frame instead of once per real state change.
 
-Network safety (see OSC_ARTNET_GUIDE.md, "Network setup and safety"): this
-is a pure receiver -- it never sends a packet. Frames are accepted only for
-one universe (default 1, not the 0 other DMX equipment usually uses) and,
-optionally, only from listed sender IPs; bind listen_ip to the NIC address
-the sender unicasts to; continuous rotation is stopped if the signal is lost
+Network safety (see OSC_ARTNET_GUIDE.md, "Network setup and safety"): the
+command-input universe above is handled by a pure receiver -- it never sends
+a packet for that universe. Frames are accepted only for one universe
+(default 1, not the 0 other DMX equipment usually uses) and, optionally,
+only from listed sender IPs; bind listen_ip to the NIC address the sender
+unicasts to; continuous rotation is stopped if the signal is lost
 (signal_timeout_s) and does not restart by itself; channels 10-12 are ignored
 unless enable_dangerous_channels is set.
+
+Optional outbound status feedback (feedback_ip, off by default): a SEPARATE
+ArtDMX packet, sent from its own dedicated UDP socket, on its own universe
+(feedback_universe, default universe + 1 -- never the command-input universe,
+or this device could react to its own broadcast). Channels: 1-2 current angle
+(same 16-bit, 0.01 deg/step, 32768 = 0 deg encoding as the input channels),
+3 servo on/off (0/255, tracked from channel 8 -- no extra serial read),
+4 alarm active (0/255, is_alarm_active() on a FRESH read_current_alarm_code()
+call every send -- unlike channel 3/5 this is new serial traffic, and it
+happens on every on_moving poll during a move, roughly doubling Modbus
+round trips on the shared UART for that duration; see OSC_ARTNET_GUIDE.md),
+5 moving/idle (0/255) -- sent once per on_moving/on_motion_completed event,
+plus once more immediately on a servo on/off change (channel 8) or a
+clear-alarm trigger (channel 9), mirroring OSC's feedback cadence. The whole
+send is one try/except: nothing in it (including the alarm read) may raise
+into the command path or the background reading thread. This makes the
+device an Art-Net *sender* for the feedback universe only; the command-input
+universe's pure-receiver behavior is unchanged.
 
 No external Art-Net library dependency: ArtDMX's binary header is small
 and stable, so it's parsed by hand rather than adding a new
@@ -108,6 +127,8 @@ import struct
 import threading
 import time
 from collections import deque
+
+from servo_control import is_alarm_active
 
 logger = logging.getLogger(__name__)
 
@@ -122,8 +143,9 @@ DEFAULT_SIGNAL_TIMEOUT_S = 2.0
 ARTNET_ID = b"Art-Net\x00"
 OP_OUTPUT_DMX = 0x5000
 
-# Angle encoding shared by channels 5-6 (absolute target) and 13-14 (relative
-# move): 16 bits, 0.01 deg per step, 32768 = 0 deg.
+# Angle encoding shared by channels 5-6 (absolute target), 13-14 (relative
+# move) and the outbound feedback channels 1-2: 16 bits, 0.01 deg per step,
+# 32768 = 0 deg.
 ANGLE_CENTER = 32768
 ANGLE_STEP_DEG = 0.01
 DURATION_STEP_S = 0.01          # seconds per raw step of channels 15-16
@@ -148,6 +170,27 @@ def decode_angle_centideg(high_byte: int, low_byte: int) -> int:
     return ((high_byte << 8) | low_byte) - ANGLE_CENTER
 
 
+def encode_angle_deg(angle_deg: float):
+    """The outbound counterpart of decode_angle_centideg(): (high_byte,
+    low_byte) for a degrees value, clamped to what 16 bits can hold (about
+    +-327 deg) rather than raising on an out-of-range angle -- a feedback
+    packet must never be the reason a move fails."""
+    raw = ANGLE_CENTER + round(angle_deg / ANGLE_STEP_DEG)
+    raw = max(0, min(0xFFFF, raw))
+    return (raw >> 8) & 0xFF, raw & 0xFF
+
+
+def build_artdmx_packet(universe: int, dmx_data: bytes) -> bytes:
+    """The outbound counterpart of parse_artdmx(): an ArtDMX (OpOutput)
+    packet for `universe` carrying `dmx_data` as the channel values.
+    Sequence byte 0 = sequencing disabled (the receiver, including this
+    class's own _sequence_is_current(), treats 0 as "always current")."""
+    sub_uni, net = universe & 0xFF, (universe >> 8) & 0xFF
+    header = (ARTNET_ID + struct.pack('<H', OP_OUTPUT_DMX) + bytes([0, 14]) +
+              bytes([0, 0, sub_uni, net]) + struct.pack('>H', len(dmx_data)))
+    return header + dmx_data
+
+
 def decode_relative_move(data: bytes):
     """(delta_centideg, duration_centisec) from channels 13-16, or None if the
     frame is shorter than 16 channels."""
@@ -161,7 +204,8 @@ class ArtNetInputServer:
                  universe=DEFAULT_UNIVERSE, max_speed_rpm=100, acc_time=5000,
                  signal_timeout_s=DEFAULT_SIGNAL_TIMEOUT_S,
                  allowed_sources=None, enable_dangerous_channels=False,
-                 trigger_cooldown_s=DEFAULT_TRIGGER_COOLDOWN_S):
+                 trigger_cooldown_s=DEFAULT_TRIGGER_COOLDOWN_S,
+                 feedback_ip=None, feedback_universe=None, feedback_port=ARTNET_PORT):
         """listen_ip: bind to the NIC address the sender unicasts to (a
         specific address only receives unicast; Linux does not deliver
         broadcast to a socket bound to a unicast address). universe: default
@@ -173,7 +217,14 @@ class ArtNetInputServer:
         enable_dangerous_channels: channels 10-12 (back home = real move,
         set home = overwrites the saved home, reset abs position) are
         ignored unless this is True. trigger_cooldown_s: minimum time between
-        two accepted rising edges of the same single-shot channel (0 = off)."""
+        two accepted rising edges of the same single-shot channel (0 = off).
+        feedback_ip: destination for optional outbound status (angle/servo/
+        moving), off by default -- see the module docstring. feedback_universe:
+        the SEPARATE universe the feedback packet is sent on (default
+        `universe + 1`); must not equal `universe`. feedback_port: the UDP
+        port feedback is sent to (default ARTNET_PORT/6454, the Art-Net
+        standard -- any Art-Net-compliant receiver listens there already;
+        override only if your receiver is bound to a non-standard port)."""
         self.servo_ctrller = servo_ctrller
         self.listen_ip = listen_ip
         self.listen_port = listen_port
@@ -184,10 +235,20 @@ class ArtNetInputServer:
         self.max_speed_rpm = max_speed_rpm
         self.acc_time = acc_time
         self.trigger_cooldown_s = max(0.0, float(trigger_cooldown_s or 0))
+        self.feedback_ip = feedback_ip
+        self.feedback_universe = universe + 1 if feedback_universe is None else feedback_universe
+        self.feedback_port = feedback_port
+        if feedback_ip is not None and self.feedback_universe == universe:
+            raise ValueError(
+                "feedback_universe must differ from universe -- sending feedback on the same "
+                "universe the command input listens on risks reacting to its own broadcast."
+            )
 
         self._sock = None
+        self._feedback_sock = None
         self._thread = None
         self._stop_event = threading.Event()
+        self._feedback_wired = False
 
         self._last_enable_channel = None
         # The direction channel value the drive has actually ACCEPTED (None =
@@ -235,6 +296,46 @@ class ArtNetInputServer:
     @property
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
+
+    @property
+    def feedback_enabled(self) -> bool:
+        return self.feedback_ip is not None
+
+    def _build_artdmx(self, channels) -> bytes:
+        """Wraps build_artdmx_packet() for self.feedback_universe -- the
+        instance-level entry point _send_feedback() uses."""
+        return build_artdmx_packet(self.feedback_universe, bytes(channels))
+
+    def _send_feedback(self, angle_deg) -> None:
+        """Best-effort outbound status packet (channels: 1-2 angle, 3 servo
+        on/off, 4 alarm active, 5 moving/idle). The whole body is one
+        try/except -- never raise into the caller, whether that's a command
+        handler, an immediate post-trigger call, or (for on_moving) the
+        background reading thread. Note: unlike servo-on state (read from
+        the channel this class already tracks) and moving state (read from
+        ServoController's already-tracked reading_active), the alarm flag
+        is a FRESH read_current_alarm_code() call every time -- on_moving
+        fires per encoder poll during a move, so this doubles the serial
+        round trips on the shared UART for as long as feedback is enabled
+        and a move is in progress. Watch for timing regressions on the Pi's
+        mini-UART (CLAUDE.md §2) if that turns out to matter in practice."""
+        if not self.feedback_enabled or self._feedback_sock is None:
+            return
+        try:
+            high, low = encode_angle_deg(angle_deg)
+            servo_on = self._last_servo_channel not in (None, 0)
+            alarm_active = is_alarm_active(self.servo_ctrller.read_current_alarm_code())
+            moving = bool(self.servo_ctrller.reading_active)
+            data = [high, low, 255 if servo_on else 0, 255 if alarm_active else 0, 255 if moving else 0]
+            self._feedback_sock.sendto(self._build_artdmx(data), (self.feedback_ip, self.feedback_port))
+        except Exception as e:
+            logger.error(f"Art-Net: error sending feedback: {e}")
+
+    def _on_moving_feedback(self, diff_angle) -> None:
+        self._send_feedback(diff_angle)
+
+    def _on_motion_completed_feedback(self) -> None:
+        self._send_feedback(self.servo_ctrller.current_angle)
 
     @staticmethod
     def parse_artdmx(packet: bytes):
@@ -556,11 +657,13 @@ class ArtNetInputServer:
             else:
                 self.servo_ctrller.servo_on()
                 logger.info(f"Art-Net: servo on (channel 8 = {servo_channel}).")
-        self._last_servo_channel = servo_channel
+            self._last_servo_channel = servo_channel
+            self._send_feedback(self.servo_ctrller.current_angle)
 
         if self._rising_edge(9, clear_alarm_channel) and not self._blocked_by_cooldown(9):
             self.servo_ctrller.clear_alarm_12()
             logger.info("Art-Net: clear alarm 12 triggered (channel 9 rising edge).")
+            self._send_feedback(self.servo_ctrller.current_angle)
 
         # Channels 10-12 can make a real move / overwrite the saved home, so
         # they are ignored (with a log line per rising edge) unless the
@@ -569,17 +672,25 @@ class ArtNetInputServer:
             if self._dangerous_channel_allowed(10, "back home") and not self._blocked_by_cooldown(10):
                 self.servo_ctrller.initial_abs_home()
                 logger.info("Art-Net: back home triggered (channel 10 rising edge).")
+                self._send_feedback(self.servo_ctrller.current_angle)
 
         if self._rising_edge(11, set_home_channel):
             if self._dangerous_channel_allowed(11, "set home") and not self._blocked_by_cooldown(11):
                 self.servo_ctrller.set_home_position()
                 logger.info("Art-Net: set home triggered (channel 11 rising edge).")
+                # set_home_position() resets current_angle to 0 synchronously
+                # with no motion, so no on_moving/on_motion_completed event
+                # fires for it -- without this, a feedback consumer's angle
+                # channels would keep showing the pre-reset value until the
+                # next real move.
+                self._send_feedback(self.servo_ctrller.current_angle)
 
         if self._rising_edge(12, reset_initial_abs_pos_channel):
             if (self._dangerous_channel_allowed(12, "reset initial absolute position")
                     and not self._blocked_by_cooldown(12)):
                 self.servo_ctrller.write_PA29_Initial_Abs_Pos()
                 logger.info("Art-Net: reset initial absolute position triggered (channel 12 rising edge).")
+                self._send_feedback(self.servo_ctrller.current_angle)
 
     def _dangerous_channel_allowed(self, channel: int, what: str) -> bool:
         if self.enable_dangerous_channels:
@@ -788,6 +899,18 @@ class ArtNetInputServer:
         # service); a clear "address in use" error is what we want instead.
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._sock.bind((self.listen_ip, self.listen_port))
+        if self.feedback_enabled:
+            # A separate socket from the command-input one above -- distinct
+            # send vs. receive concerns, and this one is never bound to a
+            # fixed local port.
+            self._feedback_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            # ServoController outlives this server across start/stop cycles,
+            # so listeners must be (un)registered here, not in __init__, or a
+            # restart would pile up duplicate callbacks.
+            self.servo_ctrller.register_event_listener("on_motion_completed", self._on_motion_completed_feedback)
+            self.servo_ctrller.register_event_listener("on_moving", self._on_moving_feedback)
+            self._feedback_wired = True
+            logger.info(f"Art-Net feedback enabled -> {self.feedback_ip}:{self.feedback_port} universe {self.feedback_universe}")
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
         logger.info(
@@ -805,5 +928,12 @@ class ArtNetInputServer:
         if self._sock is not None:
             self._sock.close()
         self._sock = None
+        if self._feedback_sock is not None:
+            self._feedback_sock.close()
+        self._feedback_sock = None
         self._thread = None
+        if self._feedback_wired:
+            self.servo_ctrller.unregister_event_listener("on_motion_completed", self._on_motion_completed_feedback)
+            self.servo_ctrller.unregister_event_listener("on_moving", self._on_moving_feedback)
+            self._feedback_wired = False
         logger.info("Art-Net server stopped.")

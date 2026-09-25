@@ -27,12 +27,18 @@ Differences from the ported original, both deliberate:
 """
 import logging
 import threading
+import time
 
 from pythonosc.dispatcher import Dispatcher
 from pythonosc import osc_server as pythonosc_server
 from pythonosc import udp_client
 
 logger = logging.getLogger(__name__)
+
+# How often a repeated /servo value is re-checked against the drive's real
+# servo state (see OSCInputServer._check_duplicated). A control surface that
+# resends /servo every frame must not cost a serial read per frame.
+SERVO_STATE_RECHECK_S = 1.0
 
 
 class OSCInputServer:
@@ -45,6 +51,7 @@ class OSCInputServer:
         if feedback_ip and feedback_port:
             self._osc_client = udp_client.SimpleUDPClient(feedback_ip, feedback_port)
         self._previous_data = None
+        self._last_servo_verify = 0.0
         self._server = None
         self._thread = None
 
@@ -61,16 +68,29 @@ class OSCInputServer:
             logger.error(f"Error sending OSC feedback to {address}: {e}")
 
     def _check_duplicated(self, data):
-        """Only _servo_handler calls this (verified 2026-09-19 -- an
-        earlier comment here incorrectly claimed _set_point_handler shared
-        this same `_previous_data` slot too; it doesn't call
-        _check_duplicated at all, so a repeated /set_point is never
-        suppressed). Dedup exists so a control surface that resends /servo
-        1.0 on every frame doesn't call servo_on() repeatedly."""
+        """Only _servo_handler calls this. Dedup exists so a control surface
+        that resends /servo 1.0 on every frame doesn't call servo_on()
+        repeatedly.
+
+        A repeated value is NOT necessarily redundant: the drive's servo
+        state can change without this handler being involved (/cancel_loop
+        leaves JOG mode, which drops Servo ON; the web UI; an alarm). So a
+        repeat is re-checked against read_servo_state() -- at most once per
+        SERVO_STATE_RECHECK_S -- and acted on if the drive disagrees. An
+        unreadable state (None) counts as "can't tell" and stays suppressed."""
+        now = time.monotonic()
         if data != self._previous_data:
             self._previous_data = data
+            self._last_servo_verify = now
             return False
-        return True
+        if data not in (1.0, 0.0) or now - self._last_servo_verify < SERVO_STATE_RECHECK_S:
+            return True
+        self._last_servo_verify = now
+        actual = self.servo_ctrller.read_servo_state()
+        if actual is None or actual == (data == 1.0):
+            return True
+        logger.info(f"/servo {data}: repeated value but the drive is {'ON' if actual else 'OFF'}; applying it.")
+        return False
 
     def _servo_handler(self, unused_addr, args, data):
         try:
@@ -163,6 +183,9 @@ class OSCInputServer:
     def _cancel_loop_handler(self, unused_addr, *args):
         try:
             self.servo_ctrller.cancel_continuous_reading()
+            # Leaving JOG mode drops Servo ON on the drive, so the next /servo
+            # value must never be treated as a repeat of the last one.
+            self._previous_data = None
             self._send_feedback("/cancel_loop", self.servo_ctrller.current_angle)
         except Exception as e:
             logger.error(f"Error in cancel_loop_handler: {e}")

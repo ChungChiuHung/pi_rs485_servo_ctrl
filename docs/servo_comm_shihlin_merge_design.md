@@ -56,6 +56,15 @@ SET HOME 開機提示——都**只有單元測試（319 項通過），尚未�
 > 建立通訊——需要另外確認 PC22 是不是曾經被改過，或這兩份程式碼原本就是
 > 對著不同設定的驅動器/情境驗證的。
 
+> **2026-09-24 更新（版本控制）：** `motor_profiles.json` 與
+> `servo_config_shihlin_400W.json`（以及未來其他 `servo_config_*.json`
+> profile 檔）已加入 `.gitignore`，不再進入版本庫——這些數值（馬達型號、
+> 減速比、校正過的原點位置）是依現場實際連接的硬體調整的，不是共用設定。
+> 本機端的檔案本身沒有變動，程式讀取方式也沒有改變，只是往後這些檔案的
+> 異動不會出現在 `git status`/`git diff` 裡，也不會被 commit。若要異動
+> 這兩個檔案目前的內容（例如切換到不同的校正值），直接編輯本機檔案即可，
+> 不需要透過 git。
+
 ## 1. 目標
 把 `servo_comm_shihlin/` 與 `servo_comm_shihlin_50W/` 合併成一份程式碼，
 透過一個 JSON 設定檔切換「要控制哪一顆馬達 / 哪種情境（scenario）」，
@@ -371,6 +380,22 @@ CLAUDE.md §4 硬體安全閘門限制。
 （先寫測試）。第 1、2、3、5、6 項已經可以先寫進規格，但為了讓整份
 `servo_control.py` 一次到位、避免分兩次改動同一批檔案，建議等 4、7 項
 一起確認後再開始動工。（歷史記錄：合併已完成，現況與待辦見 §7。）
+
+> **2026-09-24 更新（雙軌過渡與 WebUI 整合規劃）：** 使用者確認了本專案
+> 目前「ASCII 用 `servo_comm_shihlin/`、RTU 用 `servo_comm_shihlin_unified/`」
+> 雙軌並行的定位邏輯——實際上要用哪一份程式碼，取決於**當下連接的驅動器
+> 被設定成哪種 Modbus 模式（PC22）**，不是單純「unified 是新的、shihlin 是
+> 舊的」二分法。本文件測試用的那台驅動器剛好是 RTU（見文件開頭的硬體確認
+> 區塊），這只是「那一台」的事實，不代表 ASCII 模式的驅動器不存在或不需要
+> 支援。**未來規劃：** 待 `servo_comm_shihlin_unified/` 的 RTU 通訊完全穩定
+> 後，會在該專案新增 WebUI 通訊模式設定，讓使用者能直接在網頁上切換
+> ASCII/RTU，屆時 `servo_comm_shihlin/` 的 ASCII 功能會完全整合進
+> `servo_comm_shihlin_unified/`，本文件原本設想的「合併成一份程式碼」目標
+> 才算真正完成，`servo_comm_shihlin/`（與 `servo_comm_shihlin_50W/`）屆時
+> 才會真的可以除役。**目前尚未實作**：`servo_comm_shihlin_unified/` 還沒有
+> 任何 ASCII/RTU 切換介面或程式碼，在切換功能做出來之前，`servo_comm_shihlin/`
+> 上的 ASCII 相關修正（見 CLAUDE.md §3 該資料夾列的 Hand-ported 項目）仍需要
+> 逐次手動搬移，不會自動同步。
 
 ## 7. 待實機確認清單（2026-09-19 盤點）
 
