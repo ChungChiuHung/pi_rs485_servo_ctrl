@@ -1,0 +1,103 @@
+from typing import Union
+
+from modbus_command_code import CmdCode
+from modbus_utils import ModbusUtils
+
+
+class ModbusExceptionResponse(ValueError):
+    """The drive answered, but with a Modbus exception (function code | 0x80):
+    01 = command code error, 02 = parameter address error, 03 = parameter
+    range error (manual §9, exception codes). Distinct from "no answer" so a
+    caller can retry a rejected request in another form (see
+    ServoController._write_parameter()) without retrying a dead line."""
+
+    def __init__(self, message, function_code, exception_code):
+        super().__init__(message)
+        self.function_code = function_code
+        self.exception_code = exception_code
+
+
+class ModbusRTUResponse:
+    """Parses a raw Modbus RTU binary response (device addr + function code +
+    payload + CRC16, no ':'/hex-ASCII framing -- unlike ModbusResponse, which
+    only understands the ASCII-mode framing used elsewhere in this project).
+
+    Kept response-shape-compatible with ModbusResponse (same get_value()
+    semantics, same "high word + low word swapped" quirk) so callers like
+    absolute_mode_check.check_absolute_mode() can accept either as a
+    response_parser without caring which serial protocol produced it.
+    """
+
+    def __init__(self, response: Union[bytes, bytearray]):
+        if not isinstance(response, (bytes, bytearray)):
+            # Most commonly hit with response=None, i.e. send_and_receive()
+            # timed out with no reply -- callers that don't check for None
+            # before constructing this end up here. The old wording ("not
+            # ASCII text") was written to flag ASCII-vs-RTU mixups, but in a
+            # pure-RTU codebase it just reads as a confusing non sequitur
+            # for the much more common "no response" case.
+            raise ValueError(
+                f"RTU response must be bytes/bytearray, got "
+                f"{type(response).__name__} ({response!r}) -- likely no "
+                f"response was received."
+            )
+        if len(response) < 5:
+            raise ValueError(f"RTU response too short ({len(response)} bytes)")
+
+        body, received_crc = bytes(response[:-2]), bytes(response[-2:])
+        expected_crc = ModbusUtils().calculate_crc(body)
+        if received_crc != expected_crc:
+            raise ValueError(
+                f"CRC mismatch: got {received_crc.hex()}, expected {expected_crc.hex()}"
+            )
+
+        self.adr = body[0]
+        self.cmd_value = body[1]
+
+        if self.cmd_value & 0x80:
+            self.exception_code = body[2] if len(body) > 2 else None
+            raise ModbusExceptionResponse(
+                f"Modbus exception response: function {hex(self.cmd_value & 0x7F)}, "
+                f"exception code {self.exception_code}",
+                self.cmd_value & 0x7F, self.exception_code,
+            )
+
+        if self.cmd_value == CmdCode.READ_DATA.value:
+            self._parse_read_data(body)
+        elif self.cmd_value in (CmdCode.WRITE_DATA.value, CmdCode.WRITE_MULTI_DATA.value):
+            self._parse_write_data(body)
+        else:
+            raise ValueError(f"Unsupported command code: {hex(self.cmd_value)}")
+
+    def _parse_read_data(self, body: bytes) -> None:
+        self.data_count = body[2]  # byte count, not word count
+        self.data_bytes = body[3:3 + self.data_count]
+
+    def _parse_write_data(self, body: bytes) -> None:
+        self.start_address = body[2:4]
+        self.data_content = body[4:6]
+
+    def get_value(self, signed: bool = False) -> Union[int, None]:
+        """Same word-swap convention as ModbusResponse.get_value(): the
+        driver returns 32-bit values as [low word][high word], so the two
+        words are swapped back before combining into one big-endian int.
+
+        signed=True interprets the result as two's complement -- needed for
+        registers documented as signed, e.g. PA32 (APR, absolute-encoder
+        revolution count, -32768~32767). Defaults to unsigned so every
+        existing caller keeps its behavior.
+        """
+        if not hasattr(self, 'data_bytes'):
+            return None
+
+        high_byte = self.data_bytes[2:4]
+        low_byte = self.data_bytes[0:2]
+        return int.from_bytes(
+            bytes(high_byte) + bytes(low_byte), byteorder='big', signed=signed
+        )
+
+    def __str__(self):
+        if hasattr(self, 'data_bytes'):
+            return (f"Modbus RTU Response: ADR={self.adr}, CMD={hex(self.cmd_value)}, "
+                    f"Data={self.data_bytes.hex()}, Value={self.get_value()}")
+        return f"Modbus RTU Response: ADR={self.adr}, CMD={hex(self.cmd_value)}"

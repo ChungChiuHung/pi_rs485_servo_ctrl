@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "servo_comm_shihlin_unified",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["app.py"],
+      "cwd": "servo_comm_shihlin_unified",
+      "port": 5000
+    }
+  ]
+}

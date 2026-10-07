@@ -26,7 +26,10 @@ class SerialPortManager:
 
     def list_available_ports(self) -> List[str]:
         """List all available serial ports."""
-        ports = [port.device for port in serial.tools.list_ports.comports()]
+        # macOS lists its Bluetooth modem port too; it opens fine but is not
+        # an RS-485 adapter, and sorts ahead of /dev/cu.usbserial-*.
+        ports = [port.device for port in serial.tools.list_ports.comports()
+                 if "bluetooth" not in port.device.lower()]
         return ports if ports else self.DEFAULT_PORTS
 
     def connect(self) -> bool:

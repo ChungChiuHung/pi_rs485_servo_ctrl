@@ -36,14 +36,25 @@ class ModbusASCIIClient:
     def _initialize(self, device_number: int, serial_port_manager: SerialPortManager):
         """Initialize the Modbus ASCII client."""
         if hasattr(self, '_is_initialized') and self._is_initialized:
+            # The client is a singleton, so a reconnect (a new
+            # SerialPortManager after the port was missing or the profile
+            # changed) must re-bind it: otherwise it keeps talking through the
+            # old, closed manager forever.
+            if serial_port_manager is not None and serial_port_manager is not self.serial_port_manager:
+                self.serial_port_manager = serial_port_manager
+                logger.info("ModbusASCIIClient re-bound to a new serial port manager.")
             return
-        
+
         if device_number is None or serial_port_manager is None:
             raise ValueError("Device number and serial port manager must be provided.")
         
         self.device_number = device_number
         self.serial_port_manager = serial_port_manager
         self.lrc = ModbusUtils()
+        # The most recent frame sent / received, for the web UI's "Last RS-485
+        # transaction" panel (see format_frame()).
+        self.last_sent = None
+        self.last_received = None
         self._is_initialized = True
         logger.info("ModbusASCIIClient initialized.")
 
@@ -75,8 +86,19 @@ class ModbusASCIIClient:
             logger.error(f"Error in send_and_receive: {e}")
             return None
 
+    @staticmethod
+    def format_frame(frame) -> str:
+        """A Modbus ASCII frame as readable text (":010300010002F9"), without
+        the trailing CR/LF; "" when there is none yet."""
+        if not frame:
+            return ""
+        if isinstance(frame, (bytes, bytearray)):
+            frame = bytes(frame).decode('ascii', errors='replace')
+        return frame.strip()
+
     def send(self, message):
         if self.ensure_connection():
+            self.last_sent = message
             try:
                 self.serial_port_manager.get_serial_instance().write(message)
                 logger.debug(f"Message sent: {message}")
@@ -108,6 +130,7 @@ class ModbusASCIIClient:
 
             if response:
                 logger.debug(f"Response received: {response}")
+                self.last_received = bytes(response)
                 return response
             else:
                 logger.warning("No response received.")

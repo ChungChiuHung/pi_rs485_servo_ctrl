@@ -7,6 +7,7 @@ from threading import Thread, Event
 from serial import SerialException
 from modbus_ascii_client import ModbusASCIIClient
 from modbus_response import ModbusResponse
+from encoder_pulse_tracker import EncoderPulseTracker
 from servo_utility import ServoUtility
 from servo_control_registers import ServoControlRegistry
 from status_bit_map import DI_Function_Code
@@ -45,6 +46,7 @@ class ServoController:
         self.previous_angle = 0.0
         self.current_encoder = 0
         self.previous_encoder = 0
+        self._encoder_tracker = EncoderPulseTracker()
         self.float_error = 0.0
         self.accumulate_pulse = 0
         self.on_initial_home = False
@@ -52,7 +54,7 @@ class ServoController:
         self.completed_cnt = 0
         #self.abs_home_pos = 1184347
         self.abs_home_pos = self.load_abs_home_pos()
-        self._event_listeners = {"on_motion_completed": [], "on_moving": []}
+        self._event_listeners = {"on_motion_completed": [], "on_moving": [], "on_cancel": []}
 
     def load_abs_home_pos(self) -> int:
         try:
@@ -94,7 +96,10 @@ class ServoController:
     def _notify_event_listeners(self, event_name, *args, **kwargs):
         """Notify all registered callbacks for a specific event."""
         for callback in self._event_listeners.get(event_name, []):
-            callback(*args, **kwargs)
+            try:
+                callback(*args, **kwargs)
+            except Exception as e:
+                logger.error(f"Error in event listener '{event}': {e}")
 
     def delay_ms(self, milliseconds: int) -> None:
         time.sleep(milliseconds / 1000.0)
@@ -135,33 +140,82 @@ class ServoController:
             logging.info("Motion Completed Signal Reading Stopped.")
             self._notify_event_listeners("on_motion_completed")
             self.stop_event.set()
-            
+
+    def cancel_continuous_reading(self) -> None:
+        with self.lock:
+            if not self.reading_active:
+                logging.warning("Continuous reading is not active; skipping stop.")
+                return
+
+            self.reading_active = False
+            self.read_thread_stop_event.set()
+            if self.read_thread and threading.current_thread() is not self.read_thread:
+                self.read_thread.join()
+
+            self.read_thread = None
+            self.completed_cnt = 0
+            self.completed_tag = False
+            if self.on_initial_home:
+                self.on_initial_home = False
+            logging.info("Motion Completed Signal Reading Stopped.")
+            self._notify_event_listeners("on_motion_completed")
+            self.stop_event.set()
+
+            self.delay_ms(50)
+            raw_encoder = self.read_encoder_before_gear_ratio()
+            if raw_encoder is not None:
+                self.current_encoder = self._encoder_tracker.update(raw_encoder)
+                logging.info(f"Current Encoder Value: {self.current_encoder} (raw: {raw_encoder})")
+                base_pulse_per_degree = 116508.444445
+                self.current_angle = round((self.current_encoder - self.abs_home_pos)/base_pulse_per_degree,4)
+                logging.info(f"Current Angle: {self.current_angle}")
+                self._notify_event_listeners("on_cancel", self.current_angle)
+
 
     def _read_continuously(self, interval: float) -> None:
-        base_pulse_per_degree = 349525.3333333333
+        base_pulse_per_degree = 116508.444445
         while not self.read_thread_stop_event.is_set():
             if not self.serial_port.keep_running:
-                logging.info("Reconnection attempts stopped.")
+                logger.info("Reconnection attempts stopped.")
                 break
+
+            # Motion completion flag
             try:
                 self.completed_tag = self.Read_Motion_Completed_Signal()
-                self.delay_ms(50)
-                self.current_encoder = self.read_encoder_before_gear_ratio() 
-                logging.info(f"Current Encoder Value: {self.current_encoder}")
-                if self.current_encoder is not None:
-                    diff_angle = round((self.current_encoder - self.abs_home_pos)/base_pulse_per_degree,4)
-                    logging.info(f"Diff Angle: {diff_angle}")
-                    self._notify_event_listeners("on_moving", diff_angle)
-
-                if self.completed_tag:
-                    self.completed_cnt += 1
-                    if self.completed_cnt > 6:
-                        logging.info(f"Motion Completed Signal Detected: {self.completed_cnt}")
-                        self.stop_continuous_reading()
-                        break
             except Exception as e:
-                logging.error(f"Error during read: {e}")
-                break
+                logger.warning(f"Read motion-complete failed: {e}")
+                self.delay_ms(interval * 1000)
+                continue
+
+            self.delay_ms(100)
+
+            # Encoder position
+            try:
+                enc = self.read_encoder_before_gear_ratio()
+            except Exception as e:
+                logger.warning(f"Read encoder failed: {e}")
+                self.delay_ms(interval * 1000)
+                continue
+
+            if enc is None:
+                logger.warning("Empty encoder response.")
+                self.delay_ms(interval * 1000)
+                continue
+
+            self.current_encoder = self._encoder_tracker.update(enc)
+            logger.info(f"Current Encoder Value: {self.current_encoder} (raw: {enc})")
+            diff_angle = round((self.current_encoder - self.abs_home_pos) / base_pulse_per_degree, 4)
+            self.current_angle = diff_angle
+            logger.info(f"Diff Angle: {diff_angle}")
+            self._notify_event_listeners("on_moving", diff_angle)
+
+            if self.completed_tag:
+                self.completed_cnt += 1
+                if self.completed_cnt > 6:
+                    logger.info(f"Motion complete detected ({self.completed_cnt}).")
+                    self.stop_continuous_reading()
+                    break
+
             self.delay_ms(interval * 1000)
 
     def read_PA01_Ctrl_Mode(self):
@@ -594,7 +648,7 @@ class ServoController:
             self.pos_motion_start_0x0907(2)
 
     def pos_step_motion_by(self, target_pos: int = 0, acc_dec_time=5000, speed_rpm=10):
-        base_pulse_per_degree = 349525.3333333333
+        base_pulse_per_degree = 116508.444445
         # Get Current Encoder Value
         current_pos = self.read_encoder_before_gear_ratio()
         logger.info(f"Current Encoder Value: {current_pos}")
@@ -619,11 +673,9 @@ class ServoController:
 
 
     def post_step_motion_by(self, angle: float = 0.0, acc_dec_time: int = 5000, speed_rpm: int =10):
-        # 125829120 pulse/rev
-        # 349525 + 1/3 pulse/degree
-        # 125829120 pulse/rev
-        # 349525 + 1/3 pulse/degree
-        base_pulse_per_degree = 349525.3333333333
+        # 41943040 pulse/rev
+        # 116508 + 11/25 pulse/degree
+        base_pulse_per_degree = 116508.444445
         
         self.previous_angle = self.current_angle
         self.current_angle = angle
@@ -679,10 +731,15 @@ class ServoController:
             logger.info("Running Servo CCW")
             self.pos_step_motion_test(False)
 
-    def enable_speed_ctrl(self, speed_rpm):
-        self.Enable_JOG_Mode(True)
-        self.delay_ms(100)
-        self.config_speed_0x0903(speed_rpm)
+    def enable_speed_ctrl(self, speed_rpm = 100, acc_time = 5000, enable=True):
+        if enable == True:
+            self.Enable_Position_Mode(False)
+        else:
+            self.config_speed_0x0903(speed_rpm)
+            self.delay_ms(100)
+            self.config_acc_dec_0x0902(acc_time)
+            self.delay_ms(100)
+            self.Enable_Position_Mode(True)
         self.delay_ms(100)
         self.start_continuous_reading(0.1)
 
@@ -708,6 +765,11 @@ class ServoController:
     def set_home_position(self):
         self.current_angle = 0.0
         self.previous_angle = 0.0
+        # current_encoder is zeroed symbolically here (no real encoder read),
+        # so _encoder_tracker is deliberately left untouched -- reseeding it
+        # to a fictional 0 would make the next real reading look like a huge
+        # spurious jump. The next _read_continuously() tick overwrites
+        # current_encoder with the tracker's real cumulative value anyway.
         self.current_encoder = 0
         self.previous_encoder = 0
         self.float_error = 0.0

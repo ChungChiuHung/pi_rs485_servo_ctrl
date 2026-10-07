@@ -81,6 +81,34 @@ def clear_handler(unused_addr, *args):
     except Exception as e:
         logging.error(f"Error in clear_handler: {e}")
 
+def set_countinuous_motion_handler(unused_addr, args, speed_rpm, acc_time, enable= True):
+    try:
+        speed_rpm = int(speed_rpm)
+        acc_time = int(acc_time)
+        servo_ctrller.enable_speed_ctrl(speed_rpm, acc_time, enable)
+        send_to_touchdesigner("/continuous_mode_start", speed_rpm, acc_time)
+        logging.info(f"Continuous motion started with speed: {speed_rpm} RPM, Acc time: {acc_time} ms")
+    except Exception as e:
+        logging.error(f"Error in set_countinuous_motion_handler: {e}")
+
+def ctrl_continuous_motion_handler(unused_addr, args, action, CW_CCW):
+    try:
+        if action == "stop":
+            servo_ctrller.speed_ctrl_action(0)
+            send_to_touchdesigner("/continuous_mode_stop", "stop")
+            logging.info("Continuous motion stopped.")
+        elif action == "start":
+            if CW_CCW == "CW":
+                servo_ctrller.speed_ctrl_action(1)
+            elif CW_CCW == "CCW":
+                servo_ctrller.speed_ctrl_action(2)
+            servo_ctrller.speed_ctrl_action("CW")
+            send_to_touchdesigner("/continuous_mode_start", CW_CCW)
+            logging.info(f"Continuous motion started in {CW_CCW} direction.")
+    except Exception as e:
+        logging.error(f"Error in ctrl_continuous_motion_handler: {e}")
+
+
 def set_point_handler(unused_addr, args, angle, acc_time, rpm):
     try:
         angle = float(angle)
@@ -126,6 +154,15 @@ def set_home_position_handler(unused_addr, *args):
     except Exception as e:
         logging.error(f"Error in set_home_position_handler: {e}")
 
+
+def cancel_loop_handler(unused_addr, *args):
+    try:
+        servo_ctrller.cancel_continuous_reading()
+        send_to_touchdesigner("/cancel_loop", servo_ctrller.current_angle)
+        logging.info(f"Cancel loop. Current angle: {servo_ctrller.current_angle}")
+    except Exception as e:
+        logging.error(f"Error in cancel_loop_handler: {e}")
+
 def on_motion_completed():
     try:
         send_to_touchdesigner("/motion_complete", "complete")
@@ -159,6 +196,9 @@ def main():
         dispatcher.map("/back_home", back_home_handler)
         dispatcher.map("/set_home", set_home_position_handler)
         dispatcher.map("/reset_initial_abs_position", reset_initial_abs_position_handler)
+        dispatcher.map("/set_continous_motion", set_countinuous_motion_handler, "speed_rpm", "acc_time", "enable")
+        dispatcher.map("/ctrl_continuous_motion", ctrl_continuous_motion_handler, "action", "CW_CCW")
+        dispatcher.map("/cancel_loop", cancel_loop_handler)
 
         server = osc_server.ThreadingOSCUDPServer((args.ip, args.port_receive), dispatcher)
         logging.info(f"Serving on {server.server_address}")

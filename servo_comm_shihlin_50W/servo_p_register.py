@@ -90,6 +90,9 @@ class PC:
         return cls._start_address + (no -1) * cls._register_size
     @classmethod
     def init_registers(cls):
+        cls.STA = Register(1, "STA", "Acceleration time constant", 1, cls.calculate_address(1))
+        cls.STB = Register(2, "STB", "Deceleration time constant", 1, cls.calculate_address(2))
+        cls.JOG = Register(3, "JOG", "Jog speed command [rpm]", 1, cls.calculate_address(3))
         cls.TL2 = Register(25, "TL2", "Inner torque limit 2 [%]", 100, cls.calculate_address(25))
         cls.CMX2 = Register(32, "CMX2", "Electronic gear numerator 2", 1, cls.calculate_address(32))
         cls.CMX3 = Register(33, "CMX3", "Electronic gear numerator 3", 1, cls.calculate_address(33))
@@ -164,6 +167,8 @@ class PE:
     def init_registers(cls):
         cls.PE01 = Register(1, "ODEF", "Origin return definition", 0x0000, cls.calculate_address(1))
         cls.PE02 = Register(2, "ODAT", "Origin offset value definition", 0, cls.calculate_address(2))
+        cls.PE03 = Register(3, "PDEF1", "PATH#1 definition", 0x0000, cls.calculate_address(3))
+        cls.PE04 = Register(4, "PDAT1", "PATH#1 data", 0x0000, cls.calculate_address(4))
     
 
 class PF:
