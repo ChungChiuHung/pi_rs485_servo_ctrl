@@ -2,6 +2,8 @@ import hmac
 import ipaddress
 import json
 import os
+import platform
+import sys
 import time
 import logging
 import threading
@@ -71,6 +73,22 @@ _activity_log_handler = ActivityLogHandler(activity_log)
 _activity_log_handler.setFormatter(logging.Formatter('%(message)s'))
 logging.getLogger().addHandler(_activity_log_handler)
 
+def _running_on_pi_hardware() -> bool:
+    """Linux on ARM -- the same rule requirements.txt uses to install
+    RPi.GPIO. Anywhere else (a Windows/macOS PC) the package is not needed."""
+    return sys.platform.startswith("linux") and platform.machine() in ("armv7l", "aarch64")
+
+
+def _gpio_missing_log():
+    """(level, message) to log when RPi.GPIO can't be imported: a real
+    problem on the Pi, but normal on a PC, which talks to the drive through
+    a USB-RS485 adapter -- a WARNING there only looked like something broke."""
+    if _running_on_pi_hardware():
+        return logging.WARNING, ("RPi.GPIO is not installed; GPIO features (RS-485 DE/RE pin, "
+                                 "LEDs) disabled. On the Pi, install it with ./setup_pi.sh.")
+    return logging.INFO, "Running on a PC: Raspberry Pi GPIO is not used (normal)."
+
+
 gpio_utils = None
 if GPIOUtils is not None:
     try:
@@ -78,7 +96,7 @@ if GPIOUtils is not None:
     except Exception as e:
         logging.warning(f"GPIO init failed ({e}); GPIO features disabled.")
 else:
-    logging.warning("RPi.GPIO not available (expected off-Pi); GPIO features disabled.")
+    logging.log(*_gpio_missing_log())
 
 # --- Motor profile / serial connection state ---------------------------------
 # Single process, single ServoController instance at a time -- this is also

@@ -14,3 +14,6 @@ venv/
 /servo_comm_shihlin_unified/input_server_autostart.json
 /servo_comm_shihlin/servo_config.json
 /servo_comm_shihlin_50W/servo_config.json
+
+# Written by start_server.bat when it installs packages (for debugging a failed install).
+/servo_comm_shihlin_unified/pip_install.log

@@ -7,31 +7,39 @@ for that setup.
 
 ## Recommendation: use `start_server.bat`
 
-You can either run a few commands by hand every time (see
-[Manual step-by-step](#manual-step-by-step) below), or double-click
-`start_server.bat`. **The batch file is what I'd recommend** — it checks
-Python is installed, installs the three PC-safe dependencies, opens your
-browser automatically, and runs the server in the same window so you can
-watch the logs and stop it with `Ctrl+C`. It's the same commands either
-way; the script just saves you retyping them and gets the dependency list
-right (see the gotcha below).
+Double-click `start_server.bat` in this folder — or `start_servo_unified.bat`
+in the repository root, which runs the same file so you don't have to open
+the folder. On every start it:
 
-There is also `start_servo_unified.bat` in the repository root, so you don't
-have to open this folder: double-click it and it starts this folder's
-server. It differs from `start_server.bat` in three ways:
+1. Finds Python (`python`, or the `py -3` launcher; the Microsoft Store
+   placeholder that only opens the Store is ignored) and checks it's 3.8+.
+2. Prints a **setup report** (`check_pc_setup.py`, no network): each package
+   from `requirements_pc.txt` as `OK` / `MISSING` / `TOO OLD`, the serial
+   ports Windows can see, and whether `motor_profiles.json` is present.
+   **RPi.GPIO is not on the list on purpose** — it is the Raspberry Pi's GPIO
+   package and a PC never needs it.
+3. Runs `pip install -r requirements_pc.txt` **only if** something is missing
+   or too old (pip's details also go to `pip_install.log`), then checks again.
+   After the first run it starts without touching pip or the internet.
+4. Stops with an explanation if `motor_profiles.json` is missing — that file
+   is tuned per rig and not stored in git, so a fresh clone or pull won't
+   have it.
+5. Opens the browser and runs the server in the same window (`Ctrl+C` stops
+   it). If the server exits with an error it says so instead of just closing.
 
-* It installs packages **only when needed**: `check_requirements.py` compares
-  `requirements_pc.txt` with what's installed (no network), and `pip install`
-  runs only if something is missing or older than the listed minimum. After
-  the first run it starts without touching pip or the internet.
-* It finds Python as `python` or, failing that, the `py -3` launcher (and
-  ignores the Microsoft Store placeholder that only opens the Store).
-* It checks that `motor_profiles.json` is present first — that file is tuned
-  per rig and not stored in git, so a fresh clone or pull won't have it —
-  and if it's missing, says how to restore it instead of letting the server
-  crash on start.
+Options (from a terminal, or a shortcut):
 
-`SERVO_WEB_PORT` / `SERVO_SERIAL_PORT` work the same with either launcher.
+| Command | What it does |
+|---|---|
+| `start_server.bat --check` | Only the setup report: installs and starts nothing. Use this first on a new PC, or to see what's wrong. |
+| `start_server.bat --install` | Runs pip even if the check passes (e.g. after a broken install), then starts. |
+| `start_server.bat --help` | Lists the options. |
+
+`SERVO_WEB_PORT` (default 5000) and `SERVO_SERIAL_PORT` (e.g. `COM7`) can be
+set before running it.
+
+On a PC the server logs `Running on a PC: Raspberry Pi GPIO is not used
+(normal).` at start — that's expected, not an error.
 
 A `.bat` file rather than a shell script because this is a plain Windows
 PC target — it double-clicks and runs with no extra tooling (no Git Bash
@@ -93,10 +101,14 @@ the motor by itself). With no adapter plugged in it still starts and shows the
 
 ## Quick start
 
-1. Double-click `start_server.bat` in this folder.
-2. Wait for `Running on http://0.0.0.0:5000` to appear — your browser
+1. New PC? Run `start_server.bat --check` once and read the report: every
+   package `OK` (or let step 2 install them), your adapter listed under
+   **Serial ports**, and `motor_profiles.json found`.
+2. Double-click `start_server.bat` in this folder (or
+   `start_servo_unified.bat` in the repository root).
+3. Wait for `Running on http://0.0.0.0:5000` to appear — your browser
    should open to the control panel automatically a few seconds later.
-3. To stop the server, click the console window and press `Ctrl+C`.
+4. To stop the server, click the console window and press `Ctrl+C`.
 
 ## Manual step-by-step
 
@@ -122,10 +134,19 @@ section, or the HTTP API. Full reference: `OSC_ARTNET_GUIDE.md`.
 - **"Python was not found" / `python` not recognized** — Python isn't on
   PATH. Reinstall from python.org with "Add to PATH" checked, or use the
   `py` launcher (`py app.py`) if that's what your install provides.
-- **`pip install` fails on `RPi.GPIO`** — an older checkout of the root
-  `requirements.txt`, which listed it. Update, or use this folder's
-  `requirements_pc.txt`. The app doesn't need the package off-Pi; it
-  degrades gracefully without it (see `app.py`'s GPIO import).
+- **Anything to do with `RPi.GPIO`** — you don't need it on a PC: it's the
+  Raspberry Pi's GPIO package. `start_server.bat` never installs it, and the
+  server just logs "Running on a PC: Raspberry Pi GPIO is not used (normal)."
+  If `pip install` fails on it, you installed the repo-root
+  `requirements.txt` (the Pi list) by hand — use this folder's
+  `requirements_pc.txt` instead.
+- **The package install fails** — read the error above it and
+  `pip_install.log` in this folder. Usually there is no internet connection,
+  or a proxy/firewall blocks pypi.org. Fix that and run `start_server.bat`
+  again; `start_server.bat --install` forces a fresh attempt.
+- **No serial ports in the report** — the adapter isn't plugged in, or its
+  driver (CH340 / FTDI / CP210x) isn't installed: check Device Manager →
+  Ports (COM & LPT).
 - **Serial port / COM port errors, or `/status` shows
   `"connected_port": "Not connected"`** — most often another copy of
   `app.py` is already running and holding the port (check other terminal

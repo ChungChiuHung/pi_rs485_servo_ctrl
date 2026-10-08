@@ -138,5 +138,34 @@ class ConnectedTests(unittest.TestCase):
         self.assertIsNone(app_module._connection_error)
 
 
+class GpioMessageTests(unittest.TestCase):
+    """RPi.GPIO missing is normal on a PC (INFO) and a real problem only on
+    Pi hardware (WARNING) -- the old unconditional WARNING made every PC
+    start look broken."""
+
+    def setUp(self):
+        self.app_module = load_app(port_opens=False)
+        self.addCleanup(logging.getLogger().removeHandler, self.app_module._activity_log_handler)
+
+    def message_on(self, sys_platform, machine):
+        with patch.object(self.app_module.sys, "platform", sys_platform), \
+                patch.object(self.app_module.platform, "machine", return_value=machine):
+            return self.app_module._gpio_missing_log()
+
+    def test_pc_gets_an_info_line(self):
+        for sys_platform, machine in (("win32", "AMD64"), ("darwin", "arm64"), ("linux", "x86_64")):
+            with self.subTest(platform=sys_platform, machine=machine):
+                level, message = self.message_on(sys_platform, machine)
+                self.assertEqual(level, logging.INFO)
+                self.assertIn("Running on a PC", message)
+
+    def test_pi_hardware_still_warns(self):
+        for machine in ("armv7l", "aarch64"):
+            with self.subTest(machine=machine):
+                level, message = self.message_on("linux", machine)
+                self.assertEqual(level, logging.WARNING)
+                self.assertIn("setup_pi.sh", message)
+
+
 if __name__ == "__main__":
     unittest.main()
