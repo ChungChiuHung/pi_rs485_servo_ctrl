@@ -50,6 +50,10 @@
                         errorPrefix: 'Error: ',
                         autostartNone: 'No autostart configured.', autostartCurrent: 'Autostart is ON for {type}.',
                         clear: 'Clear',
+                        serverStatusUnavailable: 'Unknown (status unavailable)',
+                        autostartReadFailed: 'Could not read autostart setting: ',
+                        autostartClearFailed: 'Could not clear autostart: ',
+                        lockedWhileServerRuns: 'Stop the OSC/Art-Net server first.',
                         servo: 'Servo', servoOnBtn: 'SERVO ON', servoOffBtn: 'SERVO OFF',
                         getStateValueBtn: 'GET STATE VALUE', clearAlarm12Btn: 'CLEAR ALARM 12',
                         clearAlarm12Confirm: 'CLICK AGAIN TO CONFIRM', setHomeBtn: 'SET HOME',
@@ -160,6 +164,10 @@
                         errorPrefix: '錯誤：',
                         autostartNone: '尚未設定自動啟動。', autostartCurrent: '{type} 已設定為自動啟動。',
                         clear: '清除',
+                        serverStatusUnavailable: '未知（無法取得狀態）',
+                        autostartReadFailed: '無法讀取自動啟動設定：',
+                        autostartClearFailed: '無法清除自動啟動設定：',
+                        lockedWhileServerRuns: '請先停止 OSC/Art-Net 伺服器。',
                         servo: '伺服馬達', servoOnBtn: '伺服開啟', servoOffBtn: '伺服關閉',
                         getStateValueBtn: '讀取狀態暫存器', clearAlarm12Btn: '清除告警 12',
                         clearAlarm12Confirm: '再按一次確認', setHomeBtn: '設定原點',
@@ -318,6 +326,15 @@
                         .addClass(ok ? 'status-ok' : 'status-error');
                 }
 
+                // Best readable text from a failed request. Most endpoints
+                // answer {"message": ...}, but /action's catch-all 500 answers
+                // {"error": ..., "details": ...} -- reading only `message`
+                // reduced that to a generic fallback.
+                function errorText(xhr, fallback) {
+                    const r = xhr && xhr.responseJSON;
+                    return (r && (r.message || r.details || r.error)) || fallback;
+                }
+
                 // The backend only ever runs one hardware-touching request
                 // at a time (see app.py's hardware_serialized decorator) --
                 // disabling every command button while any request is in
@@ -376,7 +393,7 @@
                         },
                         error: function(xhr){
                             console.error('Error:', xhr);
-                            const msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Error performing action';
+                            const msg = errorText(xhr, 'Error performing action');
                             setFeedback(action, msg, false);
                             if (callbacks.error) { callbacks.error(msg); }
                         }
@@ -744,7 +761,7 @@
                             );
                         },
                         error: function(xhr){
-                            const msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Failed to clear alarm';
+                            const msg = errorText(xhr, 'Failed to clear alarm');
                             setFeedback('clearAlarm12', msg, false);
                         }
                     }).always(function(){
@@ -791,6 +808,13 @@
                 let encoderModePa28 = null;
                 let encoderSwitchArmed = false;
                 let encoderSwitchTimer = null;
+                // A PA28 write or adopt is in flight -- blocks a second submit.
+                let encoderRequestInFlight = false;
+                // Last successful /server/status said OSC or Art-Net is running.
+                // The backend refuses profile and encoder-mode changes then
+                // (409); this only keeps the UI from inviting the click. Left
+                // as-is when a status poll fails (see pollInputServerStatus()).
+                let inputServerActive = false;
 
                 function disarmEncoderSwitch() {
                     encoderSwitchArmed = false;
@@ -798,12 +822,18 @@
                     updateEncoderSwitchButton();
                 }
 
+                // Also owns the ADOPT button's enabled state: both change the
+                // encoder mode the process runs in.
                 function updateEncoderSwitchButton() {
                     const btn = $('#encoderModeSwitchBtn');
+                    const locked = encoderRequestInFlight || inputServerActive;
+                    $('#encoderModeAdoptBtn').prop('disabled', locked)
+                        .attr('title', inputServerActive ? t('lockedWhileServerRuns') : null);
+                    btn.attr('title', inputServerActive ? t('lockedWhileServerRuns') : null);
                     btn.removeClass('button-armed');
                     if (encoderModePa28 === null) { btn.text(t('switchEncoderModeBtn')).prop('disabled', true); return; }
                     const target = encoderModePa28 === 1 ? t('modeIncremental') : t('modeAbsolute');
-                    btn.prop('disabled', false);
+                    btn.prop('disabled', locked);
                     if (encoderSwitchArmed) {
                         btn.text(t('switchModeConfirm').replace('{target}', target)).addClass('button-armed');
                     } else {
@@ -833,6 +863,7 @@
                 readEncoderMode();
 
                 $('#encoderModeSwitchBtn').click(function() {
+                    if (encoderRequestInFlight) { return; }
                     if (!encoderSwitchArmed) {
                         encoderSwitchArmed = true;
                         updateEncoderSwitchButton();
@@ -843,6 +874,7 @@
                         return;
                     }
                     const wantAbsolute = (encoderModePa28 !== 1);
+                    encoderRequestInFlight = true;
                     disarmEncoderSwitch();
                     $.ajax({
                         url: '/encoder_mode', type: 'POST', contentType: 'application/json',
@@ -850,12 +882,18 @@
                         success: function(r) { setFeedback('encoderModeSwitch', r.message, true); readEncoderMode(); },
                         error: function(xhr) {
                             setFeedback('encoderModeSwitch',
-                                (xhr.responseJSON && xhr.responseJSON.message) || 'Error', false);
+                                errorText(xhr, 'Error'), false);
                         }
+                    }).always(function() {
+                        encoderRequestInFlight = false;
+                        updateEncoderSwitchButton();
                     });
                 });
 
                 $('#encoderModeAdoptBtn').click(function() {
+                    if (encoderRequestInFlight) { return; }
+                    encoderRequestInFlight = true;
+                    updateEncoderSwitchButton();
                     $.ajax({
                         url: '/encoder_mode/adopt', type: 'POST',
                         success: function(r) {
@@ -864,8 +902,11 @@
                         },
                         error: function(xhr) {
                             setFeedback('encoderModeAdopt',
-                                (xhr.responseJSON && xhr.responseJSON.message) || 'Error', false);
+                                errorText(xhr, 'Error'), false);
                         }
+                    }).always(function() {
+                        encoderRequestInFlight = false;
+                        updateEncoderSwitchButton();
                     });
                 });
 
@@ -885,9 +926,35 @@
                     });
                 }
 
+                // A POST /profile is in flight -- syncProfileSelect() must not
+                // overwrite the user's pending choice with the old profile.
+                let profileChangeInFlight = false;
+
+                function updateProfileSelectLock() {
+                    $('#profile_select').prop('disabled', inputServerActive || profileChangeInFlight)
+                        .attr('title', inputServerActive ? t('lockedWhileServerRuns') : null);
+                }
+
+                // Keeps the dropdown on the profile the backend reports in
+                // /status (another tab, a reconnect...). Setting .val() does
+                // not fire 'change', so this never sends a POST /profile.
+                function syncProfileSelect(profile) {
+                    const select = $('#profile_select');
+                    if (!profile || profileChangeInFlight || document.activeElement === select[0]) { return; }
+                    if (select.val() === profile) { return; }
+                    if (select.find('option').filter(function() { return this.value === profile; }).length === 0) {
+                        loadProfile();
+                        return;
+                    }
+                    select.val(profile);
+                    $('#profile_status').text(t('activeColon').replace('{name}', profile));
+                }
+
                 $('#profile_select').change(function() {
                     const selected = $(this).val();
                     $('#profile_status').text(t('switchingTo').replace('{name}', selected));
+                    profileChangeInFlight = true;
+                    updateProfileSelectLock();
                     $.ajax({
                         url: '/profile',
                         type: 'POST',
@@ -897,10 +964,13 @@
                             $('#profile_status').text(t('activeColon').replace('{name}', response.active_profile));
                         },
                         error: function(xhr) {
-                            const msg = (xhr.responseJSON && xhr.responseJSON.message) || t('failedToSwitchProfile');
+                            const msg = errorText(xhr, t('failedToSwitchProfile'));
                             $('#profile_status').text(t('errorPrefix') + msg);
                             loadProfile(); // revert dropdown to the actual active profile
                         }
+                    }).always(function() {
+                        profileChangeInFlight = false;
+                        updateProfileSelectLock();
                     });
                 });
 
@@ -936,28 +1006,59 @@
                         .append($('<a href="#" class="clear-autostart">').text(t('clear')));
                 }
 
+                function showAutostartError(prefixKey, xhr) {
+                    $('#autostartStatus').append(
+                        $('<span class="action-feedback status-error">')
+                            .text(' ' + t(prefixKey) + errorText(xhr, 'HTTP ' + xhr.status))
+                    );
+                }
+
                 function refreshAutostartStatus() {
                     $.get('/server/autostart', function(response) {
                         renderAutostartStatus(response.config);
+                    }).fail(function(xhr) {
+                        // Unknown, not "none": the saved config may still exist.
+                        $('#autostartStatus').empty();
+                        showAutostartError('autostartReadFailed', xhr);
                     });
                 }
                 refreshAutostartStatus();
+
+                // A /server/start or /server/stop is in flight -- both buttons
+                // stay disabled until it answers, so a double click or a Stop
+                // racing a Start can't send a second request.
+                let serverRequestInFlight = false;
+
+                function updateInputServerButtons() {
+                    $('#startInputServerBtn').prop('disabled', serverRequestInFlight || inputServerActive);
+                    $('#stopInputServerBtn').prop('disabled', serverRequestInFlight || !inputServerActive);
+                }
 
                 function pollInputServerStatus() {
                     $.get('/server/status', function(response) {
                         const label = response.active_input_server
                             ? response.active_input_server.toUpperCase() + (response.is_running ? t('running') : t('starting_'))
                             : t('none');
-                        $('#input_server_status_label').text(label);
-                        $('#startInputServerBtn').prop('disabled', !!response.active_input_server);
-                        $('#stopInputServerBtn').prop('disabled', !response.active_input_server);
+                        $('#input_server_status_label').text(label).removeClass('action-feedback status-error');
+                        inputServerActive = !!response.active_input_server;
+                        updateInputServerButtons();
+                        updateProfileSelectLock();
+                        updateEncoderSwitchButton();
                         if (response.active_input_server !== 'artnet') {
                             $('#artnetMonitorSection').hide();
                         }
+                    }).fail(function() {
+                        // Don't keep showing the last answer as if it were
+                        // current. inputServerActive (and the locks it
+                        // drives) is left as last known; the next successful
+                        // poll restores everything.
+                        $('#input_server_status_label').text(t('serverStatusUnavailable'))
+                            .addClass('action-feedback status-error');
                     });
                 }
 
                 $('#startInputServerBtn').click(function(){
+                    if (serverRequestInFlight) { return; }
                     const type = $('#input_server_type').val();
                     const payload = {type: type};
                     if (type === 'osc') {
@@ -994,6 +1095,8 @@
                     }
                     if ($('#input_server_autostart').is(':checked')) { payload.autostart = true; }
                     $('#input_server_action_status').text(t('starting').replace('{type}', type));
+                    serverRequestInFlight = true;
+                    updateInputServerButtons();
                     $.ajax({
                         url: '/server/start',
                         type: 'POST',
@@ -1003,34 +1106,44 @@
                             $('#input_server_action_status').text(
                                 t('started').replace('{type}', response.active_input_server).replace('{port}', response.listen_port)
                             );
-                            pollInputServerStatus();
                             refreshAutostartStatus();
                         },
                         error: function(xhr) {
-                            const msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Failed to start server';
+                            const msg = errorText(xhr, 'Failed to start server');
                             $('#input_server_action_status').text(t('errorPrefix') + msg);
                         }
+                    }).always(function() {
+                        serverRequestInFlight = false;
+                        pollInputServerStatus();
                     });
                 });
 
                 $('#autostartStatus').on('click', 'a.clear-autostart', function(e){
                     e.preventDefault();
-                    $.ajax({url: '/server/autostart', type: 'DELETE', success: refreshAutostartStatus});
+                    $.ajax({
+                        url: '/server/autostart', type: 'DELETE', success: refreshAutostartStatus,
+                        error: function(xhr) { showAutostartError('autostartClearFailed', xhr); }
+                    });
                 });
 
                 $('#stopInputServerBtn').click(function(){
+                    if (serverRequestInFlight) { return; }
                     $('#input_server_action_status').text(t('stopping'));
+                    serverRequestInFlight = true;
+                    updateInputServerButtons();
                     $.ajax({
                         url: '/server/stop',
                         type: 'POST',
                         success: function(response) {
                             $('#input_server_action_status').text(t('stopped').replace('{type}', response.stopped));
-                            pollInputServerStatus();
                         },
                         error: function(xhr) {
-                            const msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Failed to stop server';
+                            const msg = errorText(xhr, 'Failed to stop server');
                             $('#input_server_action_status').text(t('errorPrefix') + msg);
                         }
+                    }).always(function() {
+                        serverRequestInFlight = false;
+                        pollInputServerStatus();
                     });
                 });
 
@@ -1041,6 +1154,9 @@
                 // Never sends a write/motion command; see GET /status.
                 function pollStatus() {
                     $.get('/status', function(response) {
+                        // Reported connected or not, so the dropdown also
+                        // catches up while the serial port is missing.
+                        syncProfileSelect(response.profile);
                         if (response.connected === false) {
                             // The app is running but has no serial port: say so
                             // and stop here (every other field needs the drive).
@@ -1190,7 +1306,7 @@
                         },
                         error: function(xhr) {
                             $('#reconnectStatus').text(t('failedPrefix') +
-                                ((xhr.responseJSON && xhr.responseJSON.message) || 'error'));
+                                (errorText(xhr, 'error')));
                         }
                     });
                 });
@@ -1224,7 +1340,7 @@
                     }).fail(function(xhr) {
                         // 429 = another command is running; skip this refresh quietly.
                         const msg = xhr.status === 429 ? 'busy, try again'
-                            : ((xhr.responseJSON && xhr.responseJSON.message) || 'read failed');
+                            : (errorText(xhr, 'read failed'));
                         $('#doStatusFeedback').text('[' + timestamp() + '] ' + msg);
                     }).always(function() { doRequestInFlight = false; });
                 }

@@ -266,6 +266,166 @@ class ActionFeedbackTargetTests(unittest.TestCase):
                 self.assertIn(action + "_status", self.ids)
 
 
+def js_block(html, marker):
+    """Source of the {...} body that follows `marker` in the page's script --
+    braces inside '...', "..." and `...` strings and // comments are skipped,
+    so '{type}' placeholders don't throw the matching off."""
+    start = html.index(marker)
+    i = html.index("{", start)
+    depth = 0
+    while True:
+        c = html[i]
+        if html.startswith("//", i):
+            i = html.index("\n", i)
+            continue
+        if c in "'\"`":
+            j = i + 1
+            while html[j] != c:
+                j += 2 if html[j] == "\\" else 1
+            i = j + 1
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return html[start:i + 1]
+        i += 1
+
+
+class UiRobustnessTests(unittest.TestCase):
+    """Phase A2: pending guards, stale server status, autostart errors,
+    profile sync and the profile/encoder-mode lock while an input server runs.
+    No JS test runner here, so these check the template's structure; the
+    backend rules the UI mirrors are checked over HTTP."""
+
+    def setUp(self):
+        with patch.object(app_module, "WEB_PASSWORD", ""):
+            self.html = app_module.app.test_client().get("/index").get_data(as_text=True)
+
+    def block(self, marker):
+        return js_block(self.html, marker)
+
+    def assert_in_order(self, text, *parts):
+        positions = [text.index(part) for part in parts]
+        self.assertEqual(positions, sorted(positions), parts)
+
+    def assert_guarded(self, handler_marker, flag):
+        body = self.block(handler_marker)
+        first_statement = body[body.index("{") + 1:].lstrip()
+        self.assertTrue(first_statement.startswith(f"if ({flag}) {{ return; }}"), body[:300])
+        self.assert_in_order(body, f"{flag} = true;", "$.ajax(", ".always(function() {",
+                             f"{flag} = false;")
+
+    # A2.1
+    def test_error_text_prefers_message_then_details_then_error(self):
+        self.assertIn("(r && (r.message || r.details || r.error)) || fallback",
+                      self.block("function errorText("))
+        self.assertNotIn("responseJSON.message", self.html)
+        self.assertIn("const msg = errorText(xhr, 'Error performing action');",
+                      self.block("function sendCommand("))
+
+    # A2.2
+    def test_server_start_and_stop_have_an_in_flight_guard(self):
+        self.assert_guarded("$('#startInputServerBtn').click(", "serverRequestInFlight")
+        self.assert_guarded("$('#stopInputServerBtn').click(", "serverRequestInFlight")
+        buttons = self.block("function updateInputServerButtons(")
+        self.assertIn("'disabled', serverRequestInFlight || inputServerActive", buttons)
+        self.assertIn("'disabled', serverRequestInFlight || !inputServerActive", buttons)
+
+    # A2.3
+    def test_encoder_switch_and_adopt_have_an_in_flight_guard(self):
+        self.assert_guarded("$('#encoderModeSwitchBtn').click(", "encoderRequestInFlight")
+        self.assert_guarded("$('#encoderModeAdoptBtn').click(", "encoderRequestInFlight")
+        # The click-twice confirmation is still there, after the guard.
+        self.assert_in_order(self.block("$('#encoderModeSwitchBtn').click("),
+                             "if (encoderRequestInFlight)", "if (!encoderSwitchArmed)",
+                             "confirm: true")
+
+    # A2.4
+    def test_server_status_failure_is_shown_and_success_restores_it(self):
+        poll = self.block("function pollInputServerStatus(")
+        success, failure = poll.split(".fail(", 1)
+        self.assertIn("t('serverStatusUnavailable')", failure)
+        self.assertIn("addClass('action-feedback status-error')", failure)
+        self.assertNotIn("inputServerActive =", failure)  # locks keep the last known state
+        self.assertIn("removeClass('action-feedback status-error')", success)
+        self.assertIn("inputServerActive = !!response.active_input_server;", success)
+        self.assertEqual(self.html.count("serverStatusUnavailable:"), 2)  # en + zh-tw
+
+    # A2.5
+    def test_autostart_read_and_clear_failures_are_shown(self):
+        read = self.block("function refreshAutostartStatus(")
+        self.assertIn(".fail(function(xhr)", read)
+        self.assertIn("showAutostartError('autostartReadFailed', xhr)", read)
+        clear = self.block("$('#autostartStatus').on('click', 'a.clear-autostart'")
+        self.assertIn("showAutostartError('autostartClearFailed', xhr)", clear)
+        self.assertIn("errorText(xhr,", self.block("function showAutostartError("))
+        for key in ("autostartReadFailed:", "autostartClearFailed:"):
+            self.assertEqual(self.html.count(key), 2)
+
+    # A2.6
+    def test_status_poll_syncs_the_profile_without_posting(self):
+        self.assert_in_order(self.block("function pollStatus("),
+                             "syncProfileSelect(response.profile);", "response.connected === false")
+        sync = self.block("function syncProfileSelect(")
+        self.assertIn("profileChangeInFlight || document.activeElement === select[0]", sync)
+        self.assertIn("select.val(profile);", sync)
+        for forbidden in (".change(", ".trigger(", "$.ajax", "$.post"):
+            self.assertNotIn(forbidden, sync)
+
+    def test_status_reports_the_profile_even_without_a_serial_connection(self):
+        with patch.object(app_module, "WEB_PASSWORD", ""), \
+                patch.object(app_module, "servo_ctrller", None):
+            body = app_module.app.test_client().get("/status").get_json()
+        self.assertEqual(body["profile"], app_module.current_profile_name)
+
+    # A2.7
+    def test_profile_and_encoder_controls_follow_the_input_server_state(self):
+        self.assertIn("'disabled', inputServerActive || profileChangeInFlight",
+                      self.block("function updateProfileSelectLock("))
+        encoder = self.block("function updateEncoderSwitchButton(")
+        self.assertIn("const locked = encoderRequestInFlight || inputServerActive;", encoder)
+        self.assertIn("$('#encoderModeAdoptBtn').prop('disabled', locked)", encoder)
+        self.assertIn("btn.prop('disabled', locked);", encoder)
+        success = self.block("function pollInputServerStatus(").split(".fail(", 1)[0]
+        self.assert_in_order(success, "inputServerActive = !!response.active_input_server;",
+                             "updateProfileSelectLock();", "updateEncoderSwitchButton();")
+
+    def test_server_status_reports_osc_and_artnet_so_the_ui_locks_for_both(self):
+        server = MagicMock(is_running=True)
+        for server_type in ("osc", "artnet", None):
+            with self.subTest(server_type=server_type), \
+                    patch.object(app_module, "WEB_PASSWORD", ""), \
+                    patch.object(app_module, "active_input_server", server_type), \
+                    patch.object(app_module, "_input_server_instance", server if server_type else None):
+                body = app_module.app.test_client().get("/server/status").get_json()
+            self.assertEqual(body["active_input_server"], server_type)
+
+    def test_backend_still_refuses_profile_and_encoder_changes_while_a_server_runs(self):
+        ctrl = MagicMock(reading_active=False)
+        other_profile = next(name for name in app_module._profiles_data["profiles"]
+                             if name != app_module.current_profile_name)
+        for server_type in ("osc", "artnet"):
+            with self.subTest(server_type=server_type), \
+                    patch.object(app_module, "WEB_PASSWORD", ""), \
+                    patch.object(app_module, "servo_ctrller", ctrl), \
+                    patch.object(app_module, "active_input_server", server_type):
+                client = app_module.app.test_client()
+                profile = client.post("/profile", json={"profile": other_profile})
+                encoder = client.post("/encoder_mode", json={"absolute": True, "confirm": True})
+            self.assertEqual(profile.status_code, 409)
+            self.assertEqual(encoder.status_code, 409)
+        ctrl.write_PA28_Encoder_Mode.assert_not_called()
+
+    # Phase A1 still intact
+    def test_jog_feedback_mapping_is_unchanged(self):
+        self.assertIn("$('#' + statusKey(action) + '_status')", self.block("function setFeedback("))
+        mapping = self.block("const STATUS_KEY_FOR_ACTION =")
+        for action in ("motionStart_CW", "motionStart_CCW", "motionPause"):
+            self.assertIn(f"{action}: 'jogMotion'", mapping)
+
+
 class OscStartOptionsTests(unittest.TestCase):
     """POST /server/start with type "osc". OSCInputServer is a mock -- no
     UDP socket is opened and nothing reaches the drive."""
