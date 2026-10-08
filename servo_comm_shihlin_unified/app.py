@@ -646,6 +646,37 @@ def _parse_artnet_options(payload):
     return options, None
 
 
+def _parse_osc_options(payload):
+    """Validates the OSC start request. Returns (OSCInputServer kwargs, None)
+    or (None, error message). Feedback stays off unless requested; asking for
+    a feedback_port without a feedback_ip is an error, not a silent no-op."""
+    def port(key, default):
+        raw = payload.get(key, default)
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            return None, f"{key} must be a number."
+        if not (1 <= value <= 65535):
+            return None, f"{key} must be between 1 and 65535."
+        return value, None
+
+    listen_port, error = port("listen_port", 5005)
+    if error:
+        return None, error
+
+    feedback_ip = payload.get("feedback_ip") or None
+    feedback_port = None
+    if payload.get("feedback_port") not in (None, ""):
+        if feedback_ip is None:
+            return None, "feedback_port was given without feedback_ip; set feedback_ip to enable feedback."
+        feedback_port, error = port("feedback_port", None)
+        if error:
+            return None, error
+
+    return {"listen_ip": payload.get("listen_ip", "0.0.0.0"), "listen_port": listen_port,
+            "feedback_ip": feedback_ip, "feedback_port": feedback_port}, None
+
+
 # Persisted "last successful /server/start" request, so OSC/Art-Net can be
 # brought back up automatically at process start instead of requiring a
 # manual click/curl every boot (see _autostart_input_server() below). Same
@@ -707,17 +738,16 @@ def _do_start_input_server(payload: dict):
     server_type = payload.get("type")
 
     if server_type == "osc":
-        listen_ip = payload.get("listen_ip", "0.0.0.0")
-        listen_port = int(payload.get("listen_port", 5005))
-        feedback_ip = payload.get("feedback_ip")
-        feedback_port = payload.get("feedback_port")
-        feedback_port = int(feedback_port) if feedback_port else None
+        options, error = _parse_osc_options(payload)
+        if error:
+            return {"status": "error", "message": error}, 400
+        listen_ip = options["listen_ip"]
+        listen_port = options["listen_port"]
 
         with _state_lock:
-            server = OSCInputServer(
-                servo_ctrller, listen_ip=listen_ip, listen_port=listen_port,
-                feedback_ip=feedback_ip, feedback_port=feedback_port,
-            )
+            if servo_ctrller is None:
+                return {"status": "error", "message": "Servo controller is not connected."}, 503
+            server = OSCInputServer(servo_ctrller, **options)
             try:
                 server.start()
             except Exception as e:

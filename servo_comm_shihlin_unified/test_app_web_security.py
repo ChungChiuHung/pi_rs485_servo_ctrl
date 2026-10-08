@@ -216,6 +216,76 @@ class ArtNetStartOptionsTests(unittest.TestCase):
         self.assertNotIn('id="artnet_dangerous_channels" checked', html)
 
 
+class OscStartOptionsTests(unittest.TestCase):
+    """POST /server/start with type "osc". OSCInputServer is a mock -- no
+    UDP socket is opened and nothing reaches the drive."""
+
+    def setUp(self):
+        self.client = app_module.app.test_client()
+        self.server_cls = MagicMock()
+        patches = [
+            patch.object(app_module, "OSCInputServer", self.server_cls),
+            patch.object(app_module, "active_input_server", None),
+            patch.object(app_module, "_input_server_instance", None),
+            patch.object(app_module, "servo_ctrller", MagicMock()),
+            patch.object(app_module, "WEB_PASSWORD", ""),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def start(self, **payload):
+        return self.client.post("/server/start", json={"type": "osc", **payload})
+
+    def test_defaults_are_unchanged(self):
+        response = self.start()
+        self.assertEqual(response.status_code, 200)
+        self.server_cls.assert_called_once_with(
+            app_module.servo_ctrller, listen_ip="0.0.0.0", listen_port=5005,
+            feedback_ip=None, feedback_port=None)
+        self.server_cls.return_value.start.assert_called_once()
+        self.assertEqual(response.get_json(), {
+            "status": "success", "active_input_server": "osc",
+            "listen_ip": "0.0.0.0", "listen_port": 5005})
+
+    def test_options_are_passed_through(self):
+        response = self.start(listen_ip="192.168.1.50", listen_port="6000",
+                              feedback_ip="192.168.1.10", feedback_port=5008)
+        self.assertEqual(response.status_code, 200)
+        self.server_cls.assert_called_once_with(
+            app_module.servo_ctrller, listen_ip="192.168.1.50", listen_port=6000,
+            feedback_ip="192.168.1.10", feedback_port=5008)
+
+    def test_invalid_ports_are_rejected_with_400_and_start_nothing(self):
+        bad = [
+            {"listen_port": "abc"}, {"listen_port": ""}, {"listen_port": None},
+            {"listen_port": 0}, {"listen_port": 70000},
+            {"feedback_ip": "192.168.1.10", "feedback_port": "abc"},
+            {"feedback_ip": "192.168.1.10", "feedback_port": 70000},
+        ]
+        for payload in bad:
+            with self.subTest(payload=payload):
+                response = self.start(**payload)
+                self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+                self.assertIn("must be", response.get_json()["message"])
+        self.server_cls.assert_not_called()
+
+    def test_feedback_port_without_feedback_ip_is_rejected(self):
+        for payload in ({"feedback_port": 5008}, {"feedback_ip": "", "feedback_port": 5008}):
+            with self.subTest(payload=payload):
+                response = self.start(**payload)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("feedback_ip", response.get_json()["message"])
+        self.server_cls.assert_not_called()
+
+    def test_controller_not_connected_is_a_readable_503(self):
+        with patch.object(app_module, "servo_ctrller", None):
+            body, status = app_module._do_start_input_server({"type": "osc"})
+        self.assertEqual(status, 503)
+        self.assertEqual(body["message"], "Servo controller is not connected.")
+        self.server_cls.assert_not_called()
+
+
 class AutostartTests(unittest.TestCase):
     """POST /server/start's `autostart` flag, GET/DELETE /server/autostart,
     and _autostart_input_server() (called once at process start -- see

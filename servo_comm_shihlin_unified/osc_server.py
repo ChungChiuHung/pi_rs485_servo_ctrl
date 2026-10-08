@@ -129,9 +129,18 @@ class OSCInputServer:
                 # Per docs/en_manual.txt:10380-10382 (JOG_OPERATION, 0x0904):
                 # 1 = forward rotation (CCW), 2 = reverse rotation (CW).
                 if cw_ccw == "CW":
-                    self.servo_ctrller.speed_ctrl_action(2)
+                    accepted = self.servo_ctrller.speed_ctrl_action(2)
                 elif cw_ccw == "CCW":
-                    self.servo_ctrller.speed_ctrl_action(1)
+                    accepted = self.servo_ctrller.speed_ctrl_action(1)
+                else:
+                    logger.warning(f"/ctrl_continuous_motion: unknown direction {cw_ccw!r} "
+                                   "(expected 'CW' or 'CCW'); nothing sent.")
+                    return
+                # speed_ctrl_action() returns False when it refuses a direct
+                # CW<->CCW reversal -- the motor did not start, so don't
+                # tell the client it did.
+                if not accepted:
+                    return
                 self._send_feedback("/continuous_mode_start", cw_ccw)
         except Exception as e:
             logger.error(f"Error in ctrl_continuous_motion_handler: {e}")
@@ -216,13 +225,19 @@ class OSCInputServer:
         if self._server is not None:
             raise RuntimeError("OSC server is already running.")
 
-        self.servo_ctrller.register_event_listener("on_motion_completed", self._on_motion_completed)
-        self.servo_ctrller.register_event_listener("on_moving", self._on_moving)
-
+        # Bind BEFORE registering listeners: if the port can't be bound (e.g.
+        # already in use) this raises with nothing registered. Registering
+        # first leaked both listeners on every failed start, so a later
+        # successful start sent each /moving and /motion_complete once per
+        # earlier failed attempt.
         dispatcher = self._build_dispatcher()
         self._server = pythonosc_server.ThreadingOSCUDPServer(
             (self.listen_ip, self.listen_port), dispatcher
         )
+
+        self.servo_ctrller.register_event_listener("on_motion_completed", self._on_motion_completed)
+        self.servo_ctrller.register_event_listener("on_moving", self._on_moving)
+
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
         logger.info(f"OSC server listening on {self._server.server_address}")

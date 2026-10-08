@@ -4,6 +4,7 @@ this touches real hardware, even the end-to-end tests that start a real
 OSCInputServer on localhost and send it real OSC packets (only the
 network/dispatch layer is real; what it calls into is a mock).
 """
+import socket
 import time
 import unittest
 from unittest.mock import MagicMock, call
@@ -162,6 +163,54 @@ class TestContinuousMotionHandlers(unittest.TestCase):
         ctrl.speed_ctrl_action.assert_called_once_with(0)
 
 
+class TestContinuousMotionStartFeedback(unittest.TestCase):
+    """/continuous_mode_start is only sent when the drive actually accepted
+    the start -- never for an unknown direction or a refused reversal."""
+
+    def make(self, accepted=True):
+        server, ctrl = make_server(feedback_ip="127.0.0.1", feedback_port=0)
+        server._osc_client = MagicMock()
+        ctrl.speed_ctrl_action.return_value = accepted
+        return server, ctrl
+
+    def sent(self, server, address):
+        return [c for c in server._osc_client.send_message.call_args_list if c.args[0] == address]
+
+    def test_accepted_cw_sends_one_ack(self):
+        server, ctrl = self.make()
+        server._ctrl_continuous_motion_handler(None, [], "start", "CW")
+        ctrl.speed_ctrl_action.assert_called_once_with(2)
+        self.assertEqual(self.sent(server, "/continuous_mode_start"),
+                         [call("/continuous_mode_start", ("CW",))])
+
+    def test_accepted_ccw_sends_one_ack(self):
+        server, ctrl = self.make()
+        server._ctrl_continuous_motion_handler(None, [], "start", "CCW")
+        ctrl.speed_ctrl_action.assert_called_once_with(1)
+        self.assertEqual(self.sent(server, "/continuous_mode_start"),
+                         [call("/continuous_mode_start", ("CCW",))])
+
+    def test_unknown_direction_sends_nothing_to_the_drive_and_no_ack(self):
+        for direction in ("cw", "ccw", "", "LEFT", 1):
+            with self.subTest(direction=direction):
+                server, ctrl = self.make()
+                server._ctrl_continuous_motion_handler(None, [], "start", direction)
+                ctrl.speed_ctrl_action.assert_not_called()
+                server._osc_client.send_message.assert_not_called()
+
+    def test_refused_reversal_sends_no_ack(self):
+        server, ctrl = self.make(accepted=False)
+        server._ctrl_continuous_motion_handler(None, [], "start", "CCW")
+        ctrl.speed_ctrl_action.assert_called_once_with(1)
+        server._osc_client.send_message.assert_not_called()
+
+    def test_stop_still_acks(self):
+        server, ctrl = self.make()
+        server._ctrl_continuous_motion_handler(None, [], "stop", "CW")
+        ctrl.speed_ctrl_action.assert_called_once_with(0)
+        server._osc_client.send_message.assert_called_once_with("/continuous_mode_stop", ("stop",))
+
+
 class TestJogSpeedAdjustHandler(unittest.TestCase):
 
     def test_converts_type_and_forwards(self):
@@ -317,6 +366,29 @@ class TestStartStopLifecycle(unittest.TestCase):
         try:
             with self.assertRaises(RuntimeError):
                 server.start()
+        finally:
+            server.stop()
+
+    def test_failed_bind_leaves_no_listeners_and_retries_do_not_accumulate(self):
+        blocker = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        blocker.bind(("127.0.0.1", 0))
+        self.addCleanup(blocker.close)
+        server, ctrl = make_server()
+        server.listen_port = blocker.getsockname()[1]
+
+        for _ in range(3):
+            with self.assertRaises(OSError):
+                server.start()
+            self.assertFalse(server.is_running)
+        ctrl.register_event_listener.assert_not_called()
+
+        server.listen_port = 0  # a free port this time
+        server.start()
+        try:
+            self.assertCountEqual(ctrl.register_event_listener.call_args_list, [
+                call("on_motion_completed", server._on_motion_completed),
+                call("on_moving", server._on_moving),
+            ])
         finally:
             server.stop()
 
