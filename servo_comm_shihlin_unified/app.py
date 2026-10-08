@@ -255,6 +255,35 @@ def _reject_if_other_mode_active(action, other_mode_value, other_mode_name):
     return None
 
 
+# While OSC or Art-Net is running (active_input_server set), that sender owns
+# the motor and the web UI may only use these /action values: reads, Web-local
+# set-point recording, and de-escalation (JOG pause, leaving test mode, servo
+# off). None of them is an emergency stop. Everything else -- including any
+# action name not listed here -- answers 409 before anything is sent to the
+# drive. An allowlist, so a new action is blocked until someone decides it is
+# safe alongside an external sender.
+WEB_ACTIONS_ALLOWED_DURING_EXTERNAL_CONTROL = frozenset({
+    "getMsg", "setPoint_1", "setPoint_2",
+    "motionPause", "motionCancel", "disablePosMode", "servoOff",
+})
+
+_INPUT_SERVER_DISPLAY_NAMES = {"osc": "OSC", "artnet": "Art-Net"}
+
+
+def _reject_if_external_control(action=None):
+    """409 (response, status) tuple while OSC or Art-Net owns the motor, else
+    None. Touches no drive-facing code, so callers must run it before any
+    ServoController call -- a refused request must send nothing."""
+    if active_input_server is None:
+        return None
+    name = _INPUT_SERVER_DISPLAY_NAMES.get(active_input_server, active_input_server)
+    body = {"status": "error",
+            "message": f"{name} is controlling the motor. Stop the input server first."}
+    if action is not None:
+        body["action"] = action
+    return jsonify(body), 409
+
+
 def json_response(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -457,8 +486,13 @@ def set_encoder_mode():
 @app.route('/encoder_mode/adopt', methods=['POST'])
 @hardware_serialized
 def adopt_encoder_mode():
-    """Re-reads PA28 and makes this process use it. Call after a power cycle."""
+    """Re-reads PA28 and makes this process use it. Call after a power cycle.
+    Refused (409) while OSC or Art-Net is running: it changes how angles are
+    computed under a sender that may be issuing moves."""
     global _encoder_mode_pending_power_cycle
+    conflict = _reject_if_external_control()
+    if conflict:
+        return conflict
     mode = servo_ctrller.refresh_encoder_mode()
     if mode is None:
         return jsonify({"status": "error", "message": "Could not read PA28 (communication failure)."}), 503
@@ -881,7 +915,14 @@ def clear_alarm_12_endpoint():
     """Clear Alarm 12 (AL.12, Emergency stop) only. Not a general-purpose
     Modbus write endpoint -- see README for the safety precondition this
     requires before calling it.
+
+    Refused (409, nothing sent) while OSC or Art-Net is running: clearing
+    turns the servo off, and those senders have their own clear command.
     """
+    conflict = _reject_if_external_control()
+    if conflict:
+        return conflict
+
     caller_ip = request.remote_addr
     started_at = datetime.now(timezone.utc).isoformat()
 
@@ -970,6 +1011,12 @@ def handle_action():
     action = data.get('action')
 
     print(f"Received action: {action}")
+
+    # Before the prelude below: a refused request must not write anything.
+    if action not in WEB_ACTIONS_ALLOWED_DURING_EXTERNAL_CONTROL:
+        conflict = _reject_if_external_control(action)
+        if conflict:
+            return conflict
 
     # Populated only by getMsg -- see the final response below.
     state_values = None

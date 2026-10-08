@@ -426,6 +426,137 @@ class UiRobustnessTests(unittest.TestCase):
             self.assertIn(f"{action}: 'jogMotion'", mapping)
 
 
+class ExternalControlOwnershipTests(unittest.TestCase):
+    """Phase B2: while OSC or Art-Net runs (active_input_server set), the web
+    UI may only use an allowlist of /action values; everything else, plus
+    /alarm/clear and /encoder_mode/adopt, answers 409 having touched nothing
+    drive-facing. servo_ctrller is a bare MagicMock, so "touched nothing" is
+    checked as "no call recorded on it at all"."""
+
+    ALLOWED = ("getMsg", "setPoint_1", "setPoint_2",
+               "motionPause", "motionCancel", "disablePosMode", "servoOff")
+    BLOCKED = ("servoOn", "enablePosMode", "posTestStart_CW", "posTestStart_CCW",
+               "gotoSetPoint_1", "gotoSetPoint_2", "setHome", "Home",
+               "enableSpeedCtrlMode", "motionStart_CW", "motionStart_CCW", "jogSpeedAdjust")
+    SERVERS = (("osc", "OSC"), ("artnet", "Art-Net"))
+
+    def setUp(self):
+        self.ctrl = MagicMock()
+        self.ctrl.modbus_client.format_hex.return_value = ""
+        self.ctrl.read_test_mode_0x0901.return_value = 0
+        self.ctrl.speed_ctrl_action.return_value = True
+        self.ctrl.Read_Pos_Related_Paremters.return_value = []
+        self.ctrl.refresh_encoder_mode.return_value = False
+        self.ctrl.read_current_alarm_code.return_value = 0xFF
+        patches = [
+            patch.object(app_module, "servo_ctrller", self.ctrl),
+            patch.object(app_module, "WEB_PASSWORD", ""),
+            patch.object(app_module, "active_input_server", None),
+            patch.object(app_module, "_input_server_instance", None),
+            patch.object(app_module, "_encoder_mode_pending_power_cycle", None),
+            patch.object(app_module.time, "sleep"),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        self.client = app_module.app.test_client()
+
+    def action(self, name):
+        return self.client.post("/action", json={"action": name})
+
+    def external(self, server_type):
+        return patch.object(app_module, "active_input_server", server_type)
+
+    def test_every_dispatched_action_is_classified(self):
+        source = open(app_module.__file__, encoding="utf-8").read()
+        dispatcher = source[source.index("def handle_action("):]
+        dispatched = set(re.findall(r'action == "(\w+)"', dispatcher))
+        for group in re.findall(r"action in \(([^)]*)\)", dispatcher):
+            dispatched |= set(re.findall(r'"(\w+)"', group))
+        self.assertEqual(dispatched, set(self.ALLOWED) | set(self.BLOCKED))
+        self.assertEqual(app_module.WEB_ACTIONS_ALLOWED_DURING_EXTERNAL_CONTROL, set(self.ALLOWED))
+
+    def test_blocked_actions_answer_409_and_touch_nothing(self):
+        for server_type, name in self.SERVERS:
+            for action in self.BLOCKED + ("noSuchAction",):
+                with self.subTest(server=server_type, action=action), self.external(server_type):
+                    self.ctrl.reset_mock()
+                    response = self.action(action)
+                    self.assertEqual(response.status_code, 409)
+                    body = response.get_json()
+                    self.assertEqual(body["message"],
+                                     f"{name} is controlling the motor. Stop the input server first.")
+                    self.assertEqual(body["action"], action)
+                    self.assertEqual(self.ctrl.mock_calls, [])  # no prelude, no command
+
+    def test_allowed_actions_still_run_while_a_server_is_active(self):
+        for server_type, _ in self.SERVERS:
+            for action in self.ALLOWED:
+                with self.subTest(server=server_type, action=action), self.external(server_type):
+                    self.ctrl.reset_mock()
+                    response = self.action(action)
+                    self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                    self.ctrl.ensure_eeprom_write_protection.assert_called_once()
+
+    def test_allowed_actions_reach_their_controller_calls(self):
+        expected = {"servoOff": "servo_off", "motionPause": "speed_ctrl_action",
+                    "motionCancel": "stop_continuous_reading", "disablePosMode": "Enable_Position_Mode",
+                    "getMsg": "Read_Pos_Related_Paremters", "setPoint_1": "record_set_point"}
+        for action, method in expected.items():
+            with self.subTest(action=action), self.external("osc"):
+                self.ctrl.reset_mock()
+                self.action(action)
+                getattr(self.ctrl, method).assert_called()
+
+    def test_unknown_action_is_still_400_without_a_server(self):
+        response = self.action("noSuchAction")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("not recognized", response.get_json()["message"])
+
+    def test_web_control_returns_after_the_server_stops(self):
+        server = MagicMock()
+        with patch.object(app_module, "active_input_server", "osc"), \
+                patch.object(app_module, "_input_server_instance", server):
+            self.assertEqual(self.action("motionStart_CW").status_code, 409)
+            self.assertEqual(self.client.post("/server/stop").status_code, 200)
+            server.stop.assert_called_once()
+            self.assertIsNone(app_module.active_input_server)
+            self.ctrl.reset_mock()
+            self.assertEqual(self.action("motionStart_CW").status_code, 200)
+        self.ctrl.speed_ctrl_action.assert_called_once_with(2)
+
+    def test_alarm_clear_is_refused_while_a_server_is_active(self):
+        for server_type, name in self.SERVERS:
+            with self.subTest(server=server_type), self.external(server_type):
+                self.ctrl.reset_mock()
+                response = self.client.post("/alarm/clear", json={"confirm": True})
+                self.assertEqual(response.status_code, 409)
+                self.assertIn(f"{name} is controlling the motor", response.get_json()["message"])
+                self.assertEqual(self.ctrl.mock_calls, [])
+
+    def test_alarm_clear_is_unchanged_without_a_server(self):
+        response = self.client.post("/alarm/clear", json={"confirm": True})
+        self.assertEqual(response.status_code, 200)
+        self.ctrl.write_PD_16_Enable_DI_Control.assert_called_once()
+        self.ctrl.clear_alarm_12.assert_called_once()
+
+    def test_encoder_adopt_is_refused_while_a_server_is_active(self):
+        for server_type, name in self.SERVERS:
+            with self.subTest(server=server_type), self.external(server_type):
+                self.ctrl.reset_mock()
+                response = self.client.post("/encoder_mode/adopt")
+                self.assertEqual(response.status_code, 409)
+                self.assertIn(f"{name} is controlling the motor", response.get_json()["message"])
+                self.assertEqual(self.ctrl.mock_calls, [])
+
+    def test_encoder_adopt_is_unchanged_without_a_server(self):
+        with patch.object(app_module, "_encoder_mode_pending_power_cycle", True):
+            response = self.client.post("/encoder_mode/adopt")
+            self.assertEqual(response.status_code, 200)
+            self.assertIsNone(app_module._encoder_mode_pending_power_cycle)
+        self.ctrl.refresh_encoder_mode.assert_called_once()
+
+
 class OscStartOptionsTests(unittest.TestCase):
     """POST /server/start with type "osc". OSCInputServer is a mock -- no
     UDP socket is opened and nothing reaches the drive."""
