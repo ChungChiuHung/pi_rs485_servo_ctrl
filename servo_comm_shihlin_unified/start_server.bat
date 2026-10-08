@@ -7,8 +7,10 @@ rem   start_server.bat --check    only show the setup report (installs and start
 rem   start_server.bat --install  reinstall the packages even if the check passes, then start
 rem
 rem Only the PC packages in requirements_pc.txt are used -- never RPi.GPIO,
-rem which is for the Raspberry Pi. Optional before starting: set SERVO_WEB_PORT
-rem (default 5000) or SERVO_SERIAL_PORT (e.g. COM7).
+rem which is for the Raspberry Pi. If motor_profiles.json (per rig, not in
+rem git) is missing, it is created from motor_profiles.example.json, the
+rem current rig's configuration (default motor shihlin_400W). Optional: set
+rem SERVO_WEB_PORT (default 5000) or SERVO_SERIAL_PORT (e.g. COM7).
 setlocal
 cd /d "%~dp0"
 
@@ -56,7 +58,7 @@ set "SETUP_RESULT=%errorlevel%"
 if exist "motor_profiles.json" (
     echo Motor profile: motor_profiles.json found
 ) else (
-    echo Motor profile: motor_profiles.json MISSING -- see below
+    echo Motor profile: motor_profiles.json MISSING -- will be created from the template
 )
 echo.
 
@@ -101,12 +103,19 @@ echo.
 
 rem --- Motor profile --------------------------------------------------------
 :profile
-if not exist "motor_profiles.json" (
+if exist "motor_profiles.json" goto :start
+echo motor_profiles.json is missing ^(it is per rig and not stored in git^).
+echo Creating it from motor_profiles.example.json...
+echo.
+%PY% create_motor_profiles.py
+if errorlevel 1 (
     call :profile_help
     goto :fail
 )
+echo.
 
 rem --- Start ------------------------------------------------------------------
+:start
 set "WEB_PORT=%SERVO_WEB_PORT%"
 if not defined WEB_PORT set "WEB_PORT=5000"
 echo Make sure the RS-485 USB adapter is plugged in before continuing.
@@ -133,8 +142,8 @@ rem --- Helpers ---------------------------------------------------------------
 :check_only
 set "CHECK_RESULT=%SETUP_RESULT%"
 if not exist "motor_profiles.json" (
-    call :profile_help
-    set "CHECK_RESULT=1"
+    echo motor_profiles.json is missing -- start_server.bat will create it from
+    echo motor_profiles.example.json ^(default motor shihlin_400W^).
 )
 if not "%SETUP_RESULT%"=="0" (
     echo Packages are missing or too old -- run start_server.bat to install them.
@@ -148,13 +157,11 @@ pause
 exit /b %CHECK_RESULT%
 
 :profile_help
-echo ERROR: motor_profiles.json is missing from
+echo.
+echo ERROR: motor_profiles.json was not created in
 echo   %CD%
-echo It holds this rig's motor settings (gear ratio, baud rate, home) and is
-echo not stored in git, so a fresh clone or pull does not have it. Copy it from
-echo this rig's previous installation, or restore the last committed version
-echo with Git ^(from the repository root^) and check its values:
-echo   git show a64941d~1:servo_comm_shihlin_unified/motor_profiles.json ^> servo_comm_shihlin_unified\motor_profiles.json
+echo See the message above. motor_profiles.example.json must be next to
+echo start_server.bat; or copy motor_profiles.json from another PC.
 echo.
 exit /b 0
 

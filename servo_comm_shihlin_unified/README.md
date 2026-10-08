@@ -45,7 +45,12 @@ python3 -m unittest discover -p "test_*.py"
 
 `motor_profiles.json` holds the two known motors' settings; switch
 between them from the web UI's "Motor Profile" dropdown or `POST
-/profile`:
+/profile` (that switch lasts until restart: `active_profile` in the file is
+the motor used at every start). The file is tuned per rig and not in git;
+`motor_profiles.example.json` is the committed template (the current rig's
+configuration, default motor `shihlin_400W`), and on Windows
+`start_server.bat` creates the file from it on first start (or run
+`python create_motor_profiles.py [--profile shihlin_50W]`):
 
 ```json
 {

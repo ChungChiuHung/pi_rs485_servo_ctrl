@@ -21,9 +21,14 @@ the folder. On every start it:
 3. Runs `pip install -r requirements_pc.txt` **only if** something is missing
    or too old (pip's details also go to `pip_install.log`), then checks again.
    After the first run it starts without touching pip or the internet.
-4. Stops with an explanation if `motor_profiles.json` is missing — that file
-   is tuned per rig and not stored in git, so a fresh clone or pull won't
-   have it.
+4. **Creates `motor_profiles.json` if it is missing.** That file is tuned per
+   rig and not stored in git, so a fresh clone or pull won't have it. It is
+   copied from the committed template `motor_profiles.example.json` — the
+   current rig's configuration, default motor `shihlin_400W` (gear ratio 30:1,
+   115200 baud). An existing file is never overwritten. For a rig with the
+   50W motor, pick `shihlin_50W` in the web page's Motor Profile list (lasts
+   until restart), or make it the default: delete `motor_profiles.json` and
+   run `python create_motor_profiles.py --profile shihlin_50W`.
 5. Opens the browser and runs the server in the same window (`Ctrl+C` stops
    it). If the server exits with an error it says so instead of just closing.
 
@@ -103,7 +108,8 @@ the motor by itself). With no adapter plugged in it still starts and shows the
 
 1. New PC? Run `start_server.bat --check` once and read the report: every
    package `OK` (or let step 2 install them), your adapter listed under
-   **Serial ports**, and `motor_profiles.json found`.
+   **Serial ports**. `motor_profiles.json MISSING` is fine on a new PC: step 2
+   creates it from the template (default motor `shihlin_400W`).
 2. Double-click `start_server.bat` in this folder (or
    `start_servo_unified.bat` in the repository root).
 3. Wait for `Running on http://0.0.0.0:5000` to appear — your browser
