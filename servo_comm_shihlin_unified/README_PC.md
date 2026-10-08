@@ -123,7 +123,9 @@ to see each step:
 
 ```bash
 cd servo_comm_shihlin_unified
+python check_pc_setup.py                 # optional: the same report --check prints
 python -m pip install -r requirements_pc.txt
+python create_motor_profiles.py          # only if motor_profiles.json is missing
 python app.py
 ```
 
@@ -132,14 +134,18 @@ that terminal.
 
 ## Starting OSC / Art-Net
 
-Not started automatically — use the web UI's "Continuous Motion Input"
-section, or the HTTP API. Full reference: `OSC_ARTNET_GUIDE.md`.
+Not started automatically (unless you saved it with "Autostart on app
+launch") — use the web UI's "Continuous Motion Input" section, or the HTTP
+API. Full reference: `OSC_ARTNET_GUIDE.md`. While one runs, the page shows
+"External control: OSC/Art-Net" and locks its own motion controls (SERVO OFF
+and JOG pause/cancel stay available); press **Stop** there to get them back.
 
 ## Troubleshooting
 
-- **"Python was not found" / `python` not recognized** — Python isn't on
-  PATH. Reinstall from python.org with "Add to PATH" checked, or use the
-  `py` launcher (`py app.py`) if that's what your install provides.
+- **"Python was not found"** — `start_server.bat` already tries both
+  `python` and the `py -3` launcher, so Python really isn't installed (or
+  only the Microsoft Store placeholder is). Install it from python.org with
+  "Add python.exe to PATH" checked.
 - **Anything to do with `RPi.GPIO`** — you don't need it on a PC: it's the
   Raspberry Pi's GPIO package. `start_server.bat` never installs it, and the
   server just logs "Running on a PC: Raspberry Pi GPIO is not used (normal)."
@@ -153,12 +159,13 @@ section, or the HTTP API. Full reference: `OSC_ARTNET_GUIDE.md`.
 - **No serial ports in the report** — the adapter isn't plugged in, or its
   driver (CH340 / FTDI / CP210x) isn't installed: check Device Manager →
   Ports (COM & LPT).
-- **Serial port / COM port errors, or `/status` shows
-  `"connected_port": "Not connected"`** — most often another copy of
+- **The page shows the red "No RS-485 serial port connection" bar (or
+  `/status` says `"connected": false`)** — most often another copy of
   `app.py` is already running and holding the port (check other terminal
   windows, or `python.exe` in Task Manager) — only one process can hold
   the port at a time. Otherwise, confirm the adapter shows up under
-  Device Manager → Ports.
+  Device Manager → Ports (or in `start_server.bat --check`'s report), then
+  press **Reconnect** on the bar.
 - **Port 5000 already in use** — same cause as above: an existing
   `app.py` instance. Stop it (`Ctrl+C` in its window, or end the
   `python.exe` process) before starting a new one.

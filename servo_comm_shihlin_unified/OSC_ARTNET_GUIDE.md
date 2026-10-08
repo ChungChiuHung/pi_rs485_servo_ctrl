@@ -6,8 +6,12 @@ commands from three input sources that all drive the same
 OSC or Art-Net can run at a time** (starting one while the other is
 active is rejected) — there's no reason for two remote protocols to be
 able to issue conflicting motion commands to the same motor
-simultaneously. The web UI's own buttons work regardless of whether an
-input server is running.
+simultaneously. **While either one runs, it owns the motor:** the web UI
+can then only read, record set points, and de-escalate (JOG pause, motion
+cancel / disable position mode, servo off) — everything else is refused
+with HTTP 409 and disabled on the page, and the web arrow keys don't arm.
+Stop the input server to get web control back. See "External control" in
+`README.md` for the exact list.
 
 This guide documents every OSC address and every Art-Net DMX channel as
 actually implemented in `osc_server.py` / `artnet_server.py`, including
@@ -40,9 +44,15 @@ curl -X POST http://<HOST>:5000/server/stop
 curl http://<HOST>:5000/server/status
 ```
 
-OSC's optional feedback (see below) isn't exposed in the web UI — pass
-`feedback_ip`/`feedback_port` in the `/server/start` body directly if you
-need it.
+Feedback (see below) can be set in the web UI ("Send status feedback")
+or with `feedback_ip`/`feedback_port` in the `/server/start` body.
+
+Invalid start options are refused with HTTP 400 and a readable reason —
+nothing is started. For OSC: `listen_port` / `feedback_port` must be whole
+numbers from 1 to 65535. Without a serial connection the answer is 503.
+`"autostart": true` in the body also saves the request so the same server
+comes back up the next time the app starts (`GET`/`DELETE
+/server/autostart` to see or remove it).
 
 ---
 
@@ -57,8 +67,9 @@ Feedback is off by default and uses a **separate UDP socket from the
 command-listen socket above** — `listen_port` (default 5005) is where this
 server *receives* commands; `feedback_port` is where it *sends* status
 messages, and the two are unrelated. **There is no default feedback port**:
-both `feedback_ip` and `feedback_port` must be given together in the
-`/server/start` body, or feedback stays disabled (command-only, silent).
+give both `feedback_ip` and `feedback_port` in the `/server/start` body. A
+`feedback_port` without a `feedback_ip` is refused (400); a `feedback_ip`
+without a `feedback_port` still starts with feedback silently off.
 `feedback_port` should be set to whatever port your receiver (e.g.
 TouchDesigner's OSC In DAT/CHOP) is actually listening on — it does not need
 to match this server's own `listen_port`.
@@ -84,7 +95,7 @@ receiving application before relying on it.
 | `/set_home` | — | `set_home_position()` — **persists** the current position as the new home reference | `/set_home_position "set_home_position"` |
 | `/reset_initial_abs_position` | — | `write_PA29_Initial_Abs_Pos()` | `/reset_initial_abs_position "reset"` |
 | `/set_continous_motion` | `speed_rpm`, `acc_time` (ms), `enable` (bool) | Arms/disarms continuous JOG mode (does **not** move by itself) | `/continuous_mode_start speed_rpm acc_time` |
-| `/ctrl_continuous_motion` | `action` (`"start"`/`"stop"`), `CW_CCW` (`"CW"`/`"CCW"`) | Starts/stops continuous rotation (requires `/set_continous_motion` with `enable=true` first) | `/continuous_mode_start CW_CCW` / `/continuous_mode_stop "stop"` |
+| `/ctrl_continuous_motion` | `action` (`"start"`/`"stop"`), `CW_CCW` (`"CW"`/`"CCW"`, exact case) | Starts/stops continuous rotation (requires `/set_continous_motion` with `enable=true` first). Any other direction (e.g. `"cw"`) sends nothing | `/continuous_mode_start CW_CCW` **only if the start was accepted** / `/continuous_mode_stop "stop"` |
 | `/jog_speed_adjust` | `delta_rpm` (int, e.g. `1`/`-1`) | `change_jog_speed_by()` — **nudges** the running JOG speed by this amount (requires JOG mode already armed via `/set_continous_motion`); raises/logs an error instead of moving if it isn't | `/jog_speed_adjust <new speed_rpm>` |
 | `/cancel_loop` | — | Stops continuous reading **and** explicitly exits whatever test mode is active. **Side effect: the drive drops Servo ON when it leaves JOG mode** (see Gotcha 9) | `/cancel_loop <current_angle>` |
 
@@ -116,11 +127,12 @@ address name in the code, not a typo in this doc.)`
 /cancel_loop                          # fully exit JOG mode when done
 ```
 
-The web UI's Up/Down arrow keys send `/jog_speed_adjust` under the hood
-(via the `/action` `jogSpeedAdjust` HTTP action) while the Speed Control
-(JOG) section is armed; Left/Right arrow keys map to
-`/ctrl_continuous_motion "start" "CW"/"CCW"`, and releasing either sends
-`"stop"`. Art-Net's Channel 1 already supports changing the speed while
+The web UI's arrow keys reach the same `ServoController` calls through its
+own `/action` HTTP actions (not OSC): Up/Down = `jogSpeedAdjust` (like
+`/jog_speed_adjust`), Left/Right = `motionStart_CW`/`motionStart_CCW` (like
+`/ctrl_continuous_motion "start"`), and releasing either = `motionPause`
+(like `"stop"`). They only work while the web owns the motor — not while
+OSC or Art-Net runs. Art-Net's Channel 1 already supports changing the speed while
 running (a continuous fader value, not a nudge) — see artnet_server.py's
 Channel 1 docstring; no separate Art-Net channel was added for
 `/jog_speed_adjust`'s equivalent.
@@ -128,8 +140,10 @@ Channel 1 docstring; no separate Art-Net channel was added for
 **⚠️ Reversing direction requires a pause in between** — sending
 `"start" "CCW"` directly after `"start" "CW"` (no `"stop"` in between)
 is refused by `ServoController` (a fail-safe against shocking the
-mechanism with an abrupt reversal). You'll see it logged server-side;
-OSC gets no feedback message about the refusal currently.
+mechanism with an abrupt reversal). You'll see it logged server-side.
+OSC gets no error message about the refusal, and — since 2026-10-08 — no
+`/continuous_mode_start` either (before, it was sent even though the motor
+did not start).
 
 ---
 
@@ -397,7 +411,9 @@ between.** Sending CW immediately followed by CCW (no stop/pause) is
 refused by `ServoController.speed_ctrl_action()` — a fail-safe against
 shocking the mechanism with an abrupt reversal. Applies identically to
 both OSC and Art-Net (they share the same underlying method). The web
-UI surfaces this as an error message; OSC/Art-Net currently do not.
+UI shows it in the JOG section's status line, and the Art-Net Channel
+Monitor shows "DIRECTION REFUSED"; an OSC sender gets no message (and no
+`/continuous_mode_start` ack).
 
 **6. `/set_home` and Art-Net channel 11 change what "home" means, and it
 persists to disk** (`servo_config_<profile>.json`). This isn't a
@@ -447,3 +463,10 @@ operates the console/controller sending these messages is responsible
 for the same physical safety checks as anyone using the web UI directly
 (motor and load clear of people/obstacles before sending anything that
 can move it).
+
+While a server runs, the web UI keeps a few software overrides (SERVO OFF,
+JOG pause, motion cancel / disable position mode). They are **not** an
+emergency stop: JOG pause does not stop a positioning move, nothing stops
+the sender from commanding motion again right after, and every one of them
+is a command over the same serial link. Keep the drive's hardware E-Stop
+within reach.
