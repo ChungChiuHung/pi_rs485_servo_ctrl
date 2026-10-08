@@ -7,6 +7,7 @@ nothing here touches hardware or opens a UDP socket.
 import base64
 import json
 import os
+import re
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
@@ -214,6 +215,55 @@ class ArtNetStartOptionsTests(unittest.TestCase):
         self.assertIn('id="artnet_universe" value="1"', html)
         # channels 10-12 must not be pre-ticked
         self.assertNotIn('id="artnet_dangerous_channels" checked', html)
+
+
+class ActionFeedbackTargetTests(unittest.TestCase):
+    """Every action result the page reports must land in an element that
+    exists. The JOG arrow keys' motionStart_CW/CCW and motionPause results
+    used to target #<action>_status ids that were never in the page, so a
+    refused direction change or a STOP that never ran was invisible. There is
+    no JS test runner here, so this checks the template's structure."""
+
+    JOG_ACTIONS = ("motionStart_CW", "motionStart_CCW", "motionPause")
+
+    def setUp(self):
+        with patch.object(app_module, "WEB_PASSWORD", ""):
+            self.html = app_module.app.test_client().get("/index").get_data(as_text=True)
+        self.ids = set(re.findall(r'\bid="([^"]+)"', self.html))
+        block = re.search(r"const STATUS_KEY_FOR_ACTION = \{(.*?)\};", self.html, re.S)
+        self.assertIsNotNone(block, "STATUS_KEY_FOR_ACTION mapping not found in index.html")
+        self.mapping = dict(re.findall(r"(\w+):\s*'(\w+)'", block.group(1)))
+
+    def status_id(self, action):
+        return self.mapping.get(action, action) + "_status"
+
+    def test_feedback_resolves_through_the_mapping(self):
+        self.assertIn("$('#' + statusKey(action) + '_status')", self.html)
+
+    def test_jog_actions_share_one_visible_status_line_in_the_jog_section(self):
+        for action in self.JOG_ACTIONS:
+            with self.subTest(action=action):
+                self.assertEqual(self.status_id(action), "jogMotion_status")
+        self.assertIn('<span class="section-note" id="jogMotion_status"></span>', self.html)
+        jog_section = self.html[self.html.index('id="arrowKeyPad"'):]
+        jog_section = jog_section[:jog_section.index("</nav>")]
+        self.assertIn('id="jogMotion_status"', jog_section)
+
+    def test_every_reported_action_has_an_existing_status_element(self):
+        actions = set(re.findall(r'data-action="(\w+)"', self.html))
+        actions |= set(re.findall(r"sendCommand\('(\w+)'", self.html))
+        actions |= set(re.findall(r"setFeedback\('(\w+)'", self.html))
+        self.assertTrue(set(self.JOG_ACTIONS) <= actions)
+        for action in sorted(actions):
+            with self.subTest(action=action):
+                self.assertIn(self.status_id(action), self.ids)
+
+    def test_unrelated_actions_keep_their_own_status_element(self):
+        for action in ("servoOn", "servoOff", "Home", "setHome", "posTest", "jogSpeedAdjust",
+                       "enableSpeedCtrlMode", "clearAlarm12"):
+            with self.subTest(action=action):
+                self.assertNotIn(action, self.mapping)
+                self.assertIn(action + "_status", self.ids)
 
 
 class OscStartOptionsTests(unittest.TestCase):

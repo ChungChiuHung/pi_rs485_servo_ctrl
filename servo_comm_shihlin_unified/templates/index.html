@@ -280,10 +280,26 @@
 
                 $('#langSwitcher button').click(function() { setLanguage($(this).attr('data-lang')); });
 
+                // Actions whose feedback shares another key's #<key>_status
+                // line instead of having one of their own. The JOG arrow
+                // keys' start/stop results used to be written to
+                // #motionStart_CW_status etc., which don't exist -- so a
+                // refused direction change (409), a busy rejection (429) or
+                // a STOP that never ran was invisible on the page.
+                const STATUS_KEY_FOR_ACTION = {
+                    motionStart_CW: 'jogMotion',
+                    motionStart_CCW: 'jogMotion',
+                    motionPause: 'jogMotion',
+                };
+
+                function statusKey(action) {
+                    return STATUS_KEY_FOR_ACTION[action] || action;
+                }
+
                 function clearStatuses(excludeAction){
-                    let actions = ['servoOn','servoOff','getMsg','enablePosMode','posTest','setPoint_1','setPoint_2','setHome','gotoSetPoint_1','gotoSetPoint_2','Home','enableSpeedCtrlMode','jogSpeedAdjust'];
+                    let actions = ['servoOn','servoOff','getMsg','enablePosMode','posTest','setPoint_1','setPoint_2','setHome','gotoSetPoint_1','gotoSetPoint_2','Home','enableSpeedCtrlMode','jogSpeedAdjust','jogMotion'];
                     actions.forEach(function(action){
-                        if(action !== excludeAction){
+                        if(action !== statusKey(excludeAction)){
                             $('#'+action+'_status').text('');
                         }
                     });
@@ -295,7 +311,7 @@
                 }
 
                 function setFeedback(action, text, ok) {
-                    $('#' + action + '_status')
+                    $('#' + statusKey(action) + '_status')
                         .text('[' + timestamp() + '] ' + text)
                         .removeClass('status-ok status-error')
                         .addClass('action-feedback')
@@ -1546,6 +1562,7 @@
                         key is physically held down, so it can never be left spinning by a stray click. While enabled --
                         Left/Right arrow keys = rotate CW/CCW (release the key = stop immediately); Up/Down arrow keys =
                         speed +/-1 rpm. Keys only act while this page has focus and the cursor isn't in a text/number field.</span>
+                    <span class="section-note" id="jogMotion_status"></span>
                     <span class="section-note" id="jogSpeedAdjust_status"></span>
                 </nav>
             </aside>
