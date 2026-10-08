@@ -17,11 +17,21 @@ way; the script just saves you retyping them and gets the dependency list
 right (see the gotcha below).
 
 There is also `start_servo_unified.bat` in the repository root, so you don't
-have to open this folder: double-click it and it runs this folder's
-`start_server.bat`. It first checks that `motor_profiles.json` is present —
-that file is tuned per rig and not stored in git, so a fresh clone or pull
-won't have it — and if it's missing, says how to restore it instead of
-letting the server crash on start.
+have to open this folder: double-click it and it starts this folder's
+server. It differs from `start_server.bat` in three ways:
+
+* It installs packages **only when needed**: `check_requirements.py` compares
+  `requirements_pc.txt` with what's installed (no network), and `pip install`
+  runs only if something is missing or older than the listed minimum. After
+  the first run it starts without touching pip or the internet.
+* It finds Python as `python` or, failing that, the `py -3` launcher (and
+  ignores the Microsoft Store placeholder that only opens the Store).
+* It checks that `motor_profiles.json` is present first — that file is tuned
+  per rig and not stored in git, so a fresh clone or pull won't have it —
+  and if it's missing, says how to restore it instead of letting the server
+  crash on start.
+
+`SERVO_WEB_PORT` / `SERVO_SERIAL_PORT` work the same with either launcher.
 
 A `.bat` file rather than a shell script because this is a plain Windows
 PC target — it double-clicks and runs with no extra tooling (no Git Bash
