@@ -557,6 +557,140 @@ class ExternalControlOwnershipTests(unittest.TestCase):
         self.ctrl.refresh_encoder_mode.assert_called_once()
 
 
+class ExternalControlUiTests(unittest.TestCase):
+    """Phase B3: the page mirrors Phase B2's backend ownership rule. No JS
+    runner here, so these check the template's wiring; the backend 409s
+    themselves are covered by ExternalControlOwnershipTests."""
+
+    def setUp(self):
+        with patch.object(app_module, "WEB_PASSWORD", ""):
+            self.html = app_module.app.test_client().get("/index").get_data(as_text=True)
+
+    def block(self, marker):
+        return js_block(self.html, marker)
+
+    def assert_in_order(self, text, *parts):
+        positions = [text.index(part) for part in parts]
+        self.assertEqual(positions, sorted(positions), parts)
+
+    def test_ownership_state_comes_from_server_status_and_survives_a_failed_poll(self):
+        success, failure = self.block("function pollInputServerStatus(").split(".fail(", 1)
+        self.assert_in_order(success, "inputServerActive = !!response.active_input_server;",
+                             "inputServerType = response.active_input_server;",
+                             "updateCommandButtons();", "updateModeLockButtons();",
+                             "updateArrowKeyPadArmedState();")
+        self.assertIn("t('externalControlLabel')", success)
+        self.assertNotIn("inputServerActive =", failure)
+        self.assertNotIn("inputServerType =", failure)
+
+    def test_ui_allowlist_and_wording_match_the_backend(self):
+        allowlist = re.search(r"WEB_ACTIONS_ALLOWED_DURING_EXTERNAL_CONTROL = new Set\(\[(.*?)\]\)",
+                              self.html, re.S).group(1)
+        self.assertEqual(set(re.findall(r"'(\w+)'", allowlist)),
+                         set(app_module.WEB_ACTIONS_ALLOWED_DURING_EXTERNAL_CONTROL))
+        template = re.search(r"externalControlBlocked: '([^']*)'", self.html).group(1)
+        for server_type, name in (("osc", "OSC"), ("artnet", "Art-Net")):
+            with self.subTest(server=server_type), app_module.app.test_request_context(), \
+                    patch.object(app_module, "active_input_server", server_type):
+                response, _ = app_module._reject_if_external_control()
+                self.assertEqual(response.get_json()["message"], template.replace("{name}", name))
+        names = self.block("const INPUT_SERVER_DISPLAY_NAMES =")
+        self.assertIn("osc: 'OSC'", names)
+        self.assertIn("artnet: 'Art-Net'", names)
+
+    def test_command_buttons_follow_the_allowlist(self):
+        update = self.block("function updateCommandButtons(")
+        self.assertIn("const blocked = blockedByExternalControl(action);", update)
+        self.assertIn("'disabled', commandInFlight || blocked || unrecorded", update)
+        allowed = set(app_module.WEB_ACTIONS_ALLOWED_DURING_EXTERNAL_CONTROL)
+        buttons = set(re.findall(r'data-action="(\w+)"', self.html))
+        # Blocked: SERVO ON, HOME, MOVE TO SET POINT 1/2. Still usable:
+        # SERVO OFF, GET STATE VALUE, SET POINT 1/2 recording.
+        self.assertEqual(buttons - allowed, {"servoOn", "Home", "gotoSetPoint_1", "gotoSetPoint_2"})
+        self.assertEqual(buttons & allowed, {"servoOff", "getMsg", "setPoint_1", "setPoint_2"})
+        self.assertIn("inputServerActive && !WEB_ACTIONS_ALLOWED_DURING_EXTERNAL_CONTROL.has(action)",
+                      self.block("function blockedByExternalControl("))
+
+    def test_alarm_clear_and_set_home_are_disabled_and_refuse_clicks(self):
+        update = self.block("function updateCommandButtons(")
+        self.assertIn("$('#clearAlarm12Btn').prop('disabled', commandInFlight || inputServerActive)", update)
+        self.assertIn("$('#setHomeBtn').prop('disabled', inputServerActive)", update)
+        self.assertIn("$('#homeModalConfirmBtn').prop('disabled', homeModalInFlight || inputServerActive)", update)
+        self.assert_in_order(self.block("$('#clearAlarm12Btn').click("),
+                             "if (inputServerActive)", "if (!clearAlarm12Armed)", "$.ajax(")
+        self.assert_in_order(self.block("$('#homeModalConfirmBtn').click("),
+                             "if (homeModalInFlight || inputServerActive) { return; }",
+                             "homeModalInFlight = true;", "sendCommand('setHome'",
+                             "homeModalInFlight = false;")
+
+    def test_servo_off_stays_usable_and_is_not_called_an_emergency_stop(self):
+        self.assertIn("$('[data-action=\"servoOff\"]').attr('title', t('servoOffOverrideNote'))",
+                      self.block("function updateCommandButtons("))
+        self.assertIn("servoOffOverrideNote: 'Software override; not an emergency stop.'", self.html)
+        # No generic STOP control: nothing in the code stops a positioning move.
+        self.assertNotIn('data-action="motionPause"', self.html)
+        self.assertIsNone(re.search(r">\s*STOP\s*<", self.html))
+
+    def test_mode_toggles_keep_only_their_switch_off_side(self):
+        locks = self.block("function updateModeLockButtons(")
+        self.assertIn("const posEnableBlocked = inputServerActive && !posModeActive;", locks)
+        self.assertIn("const jogEnableBlocked = inputServerActive && !jogModeActive;", locks)
+        self.assertIn("$('#enablePosModeBtn').prop('disabled', jogModeActive || posEnableBlocked)", locks)
+        self.assertIn("$('#enableSpeedCtrlModeBtn').prop('disabled', posModeActive || jogEnableBlocked)", locks)
+        # The DISABLE / MOTION CANCEL branch runs before the ownership guard;
+        # the enable request comes after it.
+        self.assert_in_order(self.block("$('#enablePosModeBtn').click("),
+                             "if (posModeActive)", "{action: 'disablePosMode'}",
+                             "if (inputServerActive)", "{pulses: pulses, speed_rpm: speedRpm}")
+        self.assert_in_order(self.block("$('#enableSpeedCtrlModeBtn').click("),
+                             "if (jogModeActive)", "{action: 'motionCancel'}",
+                             "if (inputServerActive)", "{speed_rpm: speedRpm}")
+
+    def test_keyboard_arms_only_when_the_web_owns_the_motor(self):
+        self.assertIn("return jogModeActive && !inputServerActive;", self.block("function webJogKeysArmed("))
+        self.assertIn("return posModeActive && !inputServerActive;", self.block("function webPosKeysArmed("))
+        pads = self.block("function updateArrowKeyPadArmedState(")
+        self.assertIn("!webJogKeysArmed()", pads)
+        self.assertIn("!webPosKeysArmed()", pads)
+        keydown = self.block("$(document).on('keydown',")
+        self.assertNotRegex(keydown, r"if \((jogModeActive|posModeActive)\)")
+        # Every indicator, CW/CCW start, speed nudge and position nudge sits
+        # inside one of the two armed branches.
+        self.assert_in_order(keydown, "if (webJogKeysArmed())", "setKeyIndicator(JOG_INDICATOR_IDS",
+                             "sendCommand('motionStart_CW')", "sendCommand('motionStart_CCW')",
+                             "sendCommand('jogSpeedAdjust'", "} else if (webPosKeysArmed())",
+                             "setKeyIndicator(POS_INDICATOR_IDS", "posTestStart_CW")
+
+    def test_key_release_pauses_only_web_started_or_web_armed_jog(self):
+        keyup = self.block("$(document).on('keyup',")
+        self.assertNotIn("jogModeActive &&", keyup)
+        for flag in ("leftArrowDown", "rightArrowDown"):
+            self.assert_in_order(keyup, f"const startedHere = {flag};", f"{flag} = false;")
+        self.assertEqual(keyup.count("if ((webJogKeysArmed() || startedHere) && !isTypingTarget())"
+                                     " { sendCommand('motionPause'); }"), 2)
+
+    def test_no_other_code_path_overrides_the_combined_locks(self):
+        for needle, owner in (
+                ("$('.button[data-action]').prop('disabled'", None),
+                ("$('#gotoSetPoint_1Btn').prop('disabled'", None),
+                ("$('#clearAlarm12Btn').prop('disabled'", "function updateCommandButtons("),
+                ("$('#setHomeBtn').prop('disabled'", "function updateCommandButtons("),
+                ("$('#homeModalConfirmBtn').prop('disabled'", "function updateCommandButtons("),
+                ("$('#enablePosModeBtn').prop('disabled'", "function updateModeLockButtons("),
+                ("$('#enableSpeedCtrlModeBtn').prop('disabled'", "function updateModeLockButtons(")):
+            with self.subTest(needle=needle):
+                self.assertEqual(self.html.count(needle), 0 if owner is None else 1)
+                if owner:
+                    self.assertIn(needle, self.block(owner))
+        self.assertIn("commandInFlight = !enabled;", self.block("function setButtonsEnabled("))
+        self.assertIn("updateCommandButtons();", self.block("function updateGotoSetPointButtons("))
+
+    def test_new_strings_exist_in_both_languages(self):
+        for key in ("externalControlBlocked:", "externalControlLabel:", "servoOffOverrideNote:"):
+            self.assertEqual(self.html.count(key), 2, key)
+        self.assertNotIn("lockedWhileServerRuns", self.html)
+
+
 class OscStartOptionsTests(unittest.TestCase):
     """POST /server/start with type "osc". OSCInputServer is a mock -- no
     UDP socket is opened and nothing reaches the drive."""

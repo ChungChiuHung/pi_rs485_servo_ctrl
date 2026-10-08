@@ -53,7 +53,9 @@
                         serverStatusUnavailable: 'Unknown (status unavailable)',
                         autostartReadFailed: 'Could not read autostart setting: ',
                         autostartClearFailed: 'Could not clear autostart: ',
-                        lockedWhileServerRuns: 'Stop the OSC/Art-Net server first.',
+                        externalControlBlocked: '{name} is controlling the motor. Stop the input server first.',
+                        externalControlLabel: 'External control: {name}{state} -- web motion controls are locked; SERVO OFF, JOG pause/cancel and reads still work.',
+                        servoOffOverrideNote: 'Software override; not an emergency stop.',
                         servo: 'Servo', servoOnBtn: 'SERVO ON', servoOffBtn: 'SERVO OFF',
                         getStateValueBtn: 'GET STATE VALUE', clearAlarm12Btn: 'CLEAR ALARM 12',
                         clearAlarm12Confirm: 'CLICK AGAIN TO CONFIRM', setHomeBtn: 'SET HOME',
@@ -167,7 +169,9 @@
                         serverStatusUnavailable: '未知（無法取得狀態）',
                         autostartReadFailed: '無法讀取自動啟動設定：',
                         autostartClearFailed: '無法清除自動啟動設定：',
-                        lockedWhileServerRuns: '請先停止 OSC/Art-Net 伺服器。',
+                        externalControlBlocked: '{name} 正在控制馬達。請先停止輸入伺服器。',
+                        externalControlLabel: '外部控制：{name}{state}——網頁的運動控制已鎖定；伺服關閉、JOG 暫停／取消與讀取仍可使用。',
+                        servoOffOverrideNote: '軟體層級的覆寫操作，不是緊急停止。',
                         servo: '伺服馬達', servoOnBtn: '伺服開啟', servoOffBtn: '伺服關閉',
                         getStateValueBtn: '讀取狀態暫存器', clearAlarm12Btn: '清除告警 12',
                         clearAlarm12Confirm: '再按一次確認', setHomeBtn: '設定原點',
@@ -275,6 +279,10 @@
                     if (typeof updateEncoderSwitchButton === 'function') { updateEncoderSwitchButton(); }
                     if (typeof refreshAutostartStatus === 'function') { refreshAutostartStatus(); }
                     if (typeof readEncoderMode === 'function') { readEncoderMode(); }
+                    if (typeof updateCommandButtons === 'function') {
+                        updateCommandButtons();
+                        updateModeLockButtons();
+                    }
                     if (typeof clearAlarm12Armed !== 'undefined' && !clearAlarm12Armed) {
                         $('#clearAlarm12Btn').text(t('clearAlarm12Btn'));
                     }
@@ -346,25 +354,73 @@
                 // from this app could still interleave or flip a
                 // toggle-like action, like start_continuous_reading(),
                 // back off before its first click's effect took hold).
+                let commandInFlight = false;
+                // The SET HOME dialog's own request is in flight.
+                let homeModalInFlight = false;
+
                 function setButtonsEnabled(enabled) {
-                    $('.button[data-action]').prop('disabled', !enabled);
-                    $('#clearAlarm12Btn').prop('disabled', !enabled);
-                    // MOVE TO SET POINT 1/2 must stay disabled whenever that
-                    // set point hasn't been recorded, even after this blanket
-                    // re-enable -- otherwise a click on an unrecorded (null)
-                    // set point would fail server-side instead of just being
-                    // unavailable.
-                    if (enabled) {
-                        updateGotoSetPointButtons();
-                    }
+                    commandInFlight = !enabled;
+                    updateCommandButtons();
                 }
 
                 let setPoint1Value = null;
                 let setPoint2Value = null;
 
+                // External control (OSC / Art-Net), from the last SUCCESSFUL
+                // /server/status poll -- a failed poll leaves both as they
+                // were, so a lock never lifts just because a poll failed.
+                // While set, the backend answers 409 to every /action outside
+                // app.py's WEB_ACTIONS_ALLOWED_DURING_EXTERNAL_CONTROL (and to
+                // /alarm/clear, /encoder_mode/adopt, /profile, encoder-mode
+                // writes); the UI mirrors that here. The backend stays the
+                // real enforcement.
+                let inputServerActive = false;
+                let inputServerType = null;
+                const WEB_ACTIONS_ALLOWED_DURING_EXTERNAL_CONTROL = new Set([
+                    'getMsg', 'setPoint_1', 'setPoint_2',
+                    'motionPause', 'motionCancel', 'disablePosMode', 'servoOff',
+                ]);
+                const INPUT_SERVER_DISPLAY_NAMES = {osc: 'OSC', artnet: 'Art-Net'};
+
+                function inputServerDisplayName() {
+                    return INPUT_SERVER_DISPLAY_NAMES[inputServerType] || inputServerType || '';
+                }
+
+                // Same wording as the backend's 409.
+                function externalControlMessage() {
+                    return t('externalControlBlocked').replace('{name}', inputServerDisplayName());
+                }
+
+                function blockedByExternalControl(action) {
+                    return inputServerActive && !WEB_ACTIONS_ALLOWED_DURING_EXTERNAL_CONTROL.has(action);
+                }
+
+                // The one place the command buttons' enabled state is set, so
+                // the in-flight lock, external control and "set point not
+                // recorded" combine instead of one undoing another (a status
+                // poll used to re-enable MOVE TO SET POINT mid-request).
+                function updateCommandButtons() {
+                    const ownerNote = inputServerActive ? externalControlMessage() : null;
+                    $('.button[data-action]').each(function() {
+                        const action = $(this).attr('data-action');
+                        const blocked = blockedByExternalControl(action);
+                        // MOVE TO SET POINT 1/2 stay disabled while that set point
+                        // hasn't been recorded -- a click would only fail server-side.
+                        const unrecorded = (action === 'gotoSetPoint_1' && setPoint1Value === null)
+                            || (action === 'gotoSetPoint_2' && setPoint2Value === null);
+                        $(this).prop('disabled', commandInFlight || blocked || unrecorded)
+                            .attr('title', blocked ? ownerNote : null);
+                    });
+                    $('[data-action="servoOff"]').attr('title', t('servoOffOverrideNote'));
+                    $('#clearAlarm12Btn').prop('disabled', commandInFlight || inputServerActive)
+                        .attr('title', ownerNote);
+                    $('#setHomeBtn').prop('disabled', inputServerActive).attr('title', ownerNote);
+                    $('#homeModalConfirmBtn').prop('disabled', homeModalInFlight || inputServerActive)
+                        .attr('title', ownerNote);
+                }
+
                 function updateGotoSetPointButtons() {
-                    $('#gotoSetPoint_1Btn').prop('disabled', setPoint1Value === null);
-                    $('#gotoSetPoint_2Btn').prop('disabled', setPoint2Value === null);
+                    updateCommandButtons();
                 }
 
                 function sendCommand(action, extraPayload, callbacks) {
@@ -466,6 +522,12 @@
                         });
                         return;
                     }
+                    // Entering a mode is refused under external control; the
+                    // DISABLE branch above stays available as an override.
+                    if (inputServerActive) {
+                        setFeedback('enablePosMode', externalControlMessage(), false);
+                        return;
+                    }
                     // Pulses/speed validated client-side against the same
                     // ranges the manual documents for the underlying
                     // registers (0x0905/0x0906: 0~(2^31-1); 0x0903: 0~3000
@@ -529,6 +591,12 @@
                             },
                             done: function() { modeToggleInFlight = false; }
                         });
+                        return;
+                    }
+                    // Same as ENABLE POS MODE: MOTION CANCEL (above) stays an
+                    // override, entering JOG mode is refused.
+                    if (inputServerActive) {
+                        setFeedback('enableSpeedCtrlMode', externalControlMessage(), false);
                         return;
                     }
                     // Manual's documented range for 0x0903 is 0~3000 rpm.
@@ -598,9 +666,22 @@
                     if (id) { $('#' + id).toggleClass('key-active', active); }
                 }
 
+                // jogModeActive/posModeActive say what mode the DRIVE is in --
+                // OSC or Art-Net can put it there too. The keyboard only acts
+                // when the web owns the motor, so an external JOG session
+                // does not arm these keys (a key release would otherwise send
+                // MOTION PAUSE into someone else's motion).
+                function webJogKeysArmed() {
+                    return jogModeActive && !inputServerActive;
+                }
+
+                function webPosKeysArmed() {
+                    return posModeActive && !inputServerActive;
+                }
+
                 function updateArrowKeyPadArmedState() {
-                    $('#arrowKeyPad').toggleClass('disarmed', !jogModeActive);
-                    $('#posArrowKeyPad').toggleClass('disarmed', !posModeActive);
+                    $('#arrowKeyPad').toggleClass('disarmed', !webJogKeysArmed());
+                    $('#posArrowKeyPad').toggleClass('disarmed', !webPosKeysArmed());
                 }
 
                 // ENABLE POS MODE and ENABLE SPEED CONTROL MODE are mutually
@@ -610,10 +691,17 @@
                 // real enforcement; this just keeps the UI from inviting a
                 // click that would be refused anyway). Each toggle's OWN
                 // button stays enabled while ITS mode is the active one, so
-                // it can still be switched off.
+                // it can still be switched off. Under external control only
+                // that switch-off direction (disablePosMode / motionCancel, both
+                // backend-allowed overrides) stays enabled.
                 function updateModeLockButtons() {
-                    $('#enablePosModeBtn').prop('disabled', jogModeActive);
-                    $('#enableSpeedCtrlModeBtn').prop('disabled', posModeActive);
+                    const ownerNote = inputServerActive ? externalControlMessage() : null;
+                    const posEnableBlocked = inputServerActive && !posModeActive;
+                    const jogEnableBlocked = inputServerActive && !jogModeActive;
+                    $('#enablePosModeBtn').prop('disabled', jogModeActive || posEnableBlocked)
+                        .attr('title', posEnableBlocked ? ownerNote : null);
+                    $('#enableSpeedCtrlModeBtn').prop('disabled', posModeActive || jogEnableBlocked)
+                        .attr('title', jogEnableBlocked ? ownerNote : null);
                 }
 
                 // Live "Speed (rpm)" sync for Speed Control (JOG): reflects
@@ -643,7 +731,7 @@
                     if (isTypingTarget() || e.repeat) { return; }
                     if (!(e.key in JOG_INDICATOR_IDS)) { return; }
 
-                    if (jogModeActive) {
+                    if (webJogKeysArmed()) {
                         if (e.key === 'ArrowLeft' && !leftArrowDown) {
                             leftArrowDown = true;
                             e.preventDefault();
@@ -667,7 +755,7 @@
                                 success: function(response) { updateSpeedRpmField(response.speed_rpm); }
                             });
                         }
-                    } else if (posModeActive) {
+                    } else if (webPosKeysArmed()) {
                         const speedRpm = parseInt($('#posMode_speed_rpm').val(), 10);
                         if (e.key === 'ArrowLeft') {
                             e.preventDefault();
@@ -696,12 +784,20 @@
                     // key that is no longer physically pressed.
                     setKeyIndicator(JOG_INDICATOR_IDS, e.key, false);
                     setKeyIndicator(POS_INDICATOR_IDS, e.key, false);
+                    // MOTION PAUSE on release while the web keys are armed, as
+                    // before -- and also for a press that DID start rotation
+                    // (leftArrowDown/rightArrowDown) even if external control
+                    // began mid-press, so this page never leaves its own JOG
+                    // running. Never merely because an external sender has the
+                    // drive in JOG mode.
                     if (e.key === 'ArrowLeft') {
+                        const startedHere = leftArrowDown;
                         leftArrowDown = false;
-                        if (jogModeActive && !isTypingTarget()) { sendCommand('motionPause'); }
+                        if ((webJogKeysArmed() || startedHere) && !isTypingTarget()) { sendCommand('motionPause'); }
                     } else if (e.key === 'ArrowRight') {
+                        const startedHere = rightArrowDown;
                         rightArrowDown = false;
-                        if (jogModeActive && !isTypingTarget()) { sendCommand('motionPause'); }
+                        if ((webJogKeysArmed() || startedHere) && !isTypingTarget()) { sendCommand('motionPause'); }
                     }
                 });
 
@@ -732,6 +828,11 @@
                 }
 
                 $('#clearAlarm12Btn').click(function(){
+                    if (inputServerActive) {
+                        disarmClearAlarm12();
+                        setFeedback('clearAlarm12', externalControlMessage(), false);
+                        return;
+                    }
                     if (!clearAlarm12Armed) {
                         clearAlarm12Armed = true;
                         $('#clearAlarm12Btn').text(t('clearAlarm12Confirm')).addClass('button-armed');
@@ -780,8 +881,9 @@
                     $('#homeModalIntro').text(reason === 'startup'
                         ? t('homeModalIntroStartup')
                         : t('homeModalIntroManual'));
-                    $('#homeModal_status').text('');
-                    $('#homeModalConfirmBtn, #homeModalLaterBtn').prop('disabled', false);
+                    $('#homeModal_status').text(inputServerActive ? externalControlMessage() : '');
+                    $('#homeModalLaterBtn').prop('disabled', false);
+                    updateCommandButtons();  // confirm: off while in flight or under external control
                     $('#homeModal').css('display', 'flex');
                     $('#homeModalLaterBtn').focus();
                 }
@@ -794,11 +896,18 @@
                     if (e.key === 'Escape' && $('#homeModal').is(':visible')) { closeHomeModal(); }
                 });
                 $('#homeModalConfirmBtn').click(function() {
-                    $('#homeModalConfirmBtn, #homeModalLaterBtn').prop('disabled', true);
+                    if (homeModalInFlight || inputServerActive) { return; }
+                    homeModalInFlight = true;
+                    $('#homeModalLaterBtn').prop('disabled', true);
+                    updateCommandButtons();
                     sendCommand('setHome', null, {
                         success: closeHomeModal,
                         error: function(msg) { $('#homeModal_status').text(msg); },
-                        done: function() { $('#homeModalConfirmBtn, #homeModalLaterBtn').prop('disabled', false); }
+                        done: function() {
+                            homeModalInFlight = false;
+                            $('#homeModalLaterBtn').prop('disabled', false);
+                            updateCommandButtons();
+                        }
                     });
                 });
 
@@ -810,11 +919,6 @@
                 let encoderSwitchTimer = null;
                 // A PA28 write or adopt is in flight -- blocks a second submit.
                 let encoderRequestInFlight = false;
-                // Last successful /server/status said OSC or Art-Net is running.
-                // The backend refuses profile and encoder-mode changes then
-                // (409); this only keeps the UI from inviting the click. Left
-                // as-is when a status poll fails (see pollInputServerStatus()).
-                let inputServerActive = false;
 
                 function disarmEncoderSwitch() {
                     encoderSwitchArmed = false;
@@ -828,8 +932,8 @@
                     const btn = $('#encoderModeSwitchBtn');
                     const locked = encoderRequestInFlight || inputServerActive;
                     $('#encoderModeAdoptBtn').prop('disabled', locked)
-                        .attr('title', inputServerActive ? t('lockedWhileServerRuns') : null);
-                    btn.attr('title', inputServerActive ? t('lockedWhileServerRuns') : null);
+                        .attr('title', inputServerActive ? externalControlMessage() : null);
+                    btn.attr('title', inputServerActive ? externalControlMessage() : null);
                     btn.removeClass('button-armed');
                     if (encoderModePa28 === null) { btn.text(t('switchEncoderModeBtn')).prop('disabled', true); return; }
                     const target = encoderModePa28 === 1 ? t('modeIncremental') : t('modeAbsolute');
@@ -932,7 +1036,7 @@
 
                 function updateProfileSelectLock() {
                     $('#profile_select').prop('disabled', inputServerActive || profileChangeInFlight)
-                        .attr('title', inputServerActive ? t('lockedWhileServerRuns') : null);
+                        .attr('title', inputServerActive ? externalControlMessage() : null);
                 }
 
                 // Keeps the dropdown on the profile the backend reports in
@@ -1036,14 +1140,22 @@
 
                 function pollInputServerStatus() {
                     $.get('/server/status', function(response) {
-                        const label = response.active_input_server
-                            ? response.active_input_server.toUpperCase() + (response.is_running ? t('running') : t('starting_'))
-                            : t('none');
-                        $('#input_server_status_label').text(label).removeClass('action-feedback status-error');
                         inputServerActive = !!response.active_input_server;
+                        inputServerType = response.active_input_server;
+                        const label = inputServerActive
+                            ? t('externalControlLabel').replace('{name}', inputServerDisplayName())
+                                .replace('{state}', response.is_running ? t('running') : t('starting_'))
+                            : t('none');
+                        $('#input_server_status_label').text(label).removeClass('action-feedback status-error')
+                            .css('font-weight', inputServerActive ? 'bold' : '');
                         updateInputServerButtons();
                         updateProfileSelectLock();
                         updateEncoderSwitchButton();
+                        // Web motion controls and keyboard follow the same
+                        // ownership state (see updateCommandButtons()).
+                        updateCommandButtons();
+                        updateModeLockButtons();
+                        updateArrowKeyPadArmedState();
                         if (response.active_input_server !== 'artnet') {
                             $('#artnetMonitorSection').hide();
                         }
