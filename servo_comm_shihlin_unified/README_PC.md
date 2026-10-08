@@ -16,6 +16,13 @@ watch the logs and stop it with `Ctrl+C`. It's the same commands either
 way; the script just saves you retyping them and gets the dependency list
 right (see the gotcha below).
 
+There is also `start_servo_unified.bat` in the repository root, so you don't
+have to open this folder: double-click it and it runs this folder's
+`start_server.bat`. It first checks that `motor_profiles.json` is present —
+that file is tuned per rig and not stored in git, so a fresh clone or pull
+won't have it — and if it's missing, says how to restore it instead of
+letting the server crash on start.
+
 A `.bat` file rather than a shell script because this is a plain Windows
 PC target — it double-clicks and runs with no extra tooling (no Git Bash
 or WSL required), unlike a `.sh` file.

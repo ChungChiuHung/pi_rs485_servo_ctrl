@@ -2,3 +2,6 @@
 # ("bad interpreter: /bin/bash^M"), and core.autocrlf on Windows would add them.
 *.command text eol=lf
 *.sh text eol=lf
+# Windows launchers the other way round: cmd.exe misparses LF-only batch files
+# in places, and a clone made on macOS/Linux would otherwise check them out LF.
+*.bat text eol=crlf
